@@ -1,0 +1,32 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # The core and its TLS library are forks pinned on purpose; they move
+      # together with the Android app, by hand.
+      - dependency-name: github.com/metacubex/mihomo
+      - dependency-name: github.com/metacubex/utls
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+    groups:
+      go:
+        patterns: ['*']
+
+  - package-ecosystem: nuget
+    directory: /windows/FlClash.Window
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']

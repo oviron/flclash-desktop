@@ -1,7 +1,17 @@
 # Builds the engine tools and the macOS app.
-RELEASE := -trimpath -ldflags "-s -w"
 
-.PHONY: tools bridge app check
+# The version comes from the last v* tag: v0.2.0 builds 0.2.0, a commit after it
+# 0.2.0-3-gabc1234. The bundle takes the numbers only, and its build number is
+# the count of commits, so each build is newer than the one before.
+VERSION ?= $(shell git describe --tags --match 'v[0-9]*' 2>/dev/null | sed 's/^v//')
+ifeq ($(VERSION),)
+VERSION := 0.0.0-dev
+endif
+SHORT := $(firstword $(subst -, ,$(VERSION)))
+BUILD := $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
+RELEASE := -trimpath -ldflags "-s -w -X main.version=$(VERSION)"
+
+.PHONY: tools bridge app check version
 
 # The command line, the privileged supervisor and the core it runs.
 tools:
@@ -24,6 +34,8 @@ app: tools bridge
 	vtool -set-build-version macos 15.0 $$(xcrun --show-sdk-version) -replace \
 		-output dist/FlClash.app/Contents/MacOS/FlClash macos/.build/release/FlClash
 	cp macos/Resources/Info.plist dist/FlClash.app/Contents/
+	plutil -replace CFBundleShortVersionString -string $(SHORT) dist/FlClash.app/Contents/Info.plist
+	plutil -replace CFBundleVersion -string $(BUILD) dist/FlClash.app/Contents/Info.plist
 	cp -R macos/Resources/AppIcon.icns l10n/en.lproj l10n/ru.lproj dist/FlClash.app/Contents/Resources/
 	codesign --force --deep --sign - dist/FlClash.app
 
@@ -31,3 +43,6 @@ check:
 	test -z "$$(gofmt -l .)"
 	go vet ./...
 	go test ./...
+
+version:
+	@echo $(VERSION)

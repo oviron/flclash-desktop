@@ -44,7 +44,11 @@ const usage = `usage:
   flclashctl helper install | uninstall       set up or remove the privileged helper (run with sudo)
   flclashctl config -tun | -local-port N      print the config the core would run (it contains credentials)
   flclashctl run -local-port N                run the core without privileges on a loopback HTTP/SOCKS port
+  flclashctl version                          print the version
 `
+
+// version is set at build time from the git tag.
+var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -133,6 +137,10 @@ func main() {
 			}
 			return app.SetDNS(st, strings.Join(args, ""))
 		},
+	}
+	if os.Args[1] == "version" {
+		fmt.Println(version)
+		return
 	}
 	if os.Args[1] == "helper" {
 		// Runs as root: it must not create the user's store with root as owner.
