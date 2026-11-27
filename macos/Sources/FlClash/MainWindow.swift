@@ -42,10 +42,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
         root.onPage = { [weak self] in
             // The field keeps its text; the page that comes to the front takes it.
             if let self, let field = self.searchItem?.searchField {
-                if self.root.page == .connections {
-                    self.root.content.connections.query = field.stringValue
-                } else if self.root.page == .servers {
-                    self.root.content.servers.query = field.stringValue
+                switch self.root.page {
+                case .connections: self.root.content.connections.query = field.stringValue
+                case .log: self.root.content.log.query = field.stringValue
+                case .servers: self.root.content.servers.query = field.stringValue
+                case .routing: break
                 }
             }
             self?.pageChanged()
@@ -71,6 +72,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
         case .connections:
             let open = Model.shared.stats?.open ?? 0
             window.subtitle = open == 0 ? "" : String.localizedStringWithFormat(L("%d open"), open)
+        case .log:
+            window.subtitle = ""
         }
         for item in window.toolbar?.items ?? [] {
             switch item.itemIdentifier {
@@ -155,10 +158,10 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     func controlTextDidChange(_ obj: Notification) {
         guard let field = obj.object as? NSSearchField else { return }
         // One field, and it searches the page in front.
-        if root.page == .connections {
-            root.content.connections.query = field.stringValue
-        } else {
-            root.content.servers.query = field.stringValue
+        switch root.page {
+        case .connections: root.content.connections.query = field.stringValue
+        case .log: root.content.log.query = field.stringValue
+        default: root.content.servers.query = field.stringValue
         }
     }
 
@@ -167,6 +170,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     @objc func showServers(_ sender: Any?) { root.show(.servers) }
     @objc func showRouting(_ sender: Any?) { root.show(.routing) }
     @objc func showConnections(_ sender: Any?) { root.show(.connections) }
+    @objc func showLog(_ sender: Any?) { root.show(.log) }
 
     @objc func importFromClipboard(_ sender: Any?) {
         root.show(.servers)
@@ -260,13 +264,14 @@ final class RootSplitViewController: NSSplitViewController {
 }
 
 enum Page: Int, CaseIterable {
-    case servers, routing, connections
+    case servers, routing, connections, log
 
     var title: String {
         switch self {
         case .servers: return L("Servers")
         case .routing: return L("Routing")
         case .connections: return L("Connections")
+        case .log: return L("Log")
         }
     }
 
@@ -275,6 +280,7 @@ enum Page: Int, CaseIterable {
         case .servers: return "server.rack"
         case .routing: return "arrow.triangle.branch"
         case .connections: return "arrow.left.arrow.right"
+        case .log: return "text.alignleft"
         }
     }
 }
@@ -347,6 +353,7 @@ final class ContentViewController: NSViewController {
     private(set) lazy var servers = ServersViewController()
     private(set) lazy var routing = RoutingViewController()
     private(set) lazy var connections = ConnectionsViewController()
+    private(set) lazy var log = LogViewController()
 
     override func loadView() {
         let root = NSView()
@@ -377,6 +384,7 @@ final class ContentViewController: NSViewController {
         case .servers: next = servers
         case .routing: next = routing
         case .connections: next = connections
+        case .log: next = log
         }
         guard next !== current else { return }
         self.page = page

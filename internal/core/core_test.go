@@ -15,6 +15,15 @@ import (
 func TestTheCoreTakesWhatTheImporterWrites(t *testing.T) {
 	vmess := "vmess://" + base64.StdEncoding.EncodeToString([]byte(`{"v":"2","ps":"vm","add":"v.example","port":"443","id":"11111111-2222-3333-4444-555555555555","aid":"0","net":"ws","host":"v.example","path":"/p","tls":"tls"}`))
 	ss := "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-256-gcm:password")) + "@s.example:8388#ss"
+	clash, _, _ := ingest.ParseAll("proxies:\n  - {name: y, type: trojan, server: y.example, port: 443, password: pw, sni: y.example, skip-cert-verify: true}\n")
+	if len(clash) != 1 {
+		t.Fatal("the Clash proxy was not read")
+	}
+	if proxy, err := adapter.ParseProxy(compile.Proxy(clash[0])); err != nil {
+		t.Errorf("the core refuses a proxy read from a Clash config: %v", err)
+	} else {
+		_ = proxy.Close()
+	}
 	for _, link := range []string{
 		"vless://11111111-2222-3333-4444-555555555555@a.example:443?type=tcp&security=reality&sni=cover.example&fp=chrome&pbk=3Vc1vBHa3AP1gEhQb0zJdzLPpGhy2RK4n5eCoR9dSUk&sid=ab12&flow=xtls-rprx-vision#reality",
 		"vless://11111111-2222-3333-4444-555555555555@a.example:443?type=ws&security=tls&sni=a.example&path=%2Fws%3Fed%3D2048&host=a.example&fp=firefox#ws",

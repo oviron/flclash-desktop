@@ -10,6 +10,7 @@ import "C"
 
 import (
 	"encoding/json"
+	"os"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -65,6 +66,8 @@ type reply struct {
 	Delay int `json:"delay,omitempty"`
 	// Stats answers the stats operation.
 	Stats *helper.Stats `json:"stats,omitempty"`
+	// Log answers the log operation: the end of the helper's log.
+	Log string `json:"log,omitempty"`
 	// Document answers policyRead.
 	Document *app.PolicyDoc `json:"document,omitempty"`
 }
@@ -107,6 +110,9 @@ func handle(req request) (out reply) {
 			return fail(err)
 		}
 		out.Delay = ms
+		return out
+	case "log":
+		out.Log = logTail(256 << 10)
 		return out
 	case "stats":
 		stats, err := helper.ReadStats()
@@ -223,6 +229,29 @@ func handle(req request) (out reply) {
 	}
 	out.View = &view
 	return out
+}
+
+// logTail reads the end of the helper's log, from the start of a line.
+func logTail(limit int64) string {
+	file, err := os.Open(helper.LogPath())
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return ""
+	}
+	start := max(info.Size()-limit, 0)
+	raw := make([]byte, info.Size()-start)
+	n, _ := file.ReadAt(raw, start)
+	text := string(raw[:n])
+	if start > 0 {
+		if cut := strings.IndexByte(text, '\n'); cut >= 0 {
+			text = text[cut+1:]
+		}
+	}
+	return text
 }
 
 // FlcCall answers one request. The caller frees the result with FlcFree.

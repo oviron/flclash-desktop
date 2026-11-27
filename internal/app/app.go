@@ -142,7 +142,8 @@ type ImportResult struct {
 	Failed   []Failure `json:"failed"`
 }
 
-// Import adds the servers written in text, one per line, to a group. An entry
+// Import adds the servers written in text to a group: links or Throne
+// profiles one per line, or a Clash config. An entry
 // with the name of a server already in the group replaces it and keeps its ID.
 func Import(st *store.Store, group, text string) (ImportResult, error) {
 	result := ImportResult{Imported: []Server{}, Failed: []Failure{}}
@@ -150,22 +151,11 @@ func Import(st *store.Store, group, text string) (ImportResult, error) {
 	if err != nil {
 		return result, err
 	}
-	// A subscription serves its links as one base64 blob.
-	if lines, ok := ingest.IsSubscriptionBody(text); ok {
-		text = lines
+	servers, refused, n := ingest.ParseAll(text)
+	for _, r := range refused {
+		result.Failed = append(result.Failed, Failure{Entry: r.Entry, Reason: r.Reason})
 	}
-	n := 0
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		n++
-		server, err := ingest.Parse(line)
-		if err != nil {
-			result.Failed = append(result.Failed, Failure{Entry: n, Reason: err.Error()})
-			continue
-		}
+	for _, server := range servers {
 		e := state.Put(group, server)
 		result.Imported = append(result.Imported, Server{ID: e.ID, Name: e.Name, Group: e.Group, Protocol: protocol(e.Proxy)})
 	}

@@ -106,6 +106,7 @@ struct Reply: Decodable {
     var delay: Int? = nil
     var stats: Stats? = nil
     var document: PolicyDocument? = nil
+    var log: String? = nil
 }
 
 /// The Go engine. Calls can take as long as a tunnel takes to come up, so they
@@ -145,9 +146,9 @@ enum Engine {
     /// must not wait behind a tunnel that is coming up, nor hold it up.
     private static let counting = DispatchQueue(label: "flclash.engine.stats", qos: .utility)
 
-    static func stats(then done: @escaping (Reply) -> Void) {
+    static func stats(_ request: [String: String] = ["op": "stats"], then done: @escaping (Reply) -> Void) {
         counting.async {
-            let reply = callSync(["op": "stats"])
+            let reply = callSync(request)
             DispatchQueue.main.async { done(reply) }
         }
     }

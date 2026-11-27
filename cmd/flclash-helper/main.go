@@ -31,6 +31,12 @@ func main() {
 	if err := os.Chmod(helper.StateDir(), 0o711); err != nil {
 		log.Fatal(err)
 	}
+	// The log is one file that only grows; a helper that starts finds it
+	// large and starts it anew. The system keeps the file open for appending,
+	// so cutting it here is safe.
+	if info, err := os.Stat(helper.LogPath()); err == nil && info.Size() > 8<<20 {
+		_ = os.Truncate(helper.LogPath(), 0)
+	}
 	path := helper.SocketPath()
 	_ = os.Remove(path) // a socket left by a previous run
 	// Nobody may connect between the socket appearing and its owner being set.

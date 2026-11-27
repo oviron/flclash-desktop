@@ -117,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewMenu.addItem(withTitle: L("Servers"), action: #selector(MainWindowController.showServers(_:)), keyEquivalent: "1")
         viewMenu.addItem(withTitle: L("Routing"), action: #selector(MainWindowController.showRouting(_:)), keyEquivalent: "2")
         viewMenu.addItem(withTitle: L("Connections"), action: #selector(MainWindowController.showConnections(_:)), keyEquivalent: "3")
+        viewMenu.addItem(withTitle: L("Log"), action: #selector(MainWindowController.showLog(_:)), keyEquivalent: "4")
         viewItem.submenu = viewMenu
         main.addItem(viewItem)
 

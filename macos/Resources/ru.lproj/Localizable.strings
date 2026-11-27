@@ -15,7 +15,7 @@
 "Apps that follow the system proxy are offline until it is back." = "Программы, которые слушаются системного прокси, без сети, пока он не вернётся.";
 "Apps that follow the system proxy setting go through the local port." = "Через локальный порт идут программы, которые слушаются системной настройки прокси.";
 "As Added" = "Как добавлены";
-"By Latency" = "По задержке";
+"By Latency" = "По времени отклика";
 "By Name" = "По имени";
 "Cancel" = "Отмена";
 "certificate not checked" = "сертификат не проверяется";
@@ -73,6 +73,7 @@
 "Lists" = "Списки";
 "Local addresses direct" = "Локальные адреса напрямую";
 "Local port" = "Локальный порт";
+"Log" = "Журнал";
 "Minimize" = "Свернуть";
 "Mode" = "Режим";
 "Name (optional)" = "Название (необязательно)";
@@ -119,17 +120,19 @@
 "since %@" = "с %@";
 "Since the tunnel came up: %@ down, %@ up" = "С момента включения: получено %@, отправлено %@";
 "System Proxy" = "Системный прокси";
-"Test Latency" = "Замерить задержку";
+"Test Latency" = "Замерить время отклика";
 "The address your provider gave you. FlClash reads the list of servers from it and keeps it up to date." = "Адрес, который дал провайдер. FlClash читает по нему список серверов и сам его обновляет.";
 "The clipboard has no text" = "В буфере обмена нет текста";
 "The connection through %@ stopped" = "Соединение через %@ оборвалось";
 "The core stopped" = "Соединение оборвалось";
 "The file could not be read" = "Не удалось прочитать файл";
 "The helper was not installed" = "Помощник не установлен";
+"The helper writes here once it is installed and something runs." = "Помощник пишет сюда, когда установлен и что-то запущено.";
 "The home network and local addresses go directly, the rest through the server." = "Домашняя сеть и локальные адреса идут напрямую, остальное через сервер.";
 "The internet is off until the tunnel is back." = "Интернета нет, пока туннель не вернётся.";
 "The last update failed" = "Последнее обновление не удалось";
 "The local port for HTTP and SOCKS. Click to copy; change it in Settings." = "Локальный порт для HTTP и SOCKS. Щелчок копирует; меняется в настройках.";
+"The log is empty" = "Журнал пуст";
 "The policy could not be opened" = "Политику не удалось открыть";
 "The policy was not imported" = "Политика не импортирована";
 "The proxy is down" = "Прокси не отвечает";
@@ -137,6 +140,7 @@
 "The subscription “%@” was not updated" = "Подписка «%@» не обновилась";
 "The system helper is from another version of FlClash and has to be installed again. A tunnel that is on will stop for a moment." = "Системный помощник установлен от другой версии FlClash, его нужно установить заново. Включённый туннель на мгновение остановится.";
 "The system still points at FlClash, so apps that follow the system proxy are offline until it is back. They do not go out directly." = "Система по-прежнему направлена на FlClash, поэтому программы, которые слушаются системного прокси, остаются без сети, пока он не вернётся. Напрямую они не идут.";
+"The time of a first request through the server: a new connection, the handshake and one small request. It is several times the ping." = "Время первого запроса через сервер: новое соединение, рукопожатие и один маленький запрос. Это в несколько раз больше пинга.";
 "The tunnel is down" = "Туннель оборвался";
 "The tunnel through %@ is down" = "Туннель через %@ оборвался";
 "through the server" = "через сервер";

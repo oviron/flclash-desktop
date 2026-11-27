@@ -36,6 +36,10 @@ func StateDir() string {
 	return "/var/lib/flclash-desktop"
 }
 
+// LogPath is the file the helper and the cores it runs write to. Anyone may
+// read it: it names servers and destinations, and holds no credentials.
+func LogPath() string { return "/var/log/flclash-helper.log" }
+
 // Version says which requests the installed helper understands. Raise it
 // whenever the helper or the core it runs has to be reinstalled for the app to
 // work: a new rule type, a new server field, a change of this protocol.

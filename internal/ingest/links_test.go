@@ -115,3 +115,39 @@ func TestSubscriptionBody(t *testing.T) {
 		}
 	}
 }
+
+func TestClashConfig(t *testing.T) {
+	servers, refused, n := ParseAll(`mixed-port: 7890
+proxies:
+  - name: "one"
+    type: vless
+    server: a.example
+    port: 443
+    uuid: 11111111-2222-3333-4444-555555555555
+    tls: true
+    servername: a.example
+    network: ws
+    ws-opts:
+      path: /ws
+      headers:
+        Host: a.example
+  - {name: two, type: ss, server: b.example, port: 8388, cipher: aes-256-gcm, password: pw, udp: true}
+  - {name: three, type: ssh, server: c.example, port: 22}
+  - {name: four, type: trojan, server: d.example, port: 443, password: pw, dialer-proxy: one}
+proxy-groups: []
+`)
+	if n != 4 || len(servers) != 2 || len(refused) != 2 {
+		t.Fatalf("got %d entries, %d servers, %+v", n, len(servers), refused)
+	}
+	if servers[0].Name != "one" || servers[0].Proxy["port"] != 443 || servers[0].Proxy["name"] != nil ||
+		servers[0].Proxy["ws-opts"].(map[string]any)["headers"].(map[string]any)["Host"] != "a.example" {
+		t.Fatalf("got %#v", servers[0])
+	}
+	if refused[0].Entry != 3 || !strings.Contains(refused[0].Reason, "ssh") || refused[1].Entry != 4 || !strings.Contains(refused[1].Reason, "dialer-proxy") {
+		t.Fatalf("got %+v", refused)
+	}
+	// Links stay links.
+	if _, _, n := ParseAll("hy2://p@b.example:443#b\n\nvless://u@a.example:443?security=reality&pbk=K#a\n"); n != 2 {
+		t.Fatalf("got %d", n)
+	}
+}

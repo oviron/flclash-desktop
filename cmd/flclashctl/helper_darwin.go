@@ -18,7 +18,6 @@ const (
 	helperLabel = "io.github.oviron.flclash.helper"
 	helperDir   = "/Library/PrivilegedHelperTools"
 	helperPlist = "/Library/LaunchDaemons/" + helperLabel + ".plist"
-	helperLog   = "/var/log/flclash-helper.log"
 )
 
 func cmdHelper(args []string) error {
@@ -45,7 +44,7 @@ func cmdHelper(args []string) error {
 		if err := helper.NewSystemProxy().Clear(); err != nil {
 			fmt.Fprintln(os.Stderr, "flclashctl:", err)
 		}
-		for _, path := range []string{helperPlist, filepath.Join(helperDir, "flclash-helper"), filepath.Join(helperDir, "flclash-core"), helper.SocketPath(), helperLog} {
+		for _, path := range []string{helperPlist, filepath.Join(helperDir, "flclash-helper"), filepath.Join(helperDir, "flclash-core"), helper.SocketPath(), helper.LogPath()} {
 			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
@@ -91,7 +90,7 @@ func cmdHelper(args []string) error {
 	<key>StandardErrorPath</key><string>%s</string>
 </dict>
 </plist>
-`, helperLabel, helperDir, uid, helperDir, helperLog, helperLog)
+`, helperLabel, helperDir, uid, helperDir, helper.LogPath(), helper.LogPath())
 	if err := os.WriteFile(helperPlist, []byte(plist), 0o644); err != nil {
 		return err
 	}
@@ -106,7 +105,7 @@ func cmdHelper(args []string) error {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("the helper was installed but did not start; see %s", helperLog)
+			return fmt.Errorf("the helper was installed but did not start; see %s", helper.LogPath())
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

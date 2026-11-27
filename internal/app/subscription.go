@@ -223,24 +223,13 @@ func update(state *store.State, i int) (ImportResult, error) {
 	if err != nil {
 		return result, err
 	}
-	text := got.body
-	if lines, ok := ingest.IsSubscriptionBody(text); ok {
-		text = lines
+	parsed, refused, n := ingest.ParseAll(got.body)
+	for _, r := range refused {
+		result.Failed = append(result.Failed, Failure{Entry: r.Entry, Reason: r.Reason})
 	}
 	var servers []ingest.Server
 	names := map[string]int{}
-	n := 0
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		n++
-		server, err := ingest.Parse(line)
-		if err != nil {
-			result.Failed = append(result.Failed, Failure{Entry: n, Reason: err.Error()})
-			continue
-		}
+	for _, server := range parsed {
 		// Two servers of one name would be one row; the later ones get a number.
 		names[server.Name]++
 		if count := names[server.Name]; count > 1 {
