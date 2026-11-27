@@ -1,18 +1,69 @@
 import AppKit
 
-/// The menu bar item: the state at a glance, and the choices people change most.
-final class StatusMenu: NSObject, NSMenuDelegate {
+/// The menu bar item: the state at a glance. A click opens a small panel with
+/// the choices people change most; a right click opens the same as a menu.
+final class StatusMenu: NSObject, NSMenuDelegate, NSPopoverDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let openWindow: () -> Void
+    private let openSettings: () -> Void
+    private let menu = NSMenu()
+    private var popover: NSPopover?
+    private var outside: Any?
 
-    init(openWindow: @escaping () -> Void) {
+    init(openWindow: @escaping () -> Void, openSettings: @escaping () -> Void) {
         self.openWindow = openWindow
+        self.openSettings = openSettings
         super.init()
-        let menu = NSMenu()
         menu.delegate = self
-        item.menu = menu
+        item.button?.target = self
+        item.button?.action = #selector(clicked(_:))
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         NotificationCenter.default.addObserver(self, selector: #selector(update), name: .modelChanged, object: nil)
         update()
+    }
+
+    @objc private func clicked(_ sender: Any?) {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            closePanel()
+            // The menu is attached only for this click, so that a plain click
+            // stays free for the panel.
+            item.menu = menu
+            item.button?.performClick(nil)
+            item.menu = nil
+            return
+        }
+        if popover != nil { closePanel() } else { openPanel() }
+    }
+
+    private func openPanel() {
+        guard let button = item.button else { return }
+        let panel = NSPopover()
+        panel.behavior = .transient
+        panel.delegate = self
+        panel.contentViewController = PanelViewController(
+            openWindow: { [weak self] in self?.closePanel(); self?.openWindow() },
+            openSettings: { [weak self] in self?.closePanel(); self?.openSettings() }
+        )
+        popover = panel
+        Model.shared.refresh()
+        Model.shared.watchStats(true)
+        panel.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        panel.contentViewController?.view.window?.makeKey()
+        // A click anywhere else closes it, also in another app.
+        outside = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in self?.closePanel() }
+    }
+
+    private func closePanel() {
+        popover?.performClose(nil)
+    }
+
+    /// Closed means gone: the panel and what it read are let go of.
+    func popoverDidClose(_ notification: Notification) {
+        if let outside { NSEvent.removeMonitor(outside) }
+        outside = nil
+        if popover != nil { Model.shared.watchStats(false) }
+        popover = nil
     }
 
     @objc private func update() {
@@ -95,7 +146,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
         let modes = NSMenuItem(title: L("Mode"), action: nil, keyEquivalent: "")
         let modeMenu = NSMenu()
-        for (name, title) in [("tun", L("TUN")), ("system", L("System Proxy")), ("proxy", L("Port Only"))] {
+        for (name, title) in [("proxy", L("Port Only")), ("system", L("System Proxy")), ("tun", L("TUN"))] {
             let entry = NSMenuItem(title: title, action: #selector(pickMode(_:)), keyEquivalent: "")
             entry.target = self
             entry.representedObject = name
@@ -110,7 +161,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let open = NSMenuItem(title: L("Open FlClash"), action: #selector(open), keyEquivalent: "")
         open.target = self
         menu.addItem(open)
-        let settings = NSMenuItem(title: L("Settings…"), action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
+        let settings = NSMenuItem(title: L("Settings…"), action: #selector(settingsFromMenu), keyEquivalent: ",")
+        settings.target = self
         menu.addItem(settings)
         menu.addItem(.separator())
         menu.addItem(withTitle: L("Quit FlClash"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -118,6 +170,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     @objc private func toggle() { Model.shared.toggle() }
     @objc private func open() { openWindow() }
+    @objc private func settingsFromMenu() { openSettings() }
     @objc private func unblock() { Model.shared.turnOff() }
 
     @objc private func pickServer(_ sender: NSMenuItem) {

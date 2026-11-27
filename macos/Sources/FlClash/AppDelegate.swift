@@ -7,7 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
-        statusMenu = StatusMenu(openWindow: { [weak self] in self?.showWindow() })
+        statusMenu = StatusMenu(openWindow: { [weak self] in self?.showWindow() },
+                                openSettings: { [weak self] in self?.showSettings(nil) })
         Model.shared.start()
         // Started by hand, the app shows its window; started at login it stays in the menu bar.
         if !CommandLine.arguments.contains("--background"), !startedAtLogin {
@@ -43,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let controller = MainWindowController()
             controller.window?.delegate = self
             window = controller
+            Model.shared.watchStats(true)
         }
         // With a window the app is an ordinary one, in the Dock and the app switcher.
         NSApp.setActivationPolicy(.regular)
@@ -50,7 +52,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         Model.shared.refresh()
-        Model.shared.watchStats(true)
     }
 
     /// The command line may have changed the lists while the window was aside.
@@ -90,6 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         fileMenu.addItem(withTitle: L("Import from File…"), action: #selector(MainWindowController.importFromFile(_:)), keyEquivalent: "o")
         fileMenu.addItem(withTitle: L("Add a Subscription…"), action: #selector(MainWindowController.addSubscription(_:)), keyEquivalent: "")
         fileMenu.addItem(withTitle: L("Update Subscriptions"), action: #selector(MainWindowController.updateSubscriptions(_:)), keyEquivalent: "r")
+        fileMenu.addItem(withTitle: L("New Policy…"), action: #selector(MainWindowController.newPolicy(_:)), keyEquivalent: "n")
         fileMenu.addItem(withTitle: L("Import a Policy…"), action: #selector(MainWindowController.importPolicy(_:)), keyEquivalent: "")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: L("Test Latency"), action: #selector(MainWindowController.testLatency(_:)), keyEquivalent: "t")

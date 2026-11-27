@@ -1,27 +1,43 @@
 import AppKit
 
 /// The look of a state: its colour and its symbol.
-private struct Look {
+struct Look {
     let tint: NSColor
     let symbol: String
     /// How much of the colour the card takes: a state that asks for attention
     /// colours it, the resting one does not.
     let wash: CGFloat
+
+    /// The look of what is true right now.
+    static var current: Look {
+        let model = Model.shared
+        let status = model.status
+        if model.helperReady, status.blocked {
+            return Look(tint: .systemRed, symbol: "lock.shield.fill", wash: 0.22)
+        }
+        if !model.helperReady || (status.running && !status.captured) {
+            return Look(tint: .systemOrange, symbol: "exclamationmark.shield.fill", wash: 0.18)
+        }
+        if status.running {
+            return Look(tint: .systemGreen, symbol: "checkmark.shield.fill", wash: 0.18)
+        }
+        return Look(tint: .secondaryLabelColor, symbol: "shield", wash: 0)
+    }
 }
 
 /// A round badge that says the state with a symbol and a colour.
-private final class StatusBadge: NSView {
+final class StatusBadge: NSView {
     private let image = NSImageView()
     private var tint = NSColor.secondaryLabelColor
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        image.symbolConfiguration = .init(pointSize: 20, weight: .medium)
+    init(side: CGFloat = 46) {
+        super.init(frame: .zero)
+        image.symbolConfiguration = .init(pointSize: side * 0.43, weight: .medium)
         image.translatesAutoresizingMaskIntoConstraints = false
         addSubview(image)
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 46),
-            heightAnchor.constraint(equalToConstant: 46),
+            widthAnchor.constraint(equalToConstant: side),
+            heightAnchor.constraint(equalToConstant: side),
             image.centerXAnchor.constraint(equalTo: centerXAnchor),
             image.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
@@ -74,7 +90,7 @@ private final class CardView: NSView {
 
 /// The last minute of traffic as a small curve: what came down is the filled
 /// shape, what went up is the line over it.
-private final class TrafficGraph: NSView {
+final class TrafficGraph: NSView {
     var tint = NSColor.systemGreen { didSet { needsDisplay = true } }
     var samples: [(down: Int, up: Int)] = [] { didSet { needsDisplay = true } }
 
@@ -137,7 +153,7 @@ final class HeaderView: NSView {
     private let down = NSTextField(labelWithString: "")
     private let up = NSTextField(labelWithString: "")
     private let traffic = NSStackView()
-    private let modes = NSSegmentedControl(labels: [L("TUN"), L("System Proxy"), L("Port Only")], trackingMode: .selectOne, target: nil, action: nil)
+    private let modes = NSSegmentedControl(labels: [L("Port Only"), L("System Proxy"), L("TUN")], trackingMode: .selectOne, target: nil, action: nil)
     private let policies = NSPopUpButton(frame: .zero, pullsDown: false)
     private let address = NSButton(title: "", target: nil, action: nil)
     private let notice = NSTextField(wrappingLabelWithString: "")
@@ -218,9 +234,9 @@ final class HeaderView: NSView {
 
         modes.target = self
         modes.action = #selector(modeChanged)
-        modes.setToolTip(L("Everything on this Mac goes through the tunnel."), forSegment: 0)
+        modes.setToolTip(L("Nothing changes in the system: only apps pointed at the local port use it."), forSegment: 0)
         modes.setToolTip(L("Apps that follow the system proxy setting go through the local port."), forSegment: 1)
-        modes.setToolTip(L("Nothing changes in the system: only apps pointed at the local port use it."), forSegment: 2)
+        modes.setToolTip(L("Everything on this Mac goes through the tunnel."), forSegment: 2)
         modes.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         policies.target = self
@@ -310,16 +326,7 @@ final class HeaderView: NSView {
         let model = Model.shared
         let status = model.status
 
-        let look: Look
-        if model.helperReady, status.blocked {
-            look = Look(tint: .systemRed, symbol: "lock.shield.fill", wash: 0.22)
-        } else if !model.helperReady || (status.running && !status.captured) {
-            look = Look(tint: .systemOrange, symbol: "exclamationmark.shield.fill", wash: 0.18)
-        } else if status.running {
-            look = Look(tint: .systemGreen, symbol: "checkmark.shield.fill", wash: 0.18)
-        } else {
-            look = Look(tint: .secondaryLabelColor, symbol: "shield", wash: 0)
-        }
+        let look = Look.current
         badge.show(look)
         card.look = look
         graph.tint = look.tint
@@ -351,7 +358,7 @@ final class HeaderView: NSView {
 
         // While on, the switches show what runs; while off, what would.
         let mode = status.running && !status.mode.isEmpty ? status.mode : model.view.mode
-        modes.selectedSegment = ["tun": 0, "system": 1, "proxy": 2][mode] ?? 0
+        modes.selectedSegment = ["proxy": 0, "system": 1, "tun": 2][mode] ?? 0
         modes.isEnabled = model.helperReady && !model.busy
 
         let policy = status.running && !status.policy.isEmpty ? status.policy : model.view.policy
@@ -415,7 +422,7 @@ final class HeaderView: NSView {
     @objc private func toggle() { Model.shared.toggle() }
 
     @objc private func modeChanged() {
-        Model.shared.setMode(["tun", "system", "proxy"][max(0, min(2, modes.selectedSegment))])
+        Model.shared.setMode(["proxy", "system", "tun"][max(0, min(2, modes.selectedSegment))])
     }
 
     @objc private func policyChanged() {

@@ -33,7 +33,8 @@ type State struct {
 	Policy   string  `json:"policy,omitempty"`   // policy name
 	// Subscriptions are the groups that are filled from an address.
 	Subscriptions []Subscription `json:"subscriptions,omitempty"`
-	// Mode is how the host is served: "tun", "system" or "proxy"; empty is "tun".
+	// Mode is how the host is served: "tun", "system" or "proxy"; empty is
+	// "proxy", the one that changes nothing in the system.
 	Mode string `json:"mode,omitempty"`
 	// Port is the loopback port for HTTP and SOCKS; zero is DefaultPort.
 	Port int `json:"port,omitempty"`
@@ -228,6 +229,21 @@ func (s *Store) RemovePolicy(name string) error {
 		return fmt.Errorf("no policy %q", name)
 	}
 	return err
+}
+
+// PolicyText returns the document of a policy as it was written.
+func (s *Store) PolicyText(name string) (string, error) {
+	if text, ok := policy.BuiltinText(name); ok {
+		return text, nil
+	}
+	if !policyName.MatchString(name) {
+		return "", fmt.Errorf("no policy %q", name)
+	}
+	raw, err := os.ReadFile(s.policyPath(name))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("no policy %q", name)
+	}
+	return string(raw), err
 }
 
 // Policy returns a built-in or an imported policy.

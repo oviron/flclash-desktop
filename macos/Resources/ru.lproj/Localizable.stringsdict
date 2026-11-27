@@ -33,13 +33,13 @@
 			<key>NSStringFormatValueTypeKey</key>
 			<string>d</string>
 			<key>one</key>
-			<string>Импортированная, %d правило</string>
+			<string>Своя, %d правило</string>
 			<key>few</key>
-			<string>Импортированная, %d правила</string>
+			<string>Своя, %d правила</string>
 			<key>many</key>
-			<string>Импортированная, %d правил</string>
+			<string>Своя, %d правил</string>
 			<key>other</key>
-			<string>Импортированная, %d правила</string>
+			<string>Своя, %d правила</string>
 		</dict>
 	</dict>
 	<key>%d open</key>

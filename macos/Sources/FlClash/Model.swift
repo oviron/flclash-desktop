@@ -43,6 +43,7 @@ final class Model {
     private var dueTimer: Timer?
     private var statsTimer: Timer?
     private var statsPending = false
+    private var watchers = 0
     /// The first answers came, and what the app does once at start is done.
     private var started = false
 
@@ -99,6 +100,11 @@ final class Model {
     /// A window that shows traffic asks for the counters; without one nobody
     /// reads them.
     func watchStats(_ on: Bool) {
+        // The window and the menu bar panel both watch; the reading stops
+        // when the last of them is gone.
+        watchers = max(0, watchers + (on ? 1 : -1))
+        if on, statsTimer != nil { return }
+        if !on, watchers > 0 { return }
         statsTimer?.invalidate()
         statsTimer = nil
         guard on else {
@@ -276,6 +282,22 @@ final class Model {
             self?.busy = false
             self?.take(reply)
             self?.refreshStatus()
+        }
+    }
+
+    func readPolicy(_ name: String, then done: @escaping (PolicyDocument?, String?) -> Void) {
+        Engine.call(["op": "policyRead", "name": name]) { reply in done(reply.document, reply.error) }
+    }
+
+    /// Saves a policy; a tunnel that runs by it takes the new rules at once.
+    func writePolicy(_ request: [String: String], then done: @escaping (String?) -> Void) {
+        busy = status.running
+        changed()
+        Engine.call(request) { [weak self] reply in
+            self?.busy = false
+            self?.take(reply, quiet: true)
+            self?.refreshStatus()
+            done(reply.error)
         }
     }
 

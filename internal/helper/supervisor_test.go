@@ -74,6 +74,7 @@ func supervisor(t *testing.T, captured bool) *Supervisor {
 func request(name string, revision int64) Request {
 	return Request{
 		Op:       OpApply,
+		Mode:     ModeTUN,
 		Revision: revision,
 		Server:   ingest.Server{Name: name, Proxy: map[string]any{"type": "hysteria2", "server": "a.example", "port": 443, "password": "pw"}},
 		Policy:   "all",
@@ -559,7 +560,7 @@ func TestLeavingABlockedTunnelForAProxyModeTakesTheGuardOff(t *testing.T) {
 
 func TestTheLocalPortIsChecked(t *testing.T) {
 	s, _, _ := withModes(t)
-	for _, req := range []Request{inMode(ModeProxy, 0, 1), inMode(ModeSystem, 80, 1), inMode(ModeTUN, 70000, 1), inMode("else", 7890, 1)} {
+	for _, req := range []Request{inMode(ModeProxy, 0, 1), inMode(ModeSystem, 80, 1), inMode(ModeTUN, 70000, 1), inMode("else", 7890, 1), inMode("", 7890, 1)} {
 		if err := s.do(req); err == nil {
 			t.Errorf("mode %q with port %d must be refused", req.Mode, req.Port)
 		}

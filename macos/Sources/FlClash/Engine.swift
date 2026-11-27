@@ -25,8 +25,8 @@ struct EngineView: Decodable, Equatable {
     var policies: [Policy] = []
     var policy = ""
     var protect = true
-    /// "tun", "system" or "proxy".
-    var mode = "tun"
+    /// "proxy", "system" or "tun".
+    var mode = "proxy"
     var port = 7890
     var autoConnect = false
     var subscriptions: [Subscription] = []
@@ -105,6 +105,7 @@ struct Reply: Decodable {
     let imported: ImportResult?
     var delay: Int? = nil
     var stats: Stats? = nil
+    var document: PolicyDocument? = nil
 }
 
 /// The Go engine. Calls can take as long as a tunnel takes to come up, so they

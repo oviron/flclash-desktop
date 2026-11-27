@@ -265,9 +265,12 @@ func On(st *store.Store) (helper.Status, error) {
 	}, 90*time.Second)
 }
 
+// mode is the mode in effect. A new setup opens the local port and nothing
+// else: the tunnel and the system proxy change how the whole machine behaves,
+// so they are on only for someone who chose them.
 func mode(state store.State) string {
 	if state.Mode == "" {
-		return helper.ModeTUN
+		return helper.ModeProxy
 	}
 	return state.Mode
 }

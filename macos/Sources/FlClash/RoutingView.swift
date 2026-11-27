@@ -27,6 +27,9 @@ final class RoutingViewController: NSViewController, NSTableViewDataSource, NSTa
         let menu = NSMenu()
         menu.addItem(withTitle: L("Use This Policy"), action: #selector(useSelected(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
+        menu.addItem(withTitle: L("Edit…"), action: #selector(edit(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L("Duplicate…"), action: #selector(duplicate(_:)), keyEquivalent: "").target = self
+        menu.addItem(.separator())
         menu.addItem(withTitle: L("Delete"), action: #selector(delete(_:)), keyEquivalent: "").target = self
         table.menu = menu
 
@@ -126,6 +129,8 @@ final class RoutingViewController: NSViewController, NSTableViewDataSource, NSTa
         switch menuItem.action {
         case #selector(useSelected(_:)): return actionRow != nil
         case #selector(delete(_:)): return removable(actionRow)
+        case #selector(edit(_:)): return actionRow.map { !$0.builtin } ?? false
+        case #selector(duplicate(_:)): return actionRow != nil
         default: return true
         }
     }
@@ -148,6 +153,44 @@ final class RoutingViewController: NSViewController, NSTableViewDataSource, NSTa
         alert.beginSheetModal(for: window) { response in
             if response == .alertFirstButtonReturn { Model.shared.remove(policy: policy.name) }
         }
+    }
+
+    /// Opens the editor on a new, empty policy.
+    func newPolicy() {
+        present(PolicyDocument(listed: true), original: nil)
+    }
+
+    /// Opens an imported policy for editing. A built-in one stays as it is;
+    /// a copy of it can be changed.
+    @objc private func edit(_ sender: Any?) {
+        guard let policy = actionRow, !policy.builtin else { return }
+        Model.shared.readPolicy(policy.name) { [weak self] document, error in
+            if let document { self?.present(document, original: policy.name) } else if let error { self?.report(error) }
+        }
+    }
+
+    @objc private func duplicate(_ sender: Any?) {
+        guard let policy = actionRow else { return }
+        Model.shared.readPolicy(policy.name) { [weak self] document, error in
+            guard var document else {
+                if let error { self?.report(error) }
+                return
+            }
+            document.name = policy.name + "-copy"
+            self?.present(document, original: nil)
+        }
+    }
+
+    private func present(_ document: PolicyDocument, original: String?) {
+        presentAsSheet(PolicyEditorController(document: document, original: original) {})
+    }
+
+    private func report(_ text: String) {
+        guard let window = view.window else { return }
+        let alert = NSAlert()
+        alert.messageText = L("The policy could not be opened")
+        alert.informativeText = text
+        alert.beginSheetModal(for: window)
     }
 
     func importPolicy() {

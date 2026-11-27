@@ -16,6 +16,7 @@ import (
 
 	"github.com/oviron/flclash-desktop/internal/app"
 	"github.com/oviron/flclash-desktop/internal/helper"
+	"github.com/oviron/flclash-desktop/internal/policy"
 	"github.com/oviron/flclash-desktop/internal/store"
 )
 
@@ -26,6 +27,11 @@ type request struct {
 	Server string `json:"server"`
 	Policy string `json:"policy"`
 	Name   string `json:"name"`
+	// The lists of a policy, a line per entry, and where the rest goes.
+	Direct string `json:"direct"`
+	Proxy  string `json:"proxy"`
+	Block  string `json:"block"`
+	Rest   string `json:"rest"`
 }
 
 type status struct {
@@ -59,6 +65,8 @@ type reply struct {
 	Delay int `json:"delay,omitempty"`
 	// Stats answers the stats operation.
 	Stats *helper.Stats `json:"stats,omitempty"`
+	// Document answers policyRead.
+	Document *app.PolicyDoc `json:"document,omitempty"`
 }
 
 func toStatus(s helper.Status, err error) *status {
@@ -139,6 +147,23 @@ func handle(req request) (out reply) {
 		}
 	case "policyImport":
 		if err := st.ImportPolicy(req.Name, req.Text); err != nil {
+			return fail(err)
+		}
+	case "policyRead":
+		doc, err := app.ReadPolicy(st, req.Name)
+		if err != nil {
+			return fail(err)
+		}
+		out.Document = &doc
+		return out
+	case "policyWrite":
+		if err := app.WritePolicy(st, req.Name, req.Text); err != nil {
+			return fail(err)
+		}
+	case "policyWriteLists":
+		lines := func(text string) []string { return strings.Split(text, "\n") }
+		lists := policy.Lists{Direct: lines(req.Direct), Proxy: lines(req.Proxy), Block: lines(req.Block), Rest: req.Rest}
+		if err := app.WritePolicyLists(st, req.Name, lists); err != nil {
 			return fail(err)
 		}
 	case "mode":

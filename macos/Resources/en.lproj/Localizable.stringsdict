@@ -29,9 +29,9 @@
 			<key>NSStringFormatValueTypeKey</key>
 			<string>d</string>
 			<key>one</key>
-			<string>Imported, %d rule</string>
+			<string>Your own, %d rule</string>
 			<key>other</key>
-			<string>Imported, %d rules</string>
+			<string>Your own, %d rules</string>
 		</dict>
 	</dict>
 	<key>%d open</key>

@@ -199,9 +199,8 @@ func (s *Supervisor) apply(req Request) error {
 	if err := policy.Check(req.Rules); err != nil {
 		return fmt.Errorf("the routing policy was refused: %w", err)
 	}
-	if req.Mode == "" {
-		req.Mode = ModeTUN
-	}
+	// The mode is always said: a request that forgot it must not end up
+	// capturing the whole machine.
 	switch req.Mode {
 	case ModeTUN:
 		if req.Port != 0 && (req.Port < 1024 || req.Port > 65535) {
@@ -211,6 +210,8 @@ func (s *Supervisor) apply(req Request) error {
 		if req.Port < 1024 || req.Port > 65535 {
 			return fmt.Errorf("the local port must be between 1024 and 65535, not %d", req.Port)
 		}
+	case "":
+		return errors.New("the request does not say the mode")
 	default:
 		return fmt.Errorf("unknown mode %q", req.Mode)
 	}

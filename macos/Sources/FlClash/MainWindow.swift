@@ -128,13 +128,14 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
             item.isHidden = root.page != .servers
             return item
         case .addPolicy:
-            let item = NSToolbarItem(itemIdentifier: id)
-            item.image = NSImage(systemSymbolName: "plus", accessibilityDescription: L("Import a policy"))
-            item.label = L("Import a policy")
-            item.toolTip = L("Import a policy from a rules file")
-            item.isBordered = true
-            item.target = self
-            item.action = #selector(importPolicy(_:))
+            let item = NSMenuToolbarItem(itemIdentifier: id)
+            item.image = NSImage(systemSymbolName: "plus", accessibilityDescription: L("Add a policy"))
+            item.label = L("Add a policy")
+            item.toolTip = L("Add a policy")
+            let menu = NSMenu()
+            menu.addItem(withTitle: L("New Policy…"), action: #selector(newPolicy(_:)), keyEquivalent: "").target = self
+            menu.addItem(withTitle: L("Import from File…"), action: #selector(importPolicy(_:)), keyEquivalent: "").target = self
+            item.menu = menu
             item.isHidden = root.page != .routing
             return item
         case .search:
@@ -211,6 +212,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
 
     @objc func updateSubscriptions(_ sender: Any?) {
         Model.shared.updateAllSubscriptions()
+    }
+
+    @objc func newPolicy(_ sender: Any?) {
+        root.show(.routing)
+        root.content.routing.newPolicy()
     }
 
     @objc func importPolicy(_ sender: Any?) {

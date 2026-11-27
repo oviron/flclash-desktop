@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/oviron/flclash-desktop/internal/policy"
 	"github.com/oviron/flclash-desktop/internal/store"
 )
 
@@ -116,5 +117,43 @@ func TestSubscription(t *testing.T) {
 	}
 	if view, _ = Snapshot(st); len(view.Subscriptions) != 0 || len(view.Servers) != 0 || view.Selected != "" {
 		t.Fatalf("got %+v", view)
+	}
+}
+
+func TestANewSetupChangesNothingInTheSystem(t *testing.T) {
+	view, err := Snapshot(open(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Mode != "proxy" || view.AutoConnect {
+		t.Fatalf("a new setup must only open the local port, and only when asked: %+v", view)
+	}
+}
+
+func TestPolicyDocuments(t *testing.T) {
+	st := open(t)
+	doc, err := ReadPolicy(st, "ru-direct")
+	if err != nil || !doc.Builtin || !doc.Listed || doc.Rest != "PROXY" || !strings.Contains(doc.Direct, "geosite:yandex") {
+		t.Fatalf("got %+v, %v", doc, err)
+	}
+	if err := WritePolicyLists(st, "mine", policy.Lists{Direct: strings.Split(doc.Direct, "\n"), Block: []string{"ads.example"}, Rest: doc.Rest}); err != nil {
+		t.Fatal(err)
+	}
+	mine, err := ReadPolicy(st, "mine")
+	if err != nil || mine.Builtin || !mine.Listed || mine.Block != "ads.example" || mine.Direct != doc.Direct {
+		t.Fatalf("got %+v, %v", mine, err)
+	}
+	// Rules in an order of their own are kept as written and not shown as lists.
+	if err := WritePolicy(st, "mine", "DOMAIN-SUFFIX,a.example,PROXY\nDOMAIN-SUFFIX,example,DIRECT\nMATCH,PROXY\n"); err != nil {
+		t.Fatal(err)
+	}
+	if mine, _ = ReadPolicy(st, "mine"); mine.Listed || !strings.Contains(mine.Text, "a.example") {
+		t.Fatalf("got %+v", mine)
+	}
+	if err := WritePolicy(st, "ru-direct", "MATCH,PROXY\n"); err == nil {
+		t.Fatal("a built-in policy must not be overwritten")
+	}
+	if err := WritePolicyLists(st, "mine", policy.Lists{Direct: []string{"two words"}, Rest: "PROXY"}); err == nil {
+		t.Fatal("a bad entry must refuse the save")
 	}
 }

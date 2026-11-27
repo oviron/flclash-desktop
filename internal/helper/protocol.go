@@ -119,7 +119,7 @@ type CoreReply struct {
 // system is told, and in the rights the core runs with.
 const (
 	// ModeTUN captures the traffic of the whole host through a tunnel device.
-	// The core runs as root. An empty Mode means this one.
+	// The core runs as root.
 	ModeTUN = "tun"
 	// ModeSystem opens the local port and names it as the proxy of the system:
 	// programs that follow the system setting go through it.
