@@ -30,6 +30,12 @@ struct EngineView: Decodable, Equatable {
     var port = 7890
     var autoConnect = false
     var subscriptions: [Subscription] = []
+    /// The local port is open to the local network; `auth` is the
+    /// user:password asked of other devices, empty for none.
+    var lan = false
+    var auth = ""
+    /// The resolver used under the tunnel.
+    var dns = ""
 }
 
 /// A group of servers that is read from an address. The address itself stays
@@ -42,6 +48,9 @@ struct Subscription: Decodable, Equatable {
     let total: Int
     let expire: Int
     let problem: String
+    var agent = ""
+    var every = 0
+    var skip = ""
 }
 
 struct Connection: Decodable, Equatable {
@@ -122,6 +131,7 @@ struct Reply: Decodable {
     var document: PolicyDocument? = nil
     var log: String? = nil
     var exit: Exit? = nil
+    var link: String? = nil
 }
 
 /// The Go engine. Calls can take as long as a tunnel takes to come up, so they

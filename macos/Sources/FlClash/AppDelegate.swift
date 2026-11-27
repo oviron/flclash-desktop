@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusMenu: StatusMenu?
@@ -10,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusMenu = StatusMenu(openWindow: { [weak self] in self?.showWindow() },
                                 openSettings: { [weak self] in self?.showSettings(nil) })
         Model.shared.start()
+        HotKey.shared.action = { Model.shared.toggle() }
+        HotKey.shared.register()
         // Started by hand, the app shows its window; started at login it stays in the menu bar.
         if !CommandLine.arguments.contains("--background"), !startedAtLogin {
             showWindow()
@@ -28,6 +31,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showWindow()
         return false
+    }
+
+    @objc private func saveBackup(_ sender: Any?) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "FlClash backup.json"
+        panel.message = L("The backup holds the keys of your servers and the addresses of your subscriptions. Keep it where others cannot read it.")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Model.shared.writeBackup(to: url.path) { [weak self] error in
+            if let error { self?.say(L("The backup was not saved"), error) }
+        }
+    }
+
+    @objc private func restoreBackup(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.message = L("Everything set up now — servers, subscriptions, policies, settings — is replaced by what the backup holds.")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Model.shared.readBackup(from: url.path) { [weak self] error in
+            if let error { self?.say(L("The backup was not restored"), error) }
+        }
+    }
+
+    private func say(_ title: String, _ text: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = text
+        alert.runModal()
     }
 
     @objc func showSettings(_ sender: Any?) {
@@ -93,6 +123,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         fileMenu.addItem(withTitle: L("Update Subscriptions"), action: #selector(MainWindowController.updateSubscriptions(_:)), keyEquivalent: "r")
         fileMenu.addItem(withTitle: L("New Policy…"), action: #selector(MainWindowController.newPolicy(_:)), keyEquivalent: "n")
         fileMenu.addItem(withTitle: L("Import a Policy…"), action: #selector(MainWindowController.importPolicy(_:)), keyEquivalent: "")
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(withTitle: L("Save a Backup…"), action: #selector(saveBackup(_:)), keyEquivalent: "").target = self
+        fileMenu.addItem(withTitle: L("Restore from a Backup…"), action: #selector(restoreBackup(_:)), keyEquivalent: "").target = self
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: L("Test Latency"), action: #selector(MainWindowController.testLatency(_:)), keyEquivalent: "t")
         fileMenu.addItem(.separator())

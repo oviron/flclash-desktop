@@ -409,6 +409,8 @@ final class ContentViewController: NSViewController {
 final class DropView: NSView {
     /// Called with the text of what was dropped and, for a file, its name.
     var onDrop: ((String, URL?) -> Void)?
+    /// Called with a dropped picture, where the page takes pictures.
+    var onDropImage: ((NSImage) -> Void)?
     private var targeted = false { didSet { needsDisplay = true } }
 
     override init(frame: NSRect) {
@@ -443,6 +445,12 @@ final class DropView: NSView {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         targeted = false
+        if let onDropImage,
+           let url = (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true, .urlReadingContentsConformToTypes: ["public.image"]]) as? [URL])?.first,
+           let image = NSImage(contentsOf: url) {
+            onDropImage(image)
+            return true
+        }
         guard let (text, url) = content(of: sender) else { return false }
         onDrop?(text, url)
         return true

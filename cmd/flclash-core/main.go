@@ -72,6 +72,10 @@ func main() {
 			} else {
 				reply.Exit = &exit
 			}
+		case helper.FrameClose:
+			if !core.Close(string(body)) {
+				reply.Error = "the connection is gone already"
+			}
 		case helper.FrameStats:
 			stats := core.Stats()
 			reply.Stats = &stats

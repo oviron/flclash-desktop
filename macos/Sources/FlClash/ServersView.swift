@@ -50,6 +50,7 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
     override func loadView() {
         let root = DropView()
         root.onDrop = { [weak self] text, _ in self?.importText(text) }
+        root.onDropImage = { [weak self] image in self?.importImage(image) }
 
         // A list, not a sheet of data: no header, the order is chosen in the toolbar.
         for (id, width) in [("mark", 26.0), ("name", 260.0), ("protocol", 220.0), ("delay", 96.0)] {
@@ -305,6 +306,9 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
             let update = menu.addItem(withTitle: L("Update Subscription"), action: #selector(updateFromMenu(_:)), keyEquivalent: "")
             update.target = self
             update.representedObject = name
+            let settings = menu.addItem(withTitle: L("Subscription Settings…"), action: #selector(editSubscription(_:)), keyEquivalent: "")
+            settings.target = self
+            settings.representedObject = name
             menu.addItem(.separator())
             let remove = menu.addItem(withTitle: L("Delete Subscription…"), action: #selector(removeSubscription(_:)), keyEquivalent: "")
             remove.target = self
@@ -314,7 +318,66 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         menu.addItem(withTitle: L("Use This Server"), action: #selector(useSelected(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: L("Test Latency"), action: #selector(measureSelected(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
+        menu.addItem(withTitle: L("Copy Link"), action: #selector(copyLink(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L("Show QR Code…"), action: #selector(showQR(_:)), keyEquivalent: "").target = self
+        menu.addItem(.separator())
         menu.addItem(withTitle: L("Delete"), action: #selector(delete(_:)), keyEquivalent: "").target = self
+    }
+
+    /// The link of the one server an action is about.
+    private func withLink(_ then: @escaping (Server, String) -> Void) {
+        let servers = actionRows
+        guard servers.count == 1 else { return }
+        Model.shared.link(server: servers[0].id) { [weak self] link, error in
+            if let link { then(servers[0], link) } else {
+                self?.report(title: L("This server cannot be written as a link"), text: error ?? "")
+            }
+        }
+    }
+
+    @objc private func copyLink(_ sender: Any?) {
+        withLink { _, link in
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(link, forType: .string)
+        }
+    }
+
+    @objc private func showQR(_ sender: Any?) {
+        withLink { [weak self] server, link in
+            self?.presentAsSheet(QRSheetController(name: server.name, link: link))
+        }
+    }
+
+    @objc private func editSubscription(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String, let window = view.window,
+              let subscription = Model.shared.view.subscriptions.first(where: { $0.name == name }) else { return }
+        let address = NSTextField()
+        address.placeholderString = L("New address (leave empty to keep)")
+        let agent = NSTextField(string: subscription.agent)
+        agent.placeholderString = L("Client name told to the provider")
+        let every = NSTextField(string: subscription.every > 0 ? String(subscription.every) : "")
+        every.placeholderString = L("Hours between updates (empty: as the provider says)")
+        let skip = NSTextField(string: subscription.skip)
+        skip.placeholderString = L("Leave out servers with these words, comma-separated")
+        let fields = NSStackView(views: [address, agent, every, skip])
+        fields.orientation = .vertical
+        fields.spacing = 8
+        fields.frame = NSRect(x: 0, y: 0, width: 380, height: 4 * 22 + 3 * 8)
+        for field in fields.arrangedSubviews { field.widthAnchor.constraint(equalToConstant: 380).isActive = true }
+        let alert = NSAlert()
+        alert.messageText = String(format: L("Subscription “%@”"), name)
+        alert.informativeText = subscription.host
+        alert.accessoryView = fields
+        alert.addButton(withTitle: L("Save"))
+        alert.addButton(withTitle: L("Cancel"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            Model.shared.editSubscription(name, address: address.stringValue, agent: agent.stringValue,
+                                          every: Int(every.stringValue.trimmingCharacters(in: .whitespaces)) ?? 0,
+                                          skip: skip.stringValue) { error in
+                if let error { self?.report(title: String(format: L("The subscription “%@” was not updated"), name), text: error) }
+            }
+        }
     }
 
     @objc private func updateFromMenu(_ sender: NSMenuItem) {
@@ -384,7 +447,7 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
-        case #selector(useSelected(_:)): return actionRows.count == 1
+        case #selector(useSelected(_:)), #selector(copyLink(_:)), #selector(showQR(_:)): return actionRows.count == 1
         case #selector(delete(_:)), #selector(measureSelected(_:)): return !actionRows.isEmpty
         default: return true
         }
@@ -431,6 +494,12 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
     @objc private func importFromClipboardPressed(_ sender: Any?) { importFromClipboard() }
 
     func importFromClipboard() {
+        // A copied picture of a QR code is a server too: a screenshot, a photo.
+        if NSPasteboard.general.string(forType: .string) == nil,
+           let image = NSPasteboard.general.readObjects(forClasses: [NSImage.self])?.first as? NSImage {
+            importImage(image)
+            return
+        }
         guard let text = NSPasteboard.general.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             report(title: L("The clipboard has no text"), text: L("Copy a server link first: in Throne, right-click a profile and copy it as a link."))
             return
@@ -450,6 +519,16 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
                 return
             }
             self?.importText(text)
+        }
+    }
+
+    /// Reads the QR codes of a picture and imports what they say.
+    func importImage(_ image: NSImage) {
+        let texts = QRCode.texts(in: image)
+        if texts.isEmpty {
+            report(title: L("No QR code was found in the picture"), text: "")
+        } else {
+            importText(texts.joined(separator: "\n"))
         }
     }
 

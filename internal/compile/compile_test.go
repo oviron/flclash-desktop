@@ -151,3 +151,45 @@ func TestDirectNamesUseTheNetworkResolvers(t *testing.T) {
 		t.Errorf("the network's resolver must come first, got %q", parsed.DNS.DirectNameServer[0].Addr)
 	}
 }
+
+func TestLANAuthAndDNS(t *testing.T) {
+	in := Input{
+		Server: ingest.Server{Name: "s", Proxy: map[string]any{"type": "hysteria2", "server": "a.example", "port": 443, "password": "pw"}},
+		Policy: policy.Policy{Name: "all", Rules: []string{"MATCH,PROXY"}},
+		TUN:    true, LocalPort: 7890, OS: "darwin",
+	}
+	raw, err := Config(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := string(raw); !strings.Contains(text, "allow-lan: false") || !strings.Contains(text, "bind-address: 127.0.0.1") ||
+		strings.Contains(text, "authentication") || !strings.Contains(text, DefaultDNS) {
+		t.Fatalf("a plain setup stays on loopback, with no login:\n%s", text)
+	}
+	in.LAN, in.Auth, in.RemoteDNS = true, "tv:secret!", "tls://dns.example"
+	if raw, err = Config(in); err != nil {
+		t.Fatal(err)
+	}
+	if text := string(raw); !strings.Contains(text, "allow-lan: true") || !strings.Contains(text, "bind-address: '*'") ||
+		!strings.Contains(text, "tv:secret!") || !strings.Contains(text, "127.0.0.1/8") || !strings.Contains(text, "- tls://dns.example") {
+		t.Fatalf("got:\n%s", text)
+	}
+	for _, bad := range []string{"nopassword", "a b:c", "user:", ":pw", "юзер:pw"} {
+		in.Auth = bad
+		if _, err := Config(in); err == nil {
+			t.Errorf("login %q must be refused", bad)
+		}
+	}
+	in.Auth = ""
+	for _, bad := range []string{"udp://1.1.1.1", "https://", "https://x/y z", "system", "https://u:p@dns.example/q"} {
+		in.RemoteDNS = bad
+		if _, err := Config(in); err == nil {
+			t.Errorf("resolver %q must be refused", bad)
+		}
+	}
+	for _, good := range []string{"1.1.1.1", "2606:4700:4700::1111", "https://dns.example/dns-query", "tls://dns.example:853"} {
+		if err := CheckDNS(good); err != nil {
+			t.Errorf("%q: %v", good, err)
+		}
+	}
+}

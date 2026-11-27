@@ -9,6 +9,10 @@ final class SettingsWindowController: NSWindowController {
     private let login = NSSwitch()
     private let autoConnect = NSSwitch()
     private let port = NSTextField()
+    private let lan = NSSwitch()
+    private let auth = NSTextField()
+    private let dns = NSTextField()
+    private let hotKey = HotKeyRecorder()
 
     init() {
         let window = NSWindow(
@@ -35,6 +39,15 @@ final class SettingsWindowController: NSWindowController {
         port.target = self
         port.action = #selector(portChanged)
         port.widthAnchor.constraint(equalToConstant: 76).isActive = true
+        lan.target = self
+        lan.action = #selector(lanChanged)
+        auth.placeholderString = L("user:password")
+        auth.target = self
+        auth.action = #selector(authChanged)
+        auth.widthAnchor.constraint(equalToConstant: 170).isActive = true
+        dns.target = self
+        dns.action = #selector(dnsChanged)
+        dns.widthAnchor.constraint(equalToConstant: 230).isActive = true
 
         let column = NSStackView(views: [
             group([
@@ -44,6 +57,14 @@ final class SettingsWindowController: NSWindowController {
             ]),
             group([
                 row(L("Local port"), L("HTTP and SOCKS on 127.0.0.1"), port),
+                row(L("Let the local network use it"), L("Other devices at home can point at this Mac's address and the port."), lan),
+                row(L("Login for other devices"), L("Empty asks for none. This Mac is never asked."), auth),
+            ]),
+            group([
+                row(L("DNS in TUN mode"), L("Resolves names for what goes through the tunnel."), dns),
+            ]),
+            group([
+                row(L("Shortcut to connect"), L("Works from any app."), hotKey),
             ]),
             group([
                 row(L("Launch at Login"), nil, login),
@@ -166,7 +187,25 @@ final class SettingsWindowController: NSWindowController {
         // Not while the field is being typed in.
         if port.currentEditor() == nil { port.integerValue = Model.shared.view.port }
         port.isEnabled = !Model.shared.busy
+        lan.state = Model.shared.view.lan ? .on : .off
+        lan.isEnabled = !Model.shared.busy
+        if auth.currentEditor() == nil { auth.stringValue = Model.shared.view.auth }
+        auth.isEnabled = Model.shared.view.lan && !Model.shared.busy
+        if dns.currentEditor() == nil { dns.stringValue = Model.shared.view.dns }
+        dns.isEnabled = !Model.shared.busy
+        // A value the engine refused is said once, by the window.
+        if let problem = Model.shared.problem, let window, window.attachedSheet == nil, window.isKeyWindow {
+            Model.shared.dismissProblem()
+            let alert = NSAlert()
+            alert.messageText = L("The setting was not changed")
+            alert.informativeText = problem
+            alert.beginSheetModal(for: window)
+        }
     }
+
+    @objc private func lanChanged() { Model.shared.setLAN(lan.state == .on) }
+    @objc private func authChanged() { Model.shared.setAuth(auth.stringValue.trimmingCharacters(in: .whitespaces)) }
+    @objc private func dnsChanged() { Model.shared.setDNS(dns.stringValue.trimmingCharacters(in: .whitespaces)) }
 
     @objc private func protectChanged() {
         Model.shared.setProtect(protect.state == .on)

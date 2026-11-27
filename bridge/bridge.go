@@ -33,6 +33,10 @@ type request struct {
 	Proxy  string `json:"proxy"`
 	Block  string `json:"block"`
 	Rest   string `json:"rest"`
+	// The settings of a subscription.
+	Agent string `json:"agent"`
+	Every string `json:"every"`
+	Skip  string `json:"skip"`
 }
 
 type status struct {
@@ -66,6 +70,8 @@ type reply struct {
 	Delay int `json:"delay,omitempty"`
 	// Stats answers the stats operation.
 	Stats *helper.Stats `json:"stats,omitempty"`
+	// Link answers the link operation: a server as a share link.
+	Link string `json:"link,omitempty"`
 	// Exit answers the exit operation: where the running server lets traffic out.
 	Exit *helper.Exit `json:"exit,omitempty"`
 	// Log answers the log operation: the end of the helper's log.
@@ -112,6 +118,13 @@ func handle(req request) (out reply) {
 			return fail(err)
 		}
 		out.Delay = ms
+		return out
+	case "link":
+		link, err := app.Link(st, req.Server)
+		if err != nil {
+			return fail(err)
+		}
+		out.Link = link
 		return out
 	case "exit":
 		exit, err := helper.ReadExit()
@@ -212,10 +225,46 @@ func handle(req request) (out reply) {
 			}
 			return fail(err)
 		}
+	case "subEdit":
+		every, _ := strconv.Atoi(req.Every)
+		result, err := app.EditSubscription(st, req.Name, req.Text, req.Agent, every, req.Skip)
+		out.Imported = &result
+		if err != nil {
+			if view, viewErr := app.Snapshot(st); viewErr == nil {
+				out.View = &view
+			}
+			return fail(err)
+		}
+	case "backupWrite":
+		if err := app.WriteBackup(st, req.Name); err != nil {
+			return fail(err)
+		}
+		return out
+	case "backupRead":
+		if err := app.ReadBackup(st, req.Name); err != nil {
+			return fail(err)
+		}
 	case "subRemove":
 		if err := app.RemoveSubscription(st, req.Name); err != nil {
 			return fail(err)
 		}
+	case "lan":
+		if err := app.SetLAN(st, req.Text == "on"); err != nil {
+			return fail(err)
+		}
+	case "auth":
+		if err := app.SetAuth(st, req.Text); err != nil {
+			return fail(err)
+		}
+	case "dns":
+		if err := app.SetDNS(st, req.Text); err != nil {
+			return fail(err)
+		}
+	case "close":
+		if err := helper.CloseConnection(req.Name); err != nil {
+			return fail(err)
+		}
+		return out
 	case "autoConnect":
 		if err := app.SetAutoConnect(st, req.Text == "on"); err != nil {
 			return fail(err)

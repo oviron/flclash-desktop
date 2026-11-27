@@ -266,3 +266,13 @@ func Stats() helper.Stats {
 	}
 	return stats
 }
+
+// Close closes one open connection, and says whether it was there.
+func Close(id string) bool {
+	tracker := statistic.DefaultManager.Get(id)
+	if tracker == nil {
+		return false
+	}
+	_ = tracker.Close()
+	return true
+}

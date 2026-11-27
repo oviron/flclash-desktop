@@ -292,6 +292,51 @@ final class Model {
         }
     }
 
+    func setLAN(_ on: Bool) {
+        guard on != view.lan else { return }
+        change(["op": "lan", "text": on ? "on" : "off"])
+    }
+
+    func setAuth(_ auth: String) {
+        guard auth != view.auth else { return }
+        change(["op": "auth", "text": auth])
+    }
+
+    func setDNS(_ address: String) {
+        guard address != view.dns else { return }
+        change(["op": "dns", "text": address])
+    }
+
+    func close(connection id: String) {
+        Engine.measure(["op": "close", "name": id]) { _ in }
+    }
+
+    /// A server as a share link; it carries the keys of the server.
+    func link(server: String, then done: @escaping (String?, String?) -> Void) {
+        Engine.call(["op": "link", "server": server]) { reply in done(reply.link, reply.error) }
+    }
+
+    func editSubscription(_ name: String, address: String, agent: String, every: Int, skip: String, then done: @escaping (String?) -> Void) {
+        updating.insert(name)
+        changed()
+        Engine.subscription(["op": "subEdit", "name": name, "text": address, "agent": agent, "every": String(every), "skip": skip]) { [weak self] reply in
+            self?.updating.remove(name)
+            self?.take(reply, quiet: true)
+            done(reply.error)
+        }
+    }
+
+    func writeBackup(to path: String, then done: @escaping (String?) -> Void) {
+        Engine.call(["op": "backupWrite", "name": path]) { reply in done(reply.error) }
+    }
+
+    func readBackup(from path: String, then done: @escaping (String?) -> Void) {
+        Engine.call(["op": "backupRead", "name": path]) { [weak self] reply in
+            self?.take(reply, quiet: true)
+            done(reply.error)
+        }
+    }
+
     func setProtect(_ on: Bool) {
         // A running tunnel takes the new setting at once, which takes a moment.
         busy = status.running

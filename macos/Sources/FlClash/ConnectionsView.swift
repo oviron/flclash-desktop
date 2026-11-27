@@ -28,6 +28,9 @@ final class ConnectionsViewController: NSViewController, NSTableViewDataSource, 
         table.dataSource = self
         table.delegate = self
         table.setAccessibilityLabel(L("Connections"))
+        let menu = NSMenu()
+        menu.addItem(withTitle: L("Close Connection"), action: #selector(closeClicked), keyEquivalent: "").target = self
+        table.menu = menu
 
         let scroll = NSScrollView()
         scroll.documentView = table
@@ -86,6 +89,12 @@ final class ConnectionsViewController: NSViewController, NSTableViewDataSource, 
         } else {
             empty.isHidden = true
         }
+    }
+
+    @objc private func closeClicked() {
+        let row = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
+        guard row >= 0, row < rows.count else { return }
+        Model.shared.close(connection: rows[row].id)
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }

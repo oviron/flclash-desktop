@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -157,6 +158,8 @@ func (s *Supervisor) handle(conn net.Conn) {
 		resp.Stats, err = s.stats()
 	case OpExit:
 		resp.Exit, err = s.exit()
+	case OpClose:
+		err = s.closeConnection(req.ID)
 	default:
 		err = s.do(req)
 	}
@@ -217,6 +220,16 @@ func (s *Supervisor) apply(req Request) error {
 	default:
 		return fmt.Errorf("unknown mode %q", req.Mode)
 	}
+	if req.Auth != "" {
+		if err := compile.CheckAuth(req.Auth); err != nil {
+			return err
+		}
+	}
+	if req.DNS != "" {
+		if err := compile.CheckDNS(req.DNS); err != nil {
+			return err
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.orders++
@@ -255,6 +268,9 @@ func (s *Supervisor) run(req Request) error {
 		LocalPort: req.Port,
 		OS:        runtime.GOOS,
 		DirectDNS: s.directDNS,
+		LAN:       req.LAN,
+		Auth:      req.Auth,
+		RemoteDNS: req.DNS,
 	})
 	if err != nil {
 		return err
@@ -535,6 +551,22 @@ func (s *Supervisor) delay(req Request) (int, error) {
 		return 0, errors.New("the tunnel is off: there is no core to measure from")
 	}
 	return s.measure(req.Server)
+}
+
+var connectionID = regexp.MustCompile(`^[0-9a-fA-F-]{8,64}$`)
+
+// closeConnection closes one open connection of the core.
+func (s *Supervisor) closeConnection(id string) error {
+	if !connectionID.MatchString(id) {
+		return errors.New("that is not the name of a connection")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.core == nil {
+		return errors.New("nothing runs")
+	}
+	_, err := s.send(FrameClose, []byte(id))
+	return err
 }
 
 // exit asks, through the server that runs, what address sites see.

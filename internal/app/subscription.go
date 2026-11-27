@@ -24,12 +24,16 @@ type Subscription struct {
 	Total   int64  `json:"total"`
 	Expire  int64  `json:"expire"`
 	Problem string `json:"problem"`
+	Agent   string `json:"agent"`
+	Every   int    `json:"every"`
+	Skip    string `json:"skip"`
 }
 
 func subscriptions(state store.State) []Subscription {
 	out := []Subscription{}
 	for _, sub := range state.Subscriptions {
-		view := Subscription{Name: sub.Name, Used: sub.Used, Total: sub.Total, Expire: sub.Expire, Problem: sub.Problem}
+		view := Subscription{Name: sub.Name, Used: sub.Used, Total: sub.Total, Expire: sub.Expire, Problem: sub.Problem,
+			Agent: sub.Agent, Every: sub.Every, Skip: sub.Skip}
 		if u, err := url.Parse(sub.URL); err == nil {
 			view.Host = u.Host
 		}
@@ -55,13 +59,16 @@ type fetched struct {
 	used, total, expire int64
 }
 
-func fetch(address string) (fetched, error) {
+func fetch(address, agent string) (fetched, error) {
+	if agent == "" {
+		agent = subscriptionAgent
+	}
 	var out fetched
 	req, err := http.NewRequest(http.MethodGet, address, nil)
 	if err != nil {
 		return out, errors.New("the address does not read as one")
 	}
-	req.Header.Set("User-Agent", subscriptionAgent)
+	req.Header.Set("User-Agent", agent)
 	client := http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -166,7 +173,10 @@ func UpdateDue(st *store.Store) (int, error) {
 	}
 	done := 0
 	for _, sub := range state.Subscriptions {
-		hours := sub.Hours
+		hours := sub.Every
+		if hours <= 0 {
+			hours = sub.Hours
+		}
 		if hours <= 0 {
 			hours = defaultHours
 		}
@@ -177,6 +187,49 @@ func UpdateDue(st *store.Store) (int, error) {
 		done++
 	}
 	return done, nil
+}
+
+// EditSubscription changes how a subscription is read: the address, when a
+// new one is given; the client name told to the provider; how often, in
+// hours, zero leaving it to the provider; and the words that leave servers
+// out. Then it reads the subscription again.
+func EditSubscription(st *store.Store, name, address, agent string, every int, skip string) (ImportResult, error) {
+	state, err := st.Load()
+	if err != nil {
+		return ImportResult{}, err
+	}
+	address, agent = strings.TrimSpace(address), strings.TrimSpace(agent)
+	if address != "" {
+		u, err := url.Parse(address)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return ImportResult{}, errors.New("a subscription address starts with https://")
+		}
+	}
+	if every < 0 || every > 24*30 {
+		return ImportResult{}, errors.New("the interval is a number of hours, up to a month")
+	}
+	if strings.ContainsAny(agent, "\r\n") || len(agent) > 200 {
+		return ImportResult{}, errors.New("the client name is one short line")
+	}
+	for i := range state.Subscriptions {
+		sub := &state.Subscriptions[i]
+		if sub.Name != name {
+			continue
+		}
+		if address != "" {
+			sub.URL = address
+		}
+		sub.Agent, sub.Every, sub.Skip = agent, every, strings.TrimSpace(skip)
+		result, err := update(&state, i)
+		if err != nil {
+			sub.Problem = err.Error()
+		}
+		if saveErr := st.Save(state); saveErr != nil {
+			return result, saveErr
+		}
+		return result, err
+	}
+	return ImportResult{}, fmt.Errorf("no subscription %q", name)
 }
 
 // RemoveSubscription deletes a subscription and its servers.
@@ -219,7 +272,7 @@ func RemoveSubscription(st *store.Store, name string) error {
 func update(state *store.State, i int) (ImportResult, error) {
 	result := ImportResult{Imported: []Server{}, Failed: []Failure{}}
 	sub := &state.Subscriptions[i]
-	got, err := fetch(sub.URL)
+	got, err := fetch(sub.URL, sub.Agent)
 	if err != nil {
 		return result, err
 	}
@@ -229,7 +282,21 @@ func update(state *store.State, i int) (ImportResult, error) {
 	}
 	var servers []ingest.Server
 	names := map[string]int{}
+	var skip []string
+	for _, word := range strings.Split(sub.Skip, ",") {
+		if word = strings.ToLower(strings.TrimSpace(word)); word != "" {
+			skip = append(skip, word)
+		}
+	}
+	skipped := 0
+next:
 	for _, server := range parsed {
+		for _, word := range skip {
+			if strings.Contains(strings.ToLower(server.Name), word) {
+				skipped++
+				continue next
+			}
+		}
 		// Two servers of one name would be one row; the later ones get a number.
 		names[server.Name]++
 		if count := names[server.Name]; count > 1 {
@@ -240,6 +307,9 @@ func update(state *store.State, i int) (ImportResult, error) {
 	if len(servers) == 0 {
 		if n == 0 {
 			return result, errors.New("the provider gave an empty list")
+		}
+		if len(result.Failed) == 0 {
+			return result, fmt.Errorf("all %d servers were left out by the words to skip", skipped)
 		}
 		return result, fmt.Errorf("none of the %d entries could be read; the first: %s", n, result.Failed[0].Reason)
 	}

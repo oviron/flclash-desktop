@@ -38,6 +38,12 @@ type State struct {
 	Mode string `json:"mode,omitempty"`
 	// Port is the loopback port for HTTP and SOCKS; zero is DefaultPort.
 	Port int `json:"port,omitempty"`
+	// LAN opens the local port to the local network; Auth is the
+	// user:password it then asks of other devices; empty asks nothing.
+	LAN  bool   `json:"lan,omitempty"`
+	Auth string `json:"auth,omitempty"`
+	// DNS resolves names under the tunnel; empty is the default resolver.
+	DNS string `json:"dns,omitempty"`
 	// AutoConnect: the app turns the tunnel on when it starts.
 	AutoConnect bool `json:"autoConnect,omitempty"`
 	// Unprotected turns the full guard off: traffic may then leave past the
@@ -62,6 +68,14 @@ type Subscription struct {
 	Expire int64 `json:"expire,omitempty"`
 	// Problem is why the last update failed; empty after one that worked.
 	Problem string `json:"problem,omitempty"`
+	// Agent is the client name the provider is told; empty is this app's own.
+	Agent string `json:"agent,omitempty"`
+	// Every is how often to read it, in hours, when the user says so; zero
+	// leaves it to the provider.
+	Every int `json:"every,omitempty"`
+	// Skip leaves out the servers whose name has any of these words in it,
+	// written with commas between them.
+	Skip string `json:"skip,omitempty"`
 }
 
 // DefaultPort is the local port of a new setup, the one Clash clients use.
@@ -202,15 +216,24 @@ func (s *Store) policyPath(name string) string {
 	return filepath.Join(s.dir, "policies", name+".rules")
 }
 
-// ImportPolicy checks a policy document and stores it under a name.
-func (s *Store) ImportPolicy(name, text string) error {
+// Builtin says whether a name is that of a built-in policy.
+func (s *Store) Builtin(name string) (policy.Policy, bool) { return policy.Builtin(name) }
+
+// CheckPolicy says whether a document could be stored under a name.
+func (s *Store) CheckPolicy(name, text string) error {
 	if !policyName.MatchString(name) {
 		return fmt.Errorf("policy name %q: use lower-case letters, digits, - and _", name)
 	}
 	if _, isBuiltin := policy.Builtin(name); isBuiltin {
 		return fmt.Errorf("%q is a built-in policy and cannot be replaced", name)
 	}
-	if _, err := policy.Parse(name, text); err != nil {
+	_, err := policy.Parse(name, text)
+	return err
+}
+
+// ImportPolicy checks a policy document and stores it under a name.
+func (s *Store) ImportPolicy(name, text string) error {
+	if err := s.CheckPolicy(name, text); err != nil {
 		return err
 	}
 	return writeAtomic(s.policyPath(name), []byte(text))

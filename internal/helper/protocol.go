@@ -43,7 +43,7 @@ func LogPath() string { return "/var/log/flclash-helper.log" }
 // Version says which requests the installed helper understands. Raise it
 // whenever the helper or the core it runs has to be reinstalled for the app to
 // work: a new rule type, a new server field, a change of this protocol.
-const Version = 10
+const Version = 11
 
 // Operations of Request.Op.
 const (
@@ -53,6 +53,8 @@ const (
 	// OpDelay measures a server from inside the running core; with the tunnel
 	// off the caller runs the core itself, without privileges.
 	OpDelay = "delay"
+	// OpClose closes one open connection of the core.
+	OpClose = "close"
 	// OpExit asks, through the server that runs, what address sites see.
 	OpExit = "exit"
 	// OpStats reads the traffic counters and the open connections of the core.
@@ -74,6 +76,7 @@ const (
 	FrameDelay  = 'd' // body: a CoreDelay
 	FrameStats  = 's' // no body; the answer carries Stats
 	FrameExit   = 'x' // body: a CoreDelay; the answer carries Exit
+	FrameClose  = 'k' // body: the ID of a connection
 )
 
 // ExitURL is asked through the server for the address the request came from.
@@ -164,6 +167,14 @@ type Request struct {
 	// Port is the loopback port for HTTP and SOCKS. The proxy modes need one;
 	// with the tunnel it is an extra door, and zero leaves it shut.
 	Port int `json:"port,omitempty"`
+	// LAN opens the local port to the local network; Auth, when not empty,
+	// is the user:password it then asks of everyone but this machine.
+	LAN  bool   `json:"lan,omitempty"`
+	Auth string `json:"auth,omitempty"`
+	// DNS, when not empty, resolves names under the tunnel.
+	DNS string `json:"dns,omitempty"`
+	// ID names a connection for OpClose.
+	ID string `json:"id,omitempty"`
 	// Protect asks that nothing go past the core, also when the core dies.
 	// With the tunnel that is the full guard; without Protect only IPv6 is
 	// closed while the tunnel is up. In the system mode it means the system
@@ -216,6 +227,12 @@ type Response struct {
 func Call(req Request, timeout time.Duration) (Status, error) {
 	resp, err := call(req, timeout)
 	return resp.Status, err
+}
+
+// CloseConnection closes one open connection of the running core.
+func CloseConnection(id string) error {
+	_, err := call(Request{Op: OpClose, ID: id}, 10*time.Second)
+	return err
 }
 
 // ReadExit asks where the server that runs lets traffic out.

@@ -4,6 +4,8 @@ package compile
 import (
 	"errors"
 	"fmt"
+	"net/netip"
+	"net/url"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -29,6 +31,48 @@ type Input struct {
 	// the tunnel took the system resolver over. Names that go out directly are
 	// resolved through them, as they would be with no tunnel.
 	DirectDNS []string
+	// LAN lets other devices of the local network use the local port.
+	LAN bool
+	// Auth, when not empty, is the "user:password" the local port asks of
+	// everyone but this machine.
+	Auth string
+	// RemoteDNS, when not empty, resolves names for what goes through the
+	// tunnel instead of the default resolver.
+	RemoteDNS string
+}
+
+// DefaultDNS resolves names under the tunnel unless another is set.
+const DefaultDNS = "https://9.9.9.9/dns-query"
+
+// CheckDNS says whether a resolver address is one of the forms taken:
+// https://host/path, tls://host or a bare address.
+func CheckDNS(address string) error {
+	if _, err := netip.ParseAddr(address); err == nil {
+		return nil
+	}
+	u, err := url.Parse(address)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "tls") || u.Hostname() == "" || u.User != nil ||
+		strings.ContainsAny(address, " \t\n\"'#") {
+		return fmt.Errorf("%q is not a resolver: use https://host/dns-query, tls://host or an address", address)
+	}
+	return nil
+}
+
+// CheckAuth says whether a login is in the form the local port takes.
+func CheckAuth(auth string) error {
+	user, password, ok := strings.Cut(auth, ":")
+	plain := func(s string) bool {
+		for _, r := range s {
+			if r <= ' ' || r > '~' {
+				return false
+			}
+		}
+		return s != "" && len(s) <= 64
+	}
+	if !ok || !plain(user) || !plain(password) || strings.Contains(user, ":") {
+		return errors.New("the login is user:password, in Latin letters, digits and signs, with no spaces")
+	}
+	return nil
 }
 
 // Proxy is a server the way the core takes one: its settings under its name.
@@ -60,8 +104,8 @@ func Config(in Input) ([]byte, error) {
 		// Connections are shown from the counters of the core, not from its
 		// log: a line per connection would only grow the file.
 		"log-level":       "warning",
-		"allow-lan":       false,
-		"bind-address":    "127.0.0.1",
+		"allow-lan":       in.LAN,
+		"bind-address":    map[bool]string{false: "127.0.0.1", true: "*"}[in.LAN],
 		"geo-auto-update": false,
 		"profile":         map[string]any{"store-selected": false, "store-fake-ip": false},
 		"proxies":         []any{proxy},
@@ -96,8 +140,23 @@ func Config(in Input) ([]byte, error) {
 	if in.LocalPort != 0 {
 		cfg["mixed-port"] = in.LocalPort
 	}
+	if in.Auth != "" {
+		if err := CheckAuth(in.Auth); err != nil {
+			return nil, err
+		}
+		cfg["authentication"] = []string{in.Auth}
+		// This machine is not asked: what runs here is the user's own.
+		cfg["skip-auth-prefixes"] = []string{"127.0.0.1/8", "::1/128"}
+	}
+	remote := DefaultDNS
+	if in.RemoteDNS != "" {
+		if err := CheckDNS(in.RemoteDNS); err != nil {
+			return nil, err
+		}
+		remote = in.RemoteDNS
+	}
 	if in.TUN {
-		tun(cfg, in.OS, in.DirectDNS)
+		tun(cfg, in.OS, in.DirectDNS, remote)
 	} else {
 		// With no TUN there is nothing to hijack; names resolve through the system.
 		cfg["dns"] = map[string]any{"enable": false}
@@ -105,12 +164,12 @@ func Config(in Input) ([]byte, error) {
 	return yaml.Marshal(cfg)
 }
 
-func tun(cfg map[string]any, os string, directDNS []string) {
+func tun(cfg map[string]any, os string, directDNS []string, remote string) {
 	// Once the tunnel is up the system resolver is the core itself, so the
 	// core cannot ask "the system" for the address of a direct destination or
 	// of its own server. It asks the network's resolvers, with a public one
 	// behind them for a network that changed since they were read.
-	outside := append(append([]string{}, directDNS...), "https://9.9.9.9/dns-query")
+	outside := append(append([]string{}, directDNS...), DefaultDNS)
 	device := map[string]any{
 		"enable":                true,
 		"stack":                 "mips",
@@ -136,7 +195,7 @@ func tun(cfg map[string]any, os string, directDNS []string) {
 		"fake-ip-range": "198.18.0.1/16",
 		// Queries follow the routing policy like any other connection.
 		"respect-rules":           true,
-		"nameserver":              []string{"https://9.9.9.9/dns-query"},
+		"nameserver":              []string{remote},
 		"default-nameserver":      []string{"9.9.9.9", "94.140.14.14"},
 		"proxy-server-nameserver": outside,
 		"direct-nameserver":       outside,

@@ -393,7 +393,9 @@ final class HeaderView: NSView {
         policies.isEnabled = !model.busy
 
         if !copied {
-            address.title = "127.0.0.1:" + String(status.running && status.port > 0 ? status.port : model.view.port)
+            // Open to the network, the port is reached by this Mac's address there.
+            let host = model.view.lan ? (lanAddress() ?? "127.0.0.1") : "127.0.0.1"
+            address.title = host + ":" + String(status.running && status.port > 0 ? status.port : model.view.port)
         }
 
         button.title = status.running ? L("Disconnect") : (status.blocked ? L("Connect Again") : L("Connect"))
@@ -489,6 +491,25 @@ final class HeaderView: NSView {
             Model.shared.refresh()
         }
     }
+}
+
+/// The address of this Mac in the local network, if it has one.
+func lanAddress() -> String? {
+    var list: UnsafeMutablePointer<ifaddrs>?
+    guard getifaddrs(&list) == 0, let first = list else { return nil }
+    defer { freeifaddrs(list) }
+    for pointer in sequence(first: first, next: { $0.pointee.ifa_next }) {
+        let entry = pointer.pointee
+        guard let raw = entry.ifa_addr, raw.pointee.sa_family == UInt8(AF_INET),
+              entry.ifa_flags & UInt32(IFF_UP) != 0, entry.ifa_flags & UInt32(IFF_LOOPBACK) == 0,
+              String(cString: entry.ifa_name).hasPrefix("en") else { continue }
+        var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        if getnameinfo(raw, socklen_t(raw.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
+            let address = String(cString: host)
+            if address.hasPrefix("10.") || address.hasPrefix("192.168.") || address.hasPrefix("172.") { return address }
+        }
+    }
+    return nil
 }
 
 /// A number of bytes for people.

@@ -54,6 +54,12 @@ type View struct {
 	AutoConnect bool `json:"autoConnect"`
 	// Subscriptions are the groups that are filled from an address.
 	Subscriptions []Subscription `json:"subscriptions"`
+	// LAN: other devices of the local network may use the local port; Auth
+	// is the user:password asked of them, empty for none.
+	LAN  bool   `json:"lan"`
+	Auth string `json:"auth"`
+	// DNS resolves names under the tunnel.
+	DNS string `json:"dns"`
 }
 
 // Snapshot reads the current state.
@@ -66,7 +72,8 @@ func Snapshot(st *store.Store) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	view := View{Servers: []Server{}, Selected: state.Selected, Policies: []Policy{}, Policy: state.Policy, Protect: !state.Unprotected, Mode: mode(state), Port: state.LocalPort(), AutoConnect: state.AutoConnect, Subscriptions: subscriptions(state)}
+	view := View{Servers: []Server{}, Selected: state.Selected, Policies: []Policy{}, Policy: state.Policy, Protect: !state.Unprotected, Mode: mode(state), Port: state.LocalPort(), AutoConnect: state.AutoConnect, Subscriptions: subscriptions(state),
+		LAN: state.LAN, Auth: state.Auth, DNS: dns(state)}
 	for _, name := range names {
 		_, isBuiltin := policy.Builtin(name)
 		p, _ := st.Policy(name)
@@ -252,6 +259,9 @@ func On(st *store.Store) (helper.Status, error) {
 		Protect:  !state.Unprotected,
 		Mode:     mode(state),
 		Port:     state.LocalPort(),
+		LAN:      state.LAN,
+		Auth:     state.Auth,
+		DNS:      state.DNS,
 	}, 90*time.Second)
 }
 
@@ -305,6 +315,53 @@ func SetAutoConnect(st *store.Store, on bool) error {
 	}
 	state.AutoConnect = on
 	return st.Save(state)
+}
+
+func dns(state store.State) string {
+	if state.DNS == "" {
+		return compile.DefaultDNS
+	}
+	return state.DNS
+}
+
+// SetLAN opens the local port to the local network, or closes it.
+func SetLAN(st *store.Store, on bool) error {
+	return change(st, func(state *store.State) error {
+		state.LAN = on
+		return nil
+	})
+}
+
+// SetAuth sets the user:password other devices give at the local port; an
+// empty one asks for none.
+func SetAuth(st *store.Store, auth string) error {
+	auth = strings.TrimSpace(auth)
+	return change(st, func(state *store.State) error {
+		if auth != "" {
+			if err := compile.CheckAuth(auth); err != nil {
+				return err
+			}
+		}
+		state.Auth = auth
+		return nil
+	})
+}
+
+// SetDNS sets the resolver used under the tunnel; an empty one, or the
+// default one, goes back to the default.
+func SetDNS(st *store.Store, address string) error {
+	address = strings.TrimSpace(address)
+	return change(st, func(state *store.State) error {
+		if address == "" || address == compile.DefaultDNS {
+			state.DNS = ""
+			return nil
+		}
+		if err := compile.CheckDNS(address); err != nil {
+			return err
+		}
+		state.DNS = address
+		return nil
+	})
 }
 
 // SetPort chooses the local port.
@@ -402,4 +459,26 @@ func localDelay(server ingest.Server) (int, error) {
 		return 0, errors.New(reply.Error)
 	}
 	return reply.Delay, nil
+}
+
+// checkStored says whether a stored server is one the helper would run.
+func checkStored(entry store.Entry) error {
+	if entry.ID == "" {
+		return errors.New("a server has no ID")
+	}
+	return ingest.Check(entry.Server)
+}
+
+// Link writes a stored server as a share link. The link carries the
+// credentials of the server.
+func Link(st *store.Store, ref string) (string, error) {
+	state, err := st.Load()
+	if err != nil {
+		return "", err
+	}
+	entry, err := state.Find(ref)
+	if err != nil {
+		return "", err
+	}
+	return ingest.Link(entry.Server)
 }

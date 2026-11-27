@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -41,8 +42,9 @@ func names(t *testing.T, st *store.Store, group string) string {
 func TestSubscription(t *testing.T) {
 	body := ""
 	status := http.StatusOK
+	wantAgent := subscriptionAgent
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("User-Agent") != subscriptionAgent {
+		if r.Header.Get("User-Agent") != wantAgent {
 			t.Errorf("got the agent %q", r.Header.Get("User-Agent"))
 		}
 		w.Header().Set("Profile-Update-Interval", "6")
@@ -106,6 +108,22 @@ func TestSubscription(t *testing.T) {
 		}
 	}
 
+	// Settings: another client name, an interval, words that leave servers out.
+	status, body = http.StatusOK, "hy2://p@a.example:443#Amsterdam\nhy2://p@b.example:443#Moscow x2\nhy2://p@c.example:443#Info: 30 days left\n"
+	wantAgent = "clash-verge/v2"
+	if _, err := EditSubscription(st, "work", "", "clash-verge/v2", 3, "info:, MOSCOW"); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(t, st, "work"); got != "Amsterdam" {
+		t.Fatalf("got %q", got)
+	}
+	if view, _ = Snapshot(st); view.Subscriptions[0].Every != 3 || view.Subscriptions[0].Agent != "clash-verge/v2" {
+		t.Fatalf("got %+v", view.Subscriptions[0])
+	}
+	if _, err := EditSubscription(st, "work", "ftp://x", "", 0, ""); err == nil {
+		t.Fatal("a bad address must be refused")
+	}
+
 	if _, err := AddSubscription(st, "work", provider.URL); err == nil {
 		t.Fatal("a second subscription of the same name must be refused")
 	}
@@ -155,5 +173,54 @@ func TestPolicyDocuments(t *testing.T) {
 	}
 	if err := WritePolicyLists(st, "mine", policy.Lists{Direct: []string{"two words"}, Rest: "PROXY"}); err == nil {
 		t.Fatal("a bad entry must refuse the save")
+	}
+}
+
+func TestBackup(t *testing.T) {
+	st := open(t)
+	if _, err := Import(st, "default", "hy2://p@a.example:443#one\nhy2://p@b.example:443#two\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := WritePolicy(st, "mine", "DOMAIN-SUFFIX,corp.example,DIRECT\nMATCH,PROXY\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Select(st, "two", "mine"); err != nil {
+		t.Fatal(err)
+	}
+	file := t.TempDir() + "/backup.json"
+	if err := WriteBackup(st, file); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := Snapshot(st)
+
+	// Another setup takes its place, then the backup comes back.
+	other := open(t)
+	if _, err := Import(other, "default", "hy2://p@z.example:443#zed\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := WritePolicy(other, "theirs", "MATCH,DIRECT\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReadBackup(other, file); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := Snapshot(other)
+	if len(after.Servers) != 2 || after.Selected != before.Selected || after.Policy != "mine" || names(t, other, "default") != "one,two" {
+		t.Fatalf("got %+v", after)
+	}
+	if _, err := ReadPolicy(other, "theirs"); err == nil {
+		t.Fatal("a policy that is not in the backup must be gone")
+	}
+
+	// A file that is not a backup, or holds what cannot be used, changes nothing.
+	for _, text := range []string{"{}", "not json", `{"flclashBackup":1,"state":{"servers":[{"id":"x","name":"bad","proxy":{"type":"ssh","server":"a"}}]},"policies":{}}`} {
+		bad := t.TempDir() + "/bad.json"
+		_ = os.WriteFile(bad, []byte(text), 0o600)
+		if err := ReadBackup(other, bad); err == nil {
+			t.Errorf("%q must be refused", text)
+		}
+		if names(t, other, "default") != "one,two" {
+			t.Fatal("a refused restore changed the servers")
+		}
 	}
 }
