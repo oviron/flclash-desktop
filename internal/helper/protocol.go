@@ -20,7 +20,7 @@ import (
 // Version says which requests the installed helper understands. Raise it
 // whenever the helper or the core it runs has to be reinstalled for the app to
 // work: a new rule type, a new server field, a change of this protocol.
-const Version = 12
+const Version = 13
 
 // Operations of Request.Op.
 const (
@@ -106,6 +106,8 @@ type CoreDelay struct {
 	Proxy     map[string]any `json:"proxy"`
 	URL       string         `json:"url"`
 	TimeoutMS int            `json:"timeout_ms"`
+	// Lang is the language of the answer's error, as Request.Lang.
+	Lang string `json:"lang,omitempty"`
 }
 
 // CoreReply is the core's answer to a frame, one JSON line.
@@ -170,9 +172,11 @@ type Status struct {
 	// Captured: what the mode promises is in place: the tunnel device is
 	// present, or the local port answers. Only this, not Running, means
 	// traffic can go through.
-	Captured bool      `json:"captured"`
-	Mode     string    `json:"mode,omitempty"`
-	Port     int       `json:"port,omitempty"`
+	Captured bool   `json:"captured"`
+	Mode     string `json:"mode,omitempty"`
+	Port     int    `json:"port,omitempty"`
+	// LAN: the port is open to the local network, not only to this host.
+	LAN      bool      `json:"lan,omitempty"`
 	Server   string    `json:"server,omitempty"`
 	Policy   string    `json:"policy,omitempty"`
 	Revision int64     `json:"revision,omitempty"`

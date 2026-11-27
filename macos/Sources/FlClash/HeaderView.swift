@@ -393,8 +393,10 @@ final class HeaderView: NSView {
         policies.isEnabled = !model.busy
 
         if !copied {
-            // Open to the network, the port is reached by this Mac's address there.
-            let host = model.view.lan ? (lanAddress() ?? "127.0.0.1") : "127.0.0.1"
+            // Open to the network, the port is reached by this Mac's address there;
+            // what runs says so itself, the setting is for when nothing does.
+            let open = status.running ? status.lan : model.view.lan
+            let host = open ? (lanAddress() ?? "127.0.0.1") : "127.0.0.1"
             address.title = host + ":" + String(status.running && status.port > 0 ? status.port : model.view.port)
         }
 

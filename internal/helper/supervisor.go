@@ -78,6 +78,8 @@ type Supervisor struct {
 	directDNS []string
 	// last is the request that runs, or ran when the core died.
 	last Request
+	// lang is the language of the last apply, given to a core when it starts.
+	lang string
 	// orders counts what the user asked for; a recovery started before the
 	// latest order gives up.
 	orders int
@@ -244,6 +246,8 @@ func (s *Supervisor) apply(req Request) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.orders++
+	// A core started for this request answers in its language.
+	s.lang = req.Lang
 	return s.run(req)
 }
 
@@ -342,7 +346,7 @@ func (s *Supervisor) run(req Request) error {
 	if fresh {
 		since = time.Now()
 	}
-	s.status = Status{Running: true, Mode: req.Mode, Port: req.Port, Server: req.Server.Name, Policy: req.Policy, Revision: req.Revision, Since: since}
+	s.status = Status{Running: true, Mode: req.Mode, Port: req.Port, LAN: req.LAN, Server: req.Server.Name, Policy: req.Policy, Revision: req.Revision, Since: since}
 	s.last = req
 	if tunnel {
 		// The guard goes on before anyone is told the tunnel is up.
@@ -399,12 +403,12 @@ func (s *Supervisor) engage(req Request) {
 	// The full guard refuses everything but the core. If it refused the core
 	// as well, the tunnel would be up and dead; ask the core to reach the
 	// server and see.
-	if _, err := s.measure(req.Server); err == nil {
+	if _, err := s.measure(req.Server, req.Lang); err == nil {
 		s.guardProven = true
 		return
 	}
 	_ = s.Guard.Engage(tun, s.CoreGID, false)
-	if _, err := s.measure(req.Server); err != nil {
+	if _, err := s.measure(req.Server, req.Lang); err != nil {
 		// The server does not answer either way: the guard is not the cause.
 		if err := s.Guard.Engage(tun, s.CoreGID, true); err != nil {
 			s.status.Guard, s.status.guardErr = GuardIPv6, err
@@ -432,6 +436,9 @@ func (s *Supervisor) start(tunnel bool) error {
 	cmd, err := s.coreCommand(tunnel)
 	if err != nil {
 		return err
+	}
+	if s.lang != "" {
+		cmd.Args = append(cmd.Args, "-lang", s.lang)
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -547,7 +554,7 @@ func (s *Supervisor) delay(req Request) (int, error) {
 	if s.core == nil {
 		return 0, say.New("the tunnel is off: there is no core to measure from")
 	}
-	return s.measure(req.Server)
+	return s.measure(req.Server, req.Lang)
 }
 
 var connectionID = regexp.MustCompile(`^[0-9a-fA-F-]{8,64}$`)
@@ -588,6 +595,7 @@ func (s *Supervisor) exit(req Request) (*Exit, error) {
 		Proxy:     compile.Proxy(server),
 		URL:       ExitURL,
 		TimeoutMS: int(DelayTimeout / time.Millisecond),
+		Lang:      req.Lang,
 	})
 	if err != nil {
 		return nil, err
@@ -620,11 +628,12 @@ func (s *Supervisor) stats() (*Stats, error) {
 }
 
 // measure asks the core for the delay of a server. Caller holds mu.
-func (s *Supervisor) measure(server ingest.Server) (int, error) {
+func (s *Supervisor) measure(server ingest.Server, lang string) (int, error) {
 	body, err := json.Marshal(CoreDelay{
 		Proxy:     compile.Proxy(server),
 		URL:       DelayURL,
 		TimeoutMS: int(DelayTimeout / time.Millisecond),
+		Lang:      lang,
 	})
 	if err != nil {
 		return 0, err

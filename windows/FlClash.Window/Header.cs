@@ -336,8 +336,10 @@ public sealed class Header
 
         if (!copied)
         {
-            // Open to the network, the port is reached by this computer's address there.
-            var host = s.View.Lan ? Format.LanAddress() ?? "127.0.0.1" : "127.0.0.1";
+            // Open to the network, the port is reached by this computer's address there;
+            // what runs says so itself, the setting is for when nothing does.
+            var open = st.Running ? st.Lan : s.View.Lan;
+            var host = open ? Format.LanAddress() ?? "127.0.0.1" : "127.0.0.1";
             addressText.Text = host + ":" + (st.Running && st.Port > 0 ? st.Port : s.View.Port);
         }
 

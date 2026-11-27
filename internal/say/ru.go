@@ -170,4 +170,12 @@ var ru = map[string]string{
 	"the helper was not installed; to see why, run %s as administrator":                              "помощник не установлен; чтобы узнать причину, запустите %s от имени администратора",
 	"the window did not open: %w":                                                                    "окно не открылось: %w",
 	"another program holds the address FlClash listens on":                                           "адрес, на котором работает FlClash, занят другой программой",
+
+	// The core: its own answers.
+	"the core refused the server: %w":                      "ядро не приняло сервер: %w",
+	"the core refused the config: %w":                      "ядро не приняло конфигурацию: %w",
+	"no answer in %d ms":                                   "нет ответа за %d мс",
+	"the service did not say the address (status %d)":      "сервис не сообщил адрес (код %d)",
+	"the connection to the server closed between requests": "соединение с сервером закрылось между запросами",
+	"the connection is gone already":                       "соединение уже закрыто",
 }

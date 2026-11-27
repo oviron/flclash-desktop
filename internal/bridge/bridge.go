@@ -52,8 +52,10 @@ type Status struct {
 	// Guard is "full" when nothing leaves past the tunnel, "ipv6" when only
 	// IPv6 is closed, empty when there is no guard.
 	// Mode and Port say what runs: "tun", "system" or "proxy", and the local port.
-	Mode         string `json:"mode"`
-	Port         int    `json:"port"`
+	Mode string `json:"mode"`
+	Port int    `json:"port"`
+	// LAN: the running port is open to the local network too.
+	LAN          bool   `json:"lan"`
 	Guard        string `json:"guard"`
 	GuardProblem string `json:"guardProblem"`
 	// Blocked: the tunnel is gone and the guard holds the host closed.
@@ -82,7 +84,7 @@ type Reply struct {
 
 func toStatus(s helper.Status, err error) *Status {
 	out := &Status{Installed: true, Running: s.Running, Captured: s.Captured, Server: s.Server, Policy: s.Policy,
-		Mode: s.Mode, Port: s.Port, Guard: s.Guard, GuardProblem: s.GuardProblem, Blocked: s.Blocked}
+		Mode: s.Mode, Port: s.Port, LAN: s.LAN, Guard: s.Guard, GuardProblem: s.GuardProblem, Blocked: s.Blocked}
 	out.Outdated = err == nil && s.Version != helper.Version
 	if !s.Since.IsZero() {
 		out.Since = s.Since.Unix()

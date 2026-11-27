@@ -16,6 +16,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/binary"
 	"encoding/json"
 	"flag"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/oviron/flclash-desktop/internal/core"
 	"github.com/oviron/flclash-desktop/internal/helper"
+	"github.com/oviron/flclash-desktop/internal/say"
 )
 
 func main() {
@@ -39,6 +41,7 @@ func main() {
 	verdicts := flag.Uint64("verdicts", 3, "the descriptor, or on Windows the handle, the answers go to")
 	delayOnce := flag.Bool("delay", false, "measure the server on stdin and exit")
 	exitOnce := flag.Bool("exit", false, "ask through the server on stdin where it lets traffic out, and exit")
+	lang := flag.String("lang", "", "the language of the answers' errors, as the helper's requests say it")
 	flag.Parse()
 	if *delayOnce || *exitOnce {
 		// Stdout carries the answer alone.
@@ -48,9 +51,9 @@ func main() {
 		if err != nil {
 			reply.Error = err.Error()
 		} else if *exitOnce {
-			reply = exit(body)
+			reply = exit(body, *lang)
 		} else {
-			reply = delay(body)
+			reply = delay(body, *lang)
 		}
 		_ = json.NewEncoder(os.Stdout).Encode(reply)
 		return
@@ -70,15 +73,15 @@ func main() {
 		switch kind, body := frame[0], frame[1:]; kind {
 		case helper.FrameConfig:
 			if err := core.Apply(*home, body); err != nil {
-				reply.Error = err.Error()
+				reply.Error = say.In(*lang, err)
 			}
 		case helper.FrameDelay:
-			reply = delay(body)
+			reply = delay(body, *lang)
 		case helper.FrameExit:
-			reply = exit(body)
+			reply = exit(body, *lang)
 		case helper.FrameClose:
 			if !core.Close(string(body)) {
-				reply.Error = "the connection is gone already"
+				reply.Error = say.In(*lang, say.New("the connection is gone already"))
 			}
 		case helper.FrameStats:
 			stats := core.Stats()
@@ -93,27 +96,29 @@ func main() {
 	core.Stop()
 }
 
-func delay(body []byte) helper.CoreReply {
+// delay measures one server. An error reads in the language of the request,
+// or else in the one the core was started with.
+func delay(body []byte, lang string) helper.CoreReply {
 	var req helper.CoreDelay
 	if err := json.Unmarshal(body, &req); err != nil {
 		return helper.CoreReply{Error: "bad delay request: " + err.Error()}
 	}
 	ms, err := core.Delay(req.Proxy, req.URL, time.Duration(req.TimeoutMS)*time.Millisecond)
 	if err != nil {
-		return helper.CoreReply{Error: err.Error()}
+		return helper.CoreReply{Error: say.In(cmp.Or(req.Lang, lang), err)}
 	}
 	// A delay of zero would read as no answer.
 	return helper.CoreReply{Delay: max(ms, 1)}
 }
 
-func exit(body []byte) helper.CoreReply {
+func exit(body []byte, lang string) helper.CoreReply {
 	var req helper.CoreDelay
 	if err := json.Unmarshal(body, &req); err != nil {
 		return helper.CoreReply{Error: "bad exit request: " + err.Error()}
 	}
 	exit, err := core.Exit(req.Proxy, req.URL, time.Duration(req.TimeoutMS)*time.Millisecond)
 	if err != nil {
-		return helper.CoreReply{Error: err.Error()}
+		return helper.CoreReply{Error: say.In(cmp.Or(req.Lang, lang), err)}
 	}
 	return helper.CoreReply{Exit: &exit}
 }

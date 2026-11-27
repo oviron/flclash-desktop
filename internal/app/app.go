@@ -501,6 +501,7 @@ func callCore(mode string, server ingest.Server, url string) (helper.CoreReply, 
 		Proxy:     compile.Proxy(server),
 		URL:       url,
 		TimeoutMS: int(helper.DelayTimeout / time.Millisecond),
+		Lang:      say.Language(),
 	})
 	if err != nil {
 		return helper.CoreReply{}, err

@@ -113,9 +113,11 @@ struct TunnelStatus: Decodable, Equatable {
     /// What runs: "tun", "system" or "proxy", and the local port (0: none).
     var mode = ""
     var port = 0
+    /// The running port is open to the local network too.
+    var lan = false
 
     enum CodingKeys: String, CodingKey {
-        case installed, outdated, running, captured, server, policy, since, guardProblem, blocked, mode, port
+        case installed, outdated, running, captured, server, policy, since, guardProblem, blocked, mode, port, lan
         case guard_ = "guard"
     }
 }

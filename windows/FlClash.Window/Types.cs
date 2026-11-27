@@ -66,6 +66,8 @@ public sealed class TunnelStatus
     public long Since { get; set; }
     public string Mode { get; set; } = "";
     public int Port { get; set; }
+    /// The running port is open to the local network too.
+    public bool Lan { get; set; }
     public string Guard { get; set; } = "";
     public string GuardProblem { get; set; } = "";
     public bool Blocked { get; set; }

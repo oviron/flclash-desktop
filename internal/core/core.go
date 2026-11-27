@@ -3,8 +3,6 @@ package core
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -22,6 +20,7 @@ import (
 	"github.com/metacubex/mihomo/tunnel/statistic"
 
 	"github.com/oviron/flclash-desktop/internal/helper"
+	"github.com/oviron/flclash-desktop/internal/say"
 )
 
 var mu sync.Mutex
@@ -37,7 +36,7 @@ func Apply(homeDir string, config []byte) error {
 	C.SetHomeDir(homeDir)
 	parsed, err := executor.ParseWithBytes(config)
 	if err != nil {
-		return fmt.Errorf("the core refused the config: %w", err)
+		return say.Errorf("the core refused the config: %w", err)
 	}
 	executor.ApplyConfig(parsed, true)
 	return nil
@@ -111,7 +110,7 @@ func Exit(proxy map[string]any, rawURL string, timeout time.Duration) (helper.Ex
 	}
 	exit, ok := parseTrace(string(body))
 	if resp.StatusCode != http.StatusOK || !ok {
-		return helper.Exit{}, fmt.Errorf("the service did not say the address (status %d)", resp.StatusCode)
+		return helper.Exit{}, say.Errorf("the service did not say the address (status %d)", resp.StatusCode)
 	}
 	return exit, nil
 }
@@ -157,7 +156,7 @@ func (l *link) do(method string) (*http.Response, error) {
 // fail says "no answer" for an error that is the deadline passing.
 func (l *link) fail(err error) error {
 	if l.ctx.Err() != nil {
-		return fmt.Errorf("no answer in %s", l.wait)
+		return say.Errorf("no answer in %d ms", l.wait.Milliseconds())
 	}
 	return err
 }
@@ -165,7 +164,7 @@ func (l *link) fail(err error) error {
 func through(proxy map[string]any, rawURL string, timeout time.Duration) (*link, error) {
 	p, err := adapter.ParseProxy(proxy)
 	if err != nil {
-		return nil, fmt.Errorf("the core refused the server: %w", err)
+		return nil, say.Errorf("the core refused the server: %w", err)
 	}
 	target, err := url.Parse(rawURL)
 	if err != nil {
@@ -197,7 +196,7 @@ func through(proxy map[string]any, rawURL string, timeout time.Duration) (*link,
 		Transport: &http.Transport{
 			DialContext: func(context.Context, string, string) (net.Conn, error) {
 				if dialed {
-					return nil, errors.New("the connection to the server closed between requests")
+					return nil, say.New("the connection to the server closed between requests")
 				}
 				dialed = true
 				return conn, nil

@@ -61,14 +61,19 @@ func describe(s helper.Status) string {
 		return fmt.Sprintf("NOT WORKING: the core runs with %s, policy %s, but the tunnel device or the local port is missing", s.Server, s.Policy)
 	}
 	since := s.Since.Local().Format("15:04:05")
+	// Open to the network, the port is reached by this host's addresses there too.
+	lan := ""
+	if s.LAN {
+		lan = "; the port is open to the local network too"
+	}
 	switch s.Mode {
 	case helper.ModeSystem:
-		return fmt.Sprintf("on: %s, policy %s, since %s; system proxy on 127.0.0.1:%d", s.Server, s.Policy, since, s.Port)
+		return fmt.Sprintf("on: %s, policy %s, since %s; system proxy on 127.0.0.1:%d%s", s.Server, s.Policy, since, s.Port, lan)
 	case helper.ModeProxy:
-		return fmt.Sprintf("on: %s, policy %s, since %s; proxy on 127.0.0.1:%d, the system is not told", s.Server, s.Policy, since, s.Port)
+		return fmt.Sprintf("on: %s, policy %s, since %s; proxy on 127.0.0.1:%d, the system is not told%s", s.Server, s.Policy, since, s.Port, lan)
 	}
 	if s.Port != 0 {
-		guard += fmt.Sprintf("; proxy on 127.0.0.1:%d", s.Port)
+		guard += fmt.Sprintf("; proxy on 127.0.0.1:%d%s", s.Port, lan)
 	}
 	return fmt.Sprintf("on: %s, policy %s, since %s; %s", s.Server, s.Policy, since, guard)
 }
