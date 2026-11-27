@@ -47,18 +47,27 @@ xattr -dr com.apple.quarantine /Applications/FlClash.app
 
 **Windows** 10 2004 or later, x64 or Arm64: run
 `FlClash-<version>-windows-<arch>-setup.exe`. It installs for the current user
-and needs no administrator rights. The zip of the same name is the same app
-without an installer. The files are not signed by Microsoft yet, so SmartScreen
-may stop the first start: click More info, then Run anyway.
+and needs no administrator rights. The files are not signed by Microsoft yet,
+so SmartScreen may stop the first start: click More info, then Run anyway.
 
-To remove the helper TUN installed, before removing the app:
+**Portable, Windows**: unpack `FlClash-<version>-windows-<arch>-portable.zip`
+anywhere, a USB stick included, and run `FlClash.exe`. A file named `portable`
+beside it keeps the servers and settings in the `data` folder next to it, so
+the folder can be carried to another computer. That folder holds the keys of
+your servers: keep it where others cannot read it. TUN works as in the
+installed app: the first time it is turned on, on each computer, the system
+asks for an administrator and installs the helper.
+
+The helper stays on the computer when the app is gone. To remove it, open
+Settings, System helper, and click Remove, with the connection off; do this
+before you remove the app or leave a computer with a portable copy. From the
+command line:
 
 ```sh
 sudo /Applications/FlClash.app/Contents/MacOS/flclashctl helper uninstall
 ```
 
-On Windows, in PowerShell as administrator, from the app's folder
-(`%LOCALAPPDATA%\Programs\FlClash` for the installer):
+On Windows, in PowerShell as administrator, from the app's folder:
 
 ```powershell
 .\flclashctl.exe helper uninstall

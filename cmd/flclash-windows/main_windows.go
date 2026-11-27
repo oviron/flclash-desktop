@@ -104,6 +104,7 @@ func main() {
 		App:           h.app,
 		Open:          h.open,
 		InstallHelper: h.installHelper,
+		RemoveHelper:  h.removeHelper,
 		SetHotKey:     h.setHotKey,
 		SetLogin:      h.setLogin,
 		Quit:          h.quit,
@@ -154,6 +155,11 @@ func (h *host) open(page string) {
 	}
 	path := filepath.Join(h.dir, "window", "FlClash.Window.exe")
 	args := []string{"--pipe", h.pipe}
+	// The window keeps its own settings beside the engine's, a portable
+	// copy's included.
+	if dir, err := store.Dir(); err == nil {
+		args = append(args, "--data", dir)
+	}
 	if page != "" {
 		args = append(args, "--page", page)
 	}
@@ -190,8 +196,8 @@ type prefs struct {
 }
 
 func prefsPath() string {
-	base := os.Getenv("FLCLASH_HOME")
-	if base == "" {
+	base, err := store.Dir()
+	if err != nil {
 		base = filepath.Join(os.Getenv("LOCALAPPDATA"), "flclash-desktop")
 	}
 	return filepath.Join(base, "windows.json")
@@ -256,9 +262,23 @@ func (h *host) setLogin(on bool) error {
 	return nil
 }
 
-// installHelper runs the command line as administrator, through the
-// system's prompt, and waits for it.
+// installHelper installs the helper, through the system's prompt.
 func (h *host) installHelper() error {
+	return h.elevated("helper install -sid "+h.sid,
+		say.Errorf("the helper was not installed; to see why, run %s as administrator", `flclashctl helper install`))
+}
+
+// removeHelper removes the helper and what it keeps, through the system's
+// prompt: a portable copy leaves nothing behind on a computer.
+func (h *host) removeHelper() error {
+	return h.elevated("helper uninstall",
+		say.Errorf("the helper was not removed; to see why, run %s as administrator", `flclashctl helper uninstall`))
+}
+
+// elevated runs the command line as administrator, through the system's
+// prompt, and waits for it. failed says what did not happen, with the
+// command to run by hand.
+func (h *host) elevated(params string, failed error) error {
 	const (
 		seeMaskNoCloseProcess = 0x40
 		seeMaskNoAsync        = 0x100
@@ -269,7 +289,7 @@ func (h *host) installHelper() error {
 		Mask:       seeMaskNoCloseProcess | seeMaskNoAsync,
 		Verb:       utf16("runas"),
 		File:       utf16(filepath.Join(h.dir, "flclashctl.exe")),
-		Parameters: utf16("helper install -sid " + h.sid),
+		Parameters: utf16(params),
 		Directory:  utf16(h.dir),
 		Show:       swHide,
 	}
@@ -287,7 +307,7 @@ func (h *host) installHelper() error {
 	// Run through the prompt, the command has no console to say why; the
 	// person can run it by hand to read it.
 	if code != 0 {
-		return errors.New(say.In(h.lang, say.Errorf("the helper was not installed; to see why, run %s as administrator", `flclashctl helper install`)))
+		return errors.New(say.In(h.lang, failed))
 	}
 	return nil
 }

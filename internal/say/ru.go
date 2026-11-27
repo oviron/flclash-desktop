@@ -169,6 +169,8 @@ var ru = map[string]string{
 	"nothing runs":                                                                                    "ничего не запущено",
 	"the firewall rules cut the core off from the server, so traffic past the tunnel is not blocked": "правила брандмауэра отрезали ядро от сервера, поэтому трафик мимо туннеля не блокируется",
 	"the shortcut is taken by another program":                                                       "это сочетание клавиш занято другой программой",
+	"the helper was not removed; to see why, run %s as administrator":                                "помощник не удалён; чтобы узнать причину, запустите %s от имени администратора",
+	"turn the connection off before removing the helper":                                             "выключите подключение, прежде чем удалять помощника",
 	"the helper was not installed; to see why, run %s as administrator":                              "помощник не установлен; чтобы узнать причину, запустите %s от имени администратора",
 	"the window did not open: %w":                                                                    "окно не открылось: %w",
 	"another program holds the address FlClash listens on":                                           "адрес, на котором работает FlClash, занят другой программой",

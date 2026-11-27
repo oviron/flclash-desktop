@@ -192,6 +192,12 @@ final class Model {
         send("installHelper") { done($0.error) }
     }
 
+    /// Removes the helper through the system's prompt; nil is success or a
+    /// prompt the person declined.
+    func removeHelper(then done: @escaping (String?) -> Void) {
+        send("removeHelper") { done($0.error) }
+    }
+
     /// Turns off what runs, before the app quits.
     func stop() { FlcStop() }
 

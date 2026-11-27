@@ -102,3 +102,24 @@ func TestPolicyImport(t *testing.T) {
 		t.Fatal("a removed policy must be gone")
 	}
 }
+
+// A copy with the portable mark keeps its data beside it; one without does not.
+func TestPortableDir(t *testing.T) {
+	program := t.TempDir()
+	if _, ok := portableDir(program); ok {
+		t.Fatal("a copy without the mark counted as portable")
+	}
+	if err := os.Mkdir(filepath.Join(program, PortableMark), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := portableDir(program); ok {
+		t.Fatal("a folder named like the mark counted as the mark")
+	}
+	other := t.TempDir()
+	if err := os.WriteFile(filepath.Join(other, PortableMark), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if dir, ok := portableDir(other); !ok || dir != filepath.Join(other, PortableData) {
+		t.Fatalf("portable data at %q, %v", dir, ok)
+	}
+}

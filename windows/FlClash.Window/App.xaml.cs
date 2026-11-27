@@ -31,13 +31,24 @@ public partial class App : Application
 
     public static bool Debug = Environment.GetCommandLineArgs().Contains("--debug");
 
+    /// Where the window keeps its settings and log: the folder FlClash.exe
+    /// names, which is beside the program in a portable copy.
+    public static readonly string DataDir = DataFolder();
+
+    static string DataFolder()
+    {
+        var argv = Environment.GetCommandLineArgs();
+        int i = Array.IndexOf(argv, "--data");
+        if (i >= 0 && i + 1 < argv.Length && argv[i + 1].Length > 0) return argv[i + 1];
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "flclash-desktop");
+    }
+
     public static void Note(Exception e)
     {
         try
         {
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "flclash-desktop");
-            Directory.CreateDirectory(dir);
-            File.AppendAllText(Path.Combine(dir, "window.log"), DateTime.Now.ToString("s") + " " + e + "\n");
+            Directory.CreateDirectory(DataDir);
+            File.AppendAllText(Path.Combine(DataDir, "window.log"), DateTime.Now.ToString("s") + " " + e + "\n");
         }
         catch (Exception) { }
     }

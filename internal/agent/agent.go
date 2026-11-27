@@ -23,6 +23,7 @@ import (
 	"github.com/oviron/flclash-desktop/internal/bridge"
 	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/model"
+	"github.com/oviron/flclash-desktop/internal/say"
 )
 
 // Message is what a client sends.
@@ -39,6 +40,7 @@ type Message struct {
 	//   change|do|aside|subscription {request, quiet}
 	//                         an engine request on that line; replied to
 	//   installHelper         asks the system to install the helper; replied to
+	//   removeHelper          asks the system to remove the helper; replied to
 	//   hotKey {hotKey}       the shortcut that connects; replied to
 	//   login {on}            start with the system; replied to
 	//   quit
@@ -92,6 +94,9 @@ type Agent struct {
 	Open func(page string)
 	// InstallHelper asks for the helper to be installed and waits for it.
 	InstallHelper func() error
+	// RemoveHelper asks for the helper to be removed, with what it keeps,
+	// and waits for it.
+	RemoveHelper func() error
 
 	installMu  sync.Mutex
 	installing bool
@@ -381,6 +386,34 @@ func (a *Agent) SetMode(mode string, reply func(bridge.Reply)) {
 	}()
 }
 
+// removeHelper removes the helper once nothing runs: removing it stops a
+// tunnel, and puts back the system proxy the app may have set. Not while the
+// helper is being installed.
+func (a *Agent) removeHelper() error {
+	a.installMu.Lock()
+	if a.installing {
+		a.installMu.Unlock()
+		return nil
+	}
+	if a.Model.Snapshot().Status.Running {
+		a.installMu.Unlock()
+		return errors.New(say.In(a.Model.Lang, say.New("turn the connection off before removing the helper")))
+	}
+	a.installing = true
+	a.installMu.Unlock()
+	defer func() {
+		a.installMu.Lock()
+		a.installing = false
+		a.installMu.Unlock()
+	}()
+	err := a.RemoveHelper()
+	a.Model.Refresh()
+	if errors.Is(err, ErrCancelled) {
+		return nil
+	}
+	return err
+}
+
 func (a *Agent) handle(c *client, m Message) {
 	reply := func(r bridge.Reply) {
 		if m.ID != 0 {
@@ -466,6 +499,11 @@ func (a *Agent) handle(c *client, m Message) {
 			}
 			errReply(err)
 		}()
+	case "removeHelper":
+		if refused(a.RemoveHelper != nil) {
+			return
+		}
+		go func() { errReply(a.removeHelper()) }()
 	case "hotKey":
 		if refused(a.SetHotKey != nil) {
 			return

@@ -88,7 +88,13 @@ jobs:
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           $short = ($version -split '-')[0]
           New-Item -ItemType Directory -Force out | Out-Null
-          Compress-Archive -Path dist\windows\FlClash -DestinationPath "out\FlClash-$version-windows-${{ matrix.arch }}.zip"
+          # The portable copy: the same files and the mark that keeps the
+          # data in a folder beside them.
+          $portable = 'portable\FlClash'
+          New-Item -ItemType Directory -Force $portable | Out-Null
+          Copy-Item -Recurse dist\windows\FlClash\* $portable
+          Copy-Item windows\portable.txt "$portable\portable"
+          Compress-Archive -Path $portable -DestinationPath "out\FlClash-$version-windows-${{ matrix.arch }}-portable.zip"
           $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
           $iscc = if ($iscc) { $iscc.Source } else { "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
           if (-not (Test-Path $iscc)) {

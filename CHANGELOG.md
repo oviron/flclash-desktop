@@ -6,6 +6,18 @@ workflow takes the notes of a release from its section here.
 
 ## [Unreleased]
 
+### Added
+
+- A portable build for Windows: a zip whose copy keeps its servers and
+  settings in a `data` folder beside it. TUN installs the helper on each
+  computer as the installed app does.
+- Settings, System helper: removes the helper, and what it keeps, through the
+  system's prompt.
+
+### Changed
+
+- The plain Windows zip is replaced by the portable one.
+
 ## [0.1.0] - 2026-11-28
 
 The first public release.

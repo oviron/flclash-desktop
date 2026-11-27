@@ -57,7 +57,7 @@ public sealed class MainWindow : Window
     string page = "servers";
     string shownLang = "";
     WindowPrefs prefs = new();
-    static readonly string prefsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "flclash-desktop", "window.json");
+    static readonly string prefsPath = Path.Combine(App.DataDir, "window.json");
 
     public bool ShowsSettings => page == "settings";
     public WindowPrefs Prefs => prefs;
