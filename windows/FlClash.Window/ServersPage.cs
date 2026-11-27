@@ -1,11 +1,8 @@
 using System.Text;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Windows.ApplicationModel.DataTransfer;
-using Windows.Storage;
-using Windows.System;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 
 namespace FlClash;
 
@@ -14,17 +11,18 @@ public sealed class ServersPage : IPage
 {
     readonly MainWindow window;
     Agent A => window.Agent;
-    readonly Grid root = new() { AllowDrop = true, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
-    readonly ListView list = new() { SelectionMode = ListViewSelectionMode.Extended, Padding = new Thickness(8, 0, 8, 8) };
-    readonly SelectorBar tabs = new() { HorizontalAlignment = HorizontalAlignment.Center };
+    readonly Grid root = new() { AllowDrop = true, Background = Brushes.Transparent };
+    readonly ListBox list = new() { SelectionMode = SelectionMode.Extended, Padding = new Thickness(8, 0, 8, 8) };
+    readonly StackPanel tabs = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
     readonly Ui.Empty empty = new("");
     readonly Border dropRing = new() { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(2), Margin = new Thickness(6), IsHitTestVisible = false, Visibility = Visibility.Collapsed };
     List<string> tabGroups = new();
+    string tabsLang = "";
     string query = "";
     string key = "";
-    bool fillingTabs;
+    bool fillingTabs, fixing;
 
-    public static readonly (string, string)[] Orders = [("added", "As Added"), ("name", "By Name"), ("latency", "By Latency")];
+    public static readonly (string, string)[] Orders = { ("added", "As Added"), ("name", "By Name"), ("latency", "By Latency") };
 
     public ServersPage(MainWindow window)
     {
@@ -39,47 +37,44 @@ public sealed class ServersPage : IPage
         Grid.SetRowSpan(dropRing, 2);
         root.Children.Add(dropRing);
         tabs.Margin = new Thickness(16, 0, 16, 4);
-        tabs.SelectionChanged += (_, _) =>
-        {
-            if (fillingTabs) return;
-            int index = tabs.Items.IndexOf(tabs.SelectedItem);
-            Tab = index > 0 && index <= tabGroups.Count ? tabGroups[index - 1] : "";
-            Update(true);
-        };
         list.SelectionChanged += (_, e) =>
         {
+            if (fixing) return;
             // Headings are not chosen.
+            fixing = true;
             foreach (var added in e.AddedItems)
-                if (added is ListViewItem { Tag: string }) list.SelectedItems.Remove(added);
+                if (added is ListBoxItem { Tag: string } heading) list.SelectedItems.Remove(heading);
+            fixing = false;
         };
         list.KeyDown += (_, e) =>
         {
-            if (e.Key == VirtualKey.Delete) { Delete(null); e.Handled = true; }
-            else if (e.Key == VirtualKey.Enter && Selected().Count == 1) { Connect(Selected()[0]); e.Handled = true; }
+            if (e.Key == Key.Delete) { Delete(null); e.Handled = true; }
+            else if (e.Key == Key.Enter && Selected().Count == 1) { Connect(Selected()[0]); e.Handled = true; }
         };
-        ToolTipService.SetToolTip(list, null);
         empty.Button.Click += (_, _) => ImportFromClipboard();
 
         root.DragOver += (_, e) =>
         {
-            if (e.DataView.Contains(StandardDataFormats.Text) || e.DataView.Contains(StandardDataFormats.StorageItems))
+            if (e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(DataFormats.UnicodeText))
             {
-                e.AcceptedOperation = DataPackageOperation.Copy;
+                e.Effects = DragDropEffects.Copy;
                 dropRing.BorderBrush = Ui.Brush(Tint.Accent);
                 dropRing.Background = Ui.Brush(Tint.Accent, 0.12);
                 dropRing.Visibility = Visibility.Visible;
             }
+            else e.Effects = DragDropEffects.None;
+            e.Handled = true;
         };
         root.DragLeave += (_, _) => dropRing.Visibility = Visibility.Collapsed;
-        root.Drop += async (_, e) =>
+        root.Drop += (_, e) =>
         {
             dropRing.Visibility = Visibility.Collapsed;
-            if (await Files.DroppedFile(e.DataView) is { } path)
+            if (Files.DroppedFile(e.Data) is { } path)
             {
                 if (Files.IsPicture(path)) ImportPicture(() => Files.Codes(path));
                 else ImportFile(path);
             }
-            else if (await Files.Text(e.DataView) is { } text) ImportText(text);
+            else if (Files.Text(e.Data) is { } text) ImportText(text);
         };
     }
 
@@ -121,11 +116,11 @@ public sealed class ServersPage : IPage
         key = next;
         var offset = Scroller()?.VerticalOffset ?? 0;
 
-        var chosen = Selected().Select(v => v.Id).ToHashSet();
+        var chosen = new HashSet<string>(Selected().Select(v => v.Id));
         IEnumerable<Server> found = all;
         if (needle.Length > 0) found = found.Where(v => (v.Name + " " + v.Protocol + " " + v.Group).ToLowerInvariant().Contains(needle));
         var shown = found.ToList();
-        if (Order == "name") shown = shown.OrderBy(v => v.Name, StringComparer.Create(L.Culture, CompareOptions())).ToList();
+        if (Order == "name") shown = shown.OrderBy(v => v.Name, new Compat.Natural()).ToList();
         else if (Order == "latency")
         {
             // Measured ones by the number; no answer after them; not measured last.
@@ -162,6 +157,7 @@ public sealed class ServersPage : IPage
         Shown_ = rows.OfType<Server>().ToList();
         Delays = new(s.Delays);
         Updating = string.Join(",", s.Updating);
+        fixing = true;
         list.Items.Clear();
         foreach (var row in rows)
         {
@@ -169,12 +165,13 @@ public sealed class ServersPage : IPage
             list.Items.Add(item);
             if (row is Server v2 && chosen.Contains(v2.Id)) list.SelectedItems.Add(item);
         }
+        fixing = false;
 
         list.Visibility = rows.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         if (offset > 0)
         {
             list.UpdateLayout();
-            Scroller()?.ChangeView(null, offset, null, true);
+            Scroller()?.ScrollToVerticalOffset(offset);
         }
         if (!s.Loaded) empty.Hide();
         else if (all.Count == 0)
@@ -193,7 +190,7 @@ public sealed class ServersPage : IPage
         var updating = string.Join(",", s.Updating);
         bool headings = updating != Updating;
         Updating = updating;
-        foreach (var item in list.Items.OfType<ListViewItem>())
+        foreach (var item in list.Items.OfType<ListBoxItem>())
         {
             if (item.Tag is Server v && item.Content is Grid grid)
             {
@@ -202,9 +199,7 @@ public sealed class ServersPage : IPage
                 var now = s.Delays.GetValueOrDefault(v.Id);
                 if (mark?.State == now?.State && mark?.Ms == now?.Ms) continue;
                 if (old != null) grid.Children.Remove(old);
-                var cell = DelayCell(now);
-                Grid.SetColumn(cell, 4);
-                grid.Children.Add(cell);
+                Ui.Place(grid, DelayCell(now), 4, 8);
             }
             else if (headings && item.Tag is string name)
             {
@@ -222,13 +217,11 @@ public sealed class ServersPage : IPage
 
     ScrollViewer? Scroller()
     {
-        DependencyObject node = list;
+        DependencyObject? node = list;
         while (node != null && node is not ScrollViewer)
-            node = VisualTreeHelper.GetChildrenCount(node) > 0 ? VisualTreeHelper.GetChild(node, 0) : null!;
+            node = VisualTreeHelper.GetChildrenCount(node) > 0 ? VisualTreeHelper.GetChild(node, 0) : null;
         return node as ScrollViewer;
     }
-
-    static System.Globalization.CompareOptions CompareOptions() => System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.NumericOrdering;
 
     /// A tab per group once there are two.
     void UpdateTabs(List<string> groups)
@@ -236,49 +229,53 @@ public sealed class ServersPage : IPage
         var shown = groups.Count > 1 ? groups : new List<string>();
         tabs.Visibility = shown.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         fillingTabs = true;
-        if (!shown.SequenceEqual(tabGroups) || tabs.Items.Count != shown.Count + 1 || (tabs.Items.FirstOrDefault()?.Text != L.T("All Servers")))
+        if (!shown.SequenceEqual(tabGroups) || tabs.Children.Count != shown.Count + 1 || tabsLang != L.Lang)
         {
             tabGroups = shown;
-            tabs.Items.Clear();
-            tabs.Items.Add(new SelectorBarItem { Text = L.T("All Servers") });
-            foreach (var g in shown) tabs.Items.Add(new SelectorBarItem { Text = g == "default" ? L.T("Added by Hand") : g });
+            tabsLang = L.Lang;
+            tabs.Children.Clear();
+            void Add(string title, string group)
+            {
+                var tab = new RadioButton { Content = title, Style = Ui.Style("Tab"), GroupName = "servers-tabs" + GetHashCode() };
+                tab.Checked += (_, _) =>
+                {
+                    if (fillingTabs) return;
+                    Tab = group;
+                    Update(true);
+                };
+                tabs.Children.Add(tab);
+            }
+            Add(L.T("All Servers"), "");
+            foreach (var g in shown) Add(g == "default" ? L.T("Added by Hand") : g, g);
         }
-        if (shown.Count > 0) tabs.SelectedItem = tabs.Items[shown.IndexOf(Tab) + 1];
+        if (shown.Count > 0) ((RadioButton)tabs.Children[shown.IndexOf(Tab) + 1]).IsChecked = true;
         fillingTabs = false;
     }
 
-    ListViewItem ServerRow(Server v)
+    ListBoxItem ServerRow(Server v)
     {
         var s = A.S;
         bool selected = v.Id == s.View.Selected;
-        var grid = new Grid { ColumnSpacing = 8, Height = 30 };
-        foreach (var w in new[] { 22.0, 30, -1, 220, 96 })
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = w < 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) });
+        var grid = Ui.Columns(22, 30, -1, 220, 96);
+        grid.Height = 30;
         if (selected)
         {
-            var mark = Ui.Glyph("", 16, Ui.Res("AccentTextFillColorPrimaryBrush"));
-            ToolTipService.SetToolTip(mark, L.T("Selected"));
+            var mark = Ui.Glyph("", 16, Ui.B("AccentText"));
+            mark.ToolTip = L.T("Selected");
             grid.Children.Add(mark);
         }
-        var flag = Ui.CountryPlate(v.Country);
-        Grid.SetColumn(flag, 1);
-        grid.Children.Add(flag);
-        var name = Ui.Text(v.Name, 14, selected ? Ui.Semibold : null);
-        Grid.SetColumn(name, 2);
-        grid.Children.Add(name);
+        Ui.Place(grid, Ui.CountryPlate(v.Country), 1, 8);
+        Ui.Place(grid, Ui.Text(v.Name, 14, selected ? Ui.Semibold : null), 2, 8);
         // The engine speaks English; this note is for the person.
-        var proto = Ui.Text(v.Protocol.Replace("certificate not checked", L.T("certificate not checked")), 14, null, Ui.Secondary);
-        Grid.SetColumn(proto, 3);
-        grid.Children.Add(proto);
-        var delay = DelayCell(s.Delays.GetValueOrDefault(v.Id));
-        Grid.SetColumn(delay, 4);
-        grid.Children.Add(delay);
+        Ui.Place(grid, Ui.Text(v.Protocol.Replace("certificate not checked", L.T("certificate not checked")), 14, null, Ui.Secondary), 3, 8);
+        Ui.Place(grid, DelayCell(s.Delays.GetValueOrDefault(v.Id)), 4, 8);
 
-        var item = new ListViewItem { HorizontalContentAlignment = HorizontalAlignment.Stretch, Content = grid, Tag = v, Padding = new Thickness(10, 0, 10, 0), MinHeight = 32 };
-        item.DoubleTapped += (_, _) => Connect(v);
-        var menu = new MenuFlyout();
-        menu.Opening += (_, _) => ServerMenu(menu, v);
-        item.ContextFlyout = menu;
+        var item = new ListBoxItem { Content = grid, Tag = v, Padding = new Thickness(10, 0, 10, 0), MinHeight = 32 };
+        item.MouseDoubleClick += (_, _) => Connect(v);
+        var menu = new ContextMenu();
+        menu.Opened += (_, _) => ServerMenu(menu, v);
+        menu.Items.Add(new MenuItem());
+        item.ContextMenu = menu;
         return item;
     }
 
@@ -291,14 +288,13 @@ public sealed class ServersPage : IPage
         switch (d?.State)
         {
             case "ms":
-                var ms = Ui.Text(L.F("%d ms", d.Ms), 12, null, Ui.Secondary);
-                return Ui.Row(6, Ui.Dot(Ui.Color(DelayTint(d.Ms))), ms);
+                return Ui.Row(6, Ui.Dot(Ui.Color(DelayTint(d!.Ms))), Ui.Text(L.F("%d ms", d.Ms), 12, null, Ui.Secondary));
             case "failed":
                 var row = Ui.Row(6, Ui.Dot(Ui.Color(Tint.Red)), Ui.Text(L.T("No answer"), 12, null, Ui.Secondary));
-                if (!string.IsNullOrEmpty(d.Error)) ToolTipService.SetToolTip(row, d.Error);
+                Ui.Tip(row, d!.Error);
                 return row;
             case "waiting":
-                return new ProgressRing { IsActive = true, Width = 14, Height = 14, HorizontalAlignment = HorizontalAlignment.Left };
+                return Spinner.Running(14);
             default:
                 return new Border();
         }
@@ -306,43 +302,40 @@ public sealed class ServersPage : IPage
 
     /// The heading of a group. For a subscription it says how fresh it is and
     /// what the provider told about the account, and reads it again.
-    ListViewItem GroupRow(string name)
+    ListBoxItem GroupRow(string name)
     {
         var s = A.S;
-        var grid = new Grid { ColumnSpacing = 8, Height = 30, Margin = new Thickness(0, 6, 0, 0) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var grid = Ui.Columns(Ui.Auto, -1, Ui.Auto);
+        grid.Height = 30;
+        grid.Margin = new Thickness(0, 6, 0, 0);
         // "default" is where servers added by hand go; people need not see the word.
         grid.Children.Add(Ui.Text(name == "default" ? L.T("Added by Hand") : name, 12, Ui.Semibold, Ui.Secondary));
         var sub = s.View.Subscriptions.FirstOrDefault(x => x.Name == name);
         if (sub != null)
         {
             var about = Ui.Text(About(sub), 11, null, sub.Problem.Length == 0 ? Ui.Tertiary : Ui.Brush(Tint.Orange));
-            ToolTipService.SetToolTip(about, sub.Problem.Length == 0 ? sub.Host : sub.Problem);
-            Grid.SetColumn(about, 1);
-            grid.Children.Add(about);
+            Ui.Tip(about, sub.Problem.Length == 0 ? sub.Host : sub.Problem);
+            Ui.Place(grid, about, 1, 8);
             FrameworkElement action;
-            if (s.Updating.Contains(name)) action = new ProgressRing { IsActive = true, Width = 16, Height = 16 };
+            if (s.Updating.Contains(name)) action = Spinner.Running(16);
             else
             {
-                var refresh = new Button { Content = Ui.Glyph("", 12), Padding = new Thickness(6), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
-                ToolTipService.SetToolTip(refresh, L.T("Update Subscription"));
+                var refresh = new Button { Content = Ui.Glyph("", 12), Padding = new Thickness(6), Style = Ui.Style("SubtleButton") };
+                refresh.ToolTip = L.T("Update Subscription");
                 refresh.Click += (_, _) => UpdateSubscription(name);
                 action = refresh;
             }
-            Grid.SetColumn(action, 2);
-            grid.Children.Add(action);
+            Ui.Place(grid, action, 2, 8);
         }
-        var item = new ListViewItem { HorizontalContentAlignment = HorizontalAlignment.Stretch, Content = grid, Tag = name, Padding = new Thickness(10, 0, 10, 0), MinHeight = 30, IsTabStop = false };
+        var item = new ListBoxItem { Content = grid, Tag = name, Padding = new Thickness(10, 0, 10, 0), MinHeight = 30, Focusable = false };
         if (sub != null)
         {
-            var menu = new MenuFlyout();
-            menu.Items.Add(MainWindow.Item(L.T("Update Subscription"), () => UpdateSubscription(name)));
-            menu.Items.Add(MainWindow.Item(L.T("Subscription Settings…"), () => EditSubscription(name)));
-            menu.Items.Add(new MenuFlyoutSeparator());
-            menu.Items.Add(MainWindow.Item(L.T("Delete Subscription…"), () => RemoveSubscription(name)));
-            item.ContextFlyout = menu;
+            var menu = new ContextMenu();
+            menu.Items.Add(Ui.Item(L.T("Update Subscription"), () => UpdateSubscription(name)));
+            menu.Items.Add(Ui.Item(L.T("Subscription Settings…"), () => EditSubscription(name)));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Ui.Item(L.T("Delete Subscription…"), () => RemoveSubscription(name)));
+            item.ContextMenu = menu;
         }
         return item;
     }
@@ -361,33 +354,33 @@ public sealed class ServersPage : IPage
         return string.Join("  ·  ", parts);
     }
 
-    List<Server> Selected() => list.SelectedItems.OfType<ListViewItem>().Select(i => i.Tag).OfType<Server>().ToList();
+    List<Server> Selected() => list.SelectedItems.OfType<ListBoxItem>().Select(i => i.Tag).OfType<Server>().ToList();
 
     /// The servers an action is about: the one under a right-click when it is
     /// outside the selection, else the selection.
     List<Server> ActionRows(Server? clicked)
     {
         var selected = Selected();
-        if (clicked != null && !selected.Any(v => v.Id == clicked.Id)) return [clicked];
+        if (clicked != null && !selected.Any(v => v.Id == clicked.Id)) return new List<Server> { clicked };
         return selected;
     }
 
-    void ServerMenu(MenuFlyout menu, Server clicked)
+    void ServerMenu(ContextMenu menu, Server clicked)
     {
         var rows = ActionRows(clicked);
         menu.Items.Clear();
-        menu.Items.Add(MainWindow.Item(L.T("Use This Server"), () => A.SelectServer(rows[0].Id), enabled: rows.Count == 1));
-        menu.Items.Add(MainWindow.Item(L.T("Test Latency"), () => A.Measure(rows.Select(v => v.Id)), enabled: rows.Count > 0));
-        menu.Items.Add(new MenuFlyoutSeparator());
-        menu.Items.Add(MainWindow.Item(L.T("Copy Link"), () => WithLink(rows, (_, link) => CopyLink(link)), enabled: rows.Count == 1));
-        menu.Items.Add(MainWindow.Item(L.T("Show QR Code…"), () => WithLink(rows, (v, link) => _ = QrDialog.Show(root.XamlRoot, v.Name, link)), enabled: rows.Count == 1));
-        menu.Items.Add(new MenuFlyoutSeparator());
-        menu.Items.Add(MainWindow.Item(L.T("Delete"), () => Delete(clicked), "Del", rows.Count > 0));
+        menu.Items.Add(Ui.Item(L.T("Use This Server"), () => A.SelectServer(rows[0].Id), enabled: rows.Count == 1));
+        menu.Items.Add(Ui.Item(L.T("Test Latency"), () => A.Measure(rows.Select(v => v.Id)), enabled: rows.Count > 0));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Ui.Item(L.T("Copy Link"), () => WithLink(rows, (_, link) => CopyLink(link)), enabled: rows.Count == 1));
+        menu.Items.Add(Ui.Item(L.T("Show QR Code…"), () => WithLink(rows, (v, link) => _ = QrDialog.Show(v.Name, link)), enabled: rows.Count == 1));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Ui.Item(L.T("Delete"), () => Delete(clicked), "Del", rows.Count > 0));
     }
 
     async void CopyLink(string link)
     {
-        if (Ui.Copy(link, secret: true) is { } problem) await Ui.Say(root.XamlRoot, L.T("Nothing was copied"), problem);
+        if (Ui.Copy(link, secret: true) is { } problem) await Ui.Say(L.T("Nothing was copied"), problem);
     }
 
     /// The link of the one server an action is about.
@@ -395,8 +388,8 @@ public sealed class ServersPage : IPage
     {
         if (rows.Count != 1) return;
         var reply = await A.Do(new Request { Op = "link", Server = rows[0].Id }, quiet: true);
-        if (!string.IsNullOrEmpty(reply.Link)) then(rows[0], reply.Link);
-        else await Ui.Say(root.XamlRoot, L.T("This server cannot be written as a link"), reply.Error ?? "");
+        if (!string.IsNullOrEmpty(reply.Link)) then(rows[0], reply.Link!);
+        else await Ui.Say(L.T("This server cannot be written as a link"), reply.Error ?? "");
     }
 
     /// A double click is the whole wish: this server, now.
@@ -415,7 +408,7 @@ public sealed class ServersPage : IPage
         if (rows.Count == 0) return;
         var title = rows.Count == 1 ? L.F("Delete the server “%@”?", rows[0].Name) : L.T("Delete the selected servers?");
         var text = rows.Count == 1 ? L.T("To get it back, you will have to import it again.") : string.Join(", ", rows.Select(v => v.Name));
-        if (!await Ui.Ask(root.XamlRoot, title, text, L.T("Delete"), destructive: true)) return;
+        if (!await Ui.Ask(title, text, L.T("Delete"), destructive: true)) return;
         foreach (var v in rows) _ = A.Do(new Request { Op = "remove", Server = v.Id });
     }
 
@@ -424,80 +417,81 @@ public sealed class ServersPage : IPage
         string? text = null;
         try
         {
-            var content = Clipboard.GetContent();
-            text = await Files.Text(content);
+            var content = Clipboard.GetDataObject();
+            text = content == null ? null : Files.Text(content);
             // A copied picture of a QR code is a server too: a screenshot, a photo.
-            if (text == null && content.Contains(StandardDataFormats.Bitmap))
+            if (text == null && Clipboard.ContainsImage() && Clipboard.GetImage() is { } picture)
             {
-                var picture = await content.GetBitmapAsync();
-                ImportPicture(async () =>
-                {
-                    using var stream = await picture.OpenReadAsync();
-                    return await Files.Codes(stream);
-                });
+                ImportPicture(() => Files.Codes(picture));
                 return;
             }
         }
         catch (Exception e)
         {
-            await Ui.Say(root.XamlRoot, L.T("The clipboard could not be read"), e.Message);
+            await Ui.Say(L.T("The clipboard could not be read"), e.Message);
             return;
         }
         if (text == null)
         {
-            await Ui.Say(root.XamlRoot, L.T("The clipboard has no text"), L.T("Copy a server link first: in Throne, right-click a profile and copy it as a link."));
+            await Ui.Say(L.T("The clipboard has no text"), L.T("Copy a server link first: in Throne, right-click a profile and copy it as a link."));
             return;
         }
         ImportText(text);
     }
 
-    public async void ImportFromFile()
+    public void ImportFromFile()
     {
-        if (await Files.PickOpen(window, ".txt", ".json", ".yaml", ".yml", ".conf", "*") is { } path) ImportFile(path);
+        if (Files.PickOpen(window, ".txt", ".json", ".yaml", ".yml", ".conf", "*") is { } path) ImportFile(path);
     }
 
     async void ImportFile(string path)
     {
-        var (text, problem) = await Files.Read(path);
+        var (text, problem) = Files.Read(path);
         if (text != null) ImportText(text);
-        else await Ui.Say(root.XamlRoot, L.T("Nothing was imported"), problem ?? "");
+        else await Ui.Say(L.T("Nothing was imported"), problem ?? "");
     }
 
     /// Reads the QR codes of a picture and imports what they say.
-    async void ImportPicture(Func<Task<List<string>>> read)
+    async void ImportPicture(Func<List<string>> read)
     {
         List<string> codes;
-        try { codes = await read(); }
+        try { codes = read(); }
         catch (Exception e)
         {
-            await Ui.Say(root.XamlRoot, L.T("The picture could not be read"), e.Message);
+            await Ui.Say(L.T("The picture could not be read"), e.Message);
             return;
         }
-        if (codes.Count == 0) await Ui.Say(root.XamlRoot, L.T("No QR code was found in the picture"), "");
+        if (codes.Count == 0) await Ui.Say(L.T("No QR code was found in the picture"), "");
         else ImportText(string.Join("\n", codes));
     }
 
     async void ImportText(string text)
     {
         var reply = await A.Do(new Request { Op = "import", Text = text }, quiet: true);
-        int imported = reply.Imported?.Imported.Count ?? 0;
+        int imported = reply.Imported?.Imported?.Count ?? 0;
         var failed = reply.Imported?.Failed ?? new();
         // A clean import needs no dialog: the new rows are the answer.
         if (failed.Count == 0 && string.IsNullOrEmpty(reply.Error)) return;
         var lines = failed.Select(f => L.F("Entry %d: %@", f.Entry, f.Reason)).ToList();
-        if (failed.Count == 0 && reply.Error != null) lines = [reply.Error];
+        if (failed.Count == 0 && reply.Error != null) lines = new List<string> { reply.Error };
         var title = imported > 0 ? L.F("Imported %d, not imported %d", imported, failed.Count) : L.T("Nothing was imported");
-        await Ui.Say(root.XamlRoot, title, string.Join("\n\n", lines));
+        await Ui.Say(title, string.Join("\n\n", lines));
     }
 
     async void UpdateSubscription(string name)
     {
         if (A.S.Updating.Contains(name)) return;
         var reply = await A.Subscription(new Request { Op = "subUpdate", Name = name });
-        if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(root.XamlRoot, L.F("The subscription “%@” was not updated", name), reply.Error);
+        if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(L.F("The subscription “%@” was not updated", name), reply.Error!);
     }
 
-    static TextBox Field(string placeholder, string text = "") => new() { PlaceholderText = placeholder, Text = text, Width = 380 };
+    // The fields take the width of the dialog, as its text does.
+    static TextBox Field(string placeholder, string text = "")
+    {
+        var box = Ui.Field(placeholder, text);
+        box.MinWidth = 380;
+        return box;
+    }
 
     /// Asks for the address of a subscription and adds it.
     public async void AddSubscription()
@@ -507,31 +501,27 @@ public sealed class ServersPage : IPage
         // A copied address is most likely the one to add.
         try
         {
-            var content = Clipboard.GetContent();
-            if (content.Contains(StandardDataFormats.Text))
+            if (Clipboard.ContainsText())
             {
-                var copied = (await content.GetTextAsync()).Trim();
-                if ((copied.StartsWith("http://") || copied.StartsWith("https://")) && !copied.Contains('\n')) address.Text = copied;
+                var copied = Clipboard.GetText().Trim();
+                if ((copied.StartsWith("http://") || copied.StartsWith("https://")) && copied.IndexOf('\n') < 0) address.Text = copied;
             }
         }
         catch (Exception) { }
-        var dialog = new ContentDialog
+        var dialog = new Dialog
         {
-            XamlRoot = root.XamlRoot,
             Title = L.T("Add a Subscription"),
             Content = Ui.Column(10, Ui.Text(L.T("The address your provider gave you. FlClash reads the list of servers from it and keeps it up to date."), 13, null, Ui.Secondary, wrap: true), address, name),
-            PrimaryButtonText = L.T("Add"),
-            CloseButtonText = L.T("Cancel"),
-            DefaultButton = ContentDialogButton.Primary,
+            Primary = L.T("Add"),
         };
-        if (await Ui.Show(dialog) != ContentDialogResult.Primary) return;
+        if (!await Dialogs.Show(dialog)) return;
         var reply = await A.Subscription(new Request { Op = "subAdd", Name = name.Text, Text = address.Text });
         var failed = reply.Imported?.Failed ?? new();
         if (string.IsNullOrEmpty(reply.Error) && failed.Count == 0) return;
         var lines = failed.Take(8).Select(f => L.F("Entry %d: %@", f.Entry, f.Reason)).ToList();
-        if (!string.IsNullOrEmpty(reply.Error)) lines.Insert(0, reply.Error);
-        var title = string.IsNullOrEmpty(reply.Error) ? L.F("Imported %d, not imported %d", reply.Imported?.Imported.Count ?? 0, failed.Count) : L.T("The subscription was not added");
-        await Ui.Say(root.XamlRoot, title, string.Join("\n\n", lines));
+        if (!string.IsNullOrEmpty(reply.Error)) lines.Insert(0, reply.Error!);
+        var title = string.IsNullOrEmpty(reply.Error) ? L.F("Imported %d, not imported %d", reply.Imported?.Imported?.Count ?? 0, failed.Count) : L.T("The subscription was not added");
+        await Ui.Say(title, string.Join("\n\n", lines));
     }
 
     async void EditSubscription(string name)
@@ -542,24 +532,21 @@ public sealed class ServersPage : IPage
         var agent = Field(L.T("Client name told to the provider"), sub.Agent);
         var every = Field(L.T("Hours between updates (empty: as the provider says)"), sub.Every > 0 ? sub.Every.ToString() : "");
         var skip = Field(L.T("Leave out servers with these words, comma-separated"), sub.Skip);
-        var dialog = new ContentDialog
+        var dialog = new Dialog
         {
-            XamlRoot = root.XamlRoot,
             Title = L.F("Subscription “%@”", name),
             Content = Ui.Column(10, Ui.Text(sub.Host, 13, null, Ui.Secondary), address, agent, every, skip),
-            PrimaryButtonText = L.T("Save"),
-            CloseButtonText = L.T("Cancel"),
-            DefaultButton = ContentDialogButton.Primary,
+            Primary = L.T("Save"),
         };
-        if (await Ui.Show(dialog) != ContentDialogResult.Primary) return;
+        if (!await Dialogs.Show(dialog)) return;
         int.TryParse(every.Text.Trim(), out var hours);
         var reply = await A.Subscription(new Request { Op = "subEdit", Name = name, Text = address.Text, Agent = agent.Text, Every = hours.ToString(), Skip = skip.Text });
-        if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(root.XamlRoot, L.F("The subscription “%@” was not updated", name), reply.Error);
+        if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(L.F("The subscription “%@” was not updated", name), reply.Error!);
     }
 
     async void RemoveSubscription(string name)
     {
-        if (!await Ui.Ask(root.XamlRoot, L.F("Delete the subscription “%@”?", name), L.T("Its servers will be deleted with it."), L.T("Delete"), destructive: true)) return;
+        if (!await Ui.Ask(L.F("Delete the subscription “%@”?", name), L.T("Its servers will be deleted with it."), L.T("Delete"), destructive: true)) return;
         _ = A.Do(new Request { Op = "subRemove", Name = name });
     }
 }

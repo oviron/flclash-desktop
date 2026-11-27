@@ -1,7 +1,8 @@
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Documents;
-using Microsoft.UI.Xaml.Media;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace FlClash;
 
@@ -11,8 +12,7 @@ public sealed class LogPage : IPage
 {
     readonly MainWindow window;
     readonly Grid root = new();
-    readonly ScrollViewer scroll = new() { Padding = new Thickness(24, 4, 18, 12) };
-    readonly RichTextBlock text = new() { IsTextSelectionEnabled = true, FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 12, TextWrapping = TextWrapping.Wrap };
+    readonly RichTextBox text = new() { IsReadOnly = true, IsReadOnlyCaretVisible = false, FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 12, Padding = new Thickness(24, 4, 18, 12) };
     readonly Ui.Empty empty = new("");
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(2) };
     string raw = "";
@@ -22,8 +22,7 @@ public sealed class LogPage : IPage
     public LogPage(MainWindow window)
     {
         this.window = window;
-        scroll.Content = text;
-        root.Children.Add(scroll);
+        root.Children.Add(text);
         root.Children.Add(empty.View);
         timer.Tick += (_, _) => Read();
     }
@@ -57,21 +56,21 @@ public sealed class LogPage : IPage
     void Render()
     {
         // A reader who scrolled up stays where they are; one at the end follows it.
-        bool atEnd = scroll.VerticalOffset >= scroll.ScrollableHeight - 20;
+        bool atEnd = text.VerticalOffset >= text.ExtentHeight - text.ViewportHeight - 20;
         var needle = query.Trim().ToLowerInvariant();
+        var lines = raw.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => needle.Length == 0 || line.ToLowerInvariant().Contains(needle)).ToList();
         var p = new Paragraph();
         int count = 0;
-        foreach (var line in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var line in lines)
         {
-            if (needle.Length > 0 && !line.ToLowerInvariant().Contains(needle)) continue;
             var entry = LogLine.Parse(line.TrimEnd('\r'));
             if (count++ > 0) p.Inlines.Add(new LineBreak());
-            if (entry.Time.Length > 0) p.Inlines.Add(new Run { Text = entry.Time + "  ", Foreground = Ui.Tertiary });
-            p.Inlines.Add(new Run { Text = entry.Text, Foreground = entry.Tint is { } t ? Ui.Brush(t) : entry.Dim ? Ui.Secondary : Ui.Primary });
+            if (entry.Time.Length > 0) p.Inlines.Add(new Run(entry.Time + "  ") { Foreground = Ui.Tertiary });
+            p.Inlines.Add(new Run(entry.Text) { Foreground = entry.Tint is { } t ? Ui.Brush(t) : entry.Dim ? Ui.Secondary : Ui.Primary });
         }
-        text.Blocks.Clear();
-        text.Blocks.Add(p);
-        scroll.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        text.Document = new FlowDocument(p) { PagePadding = new Thickness(0), FontFamily = text.FontFamily, FontSize = text.FontSize };
+        text.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
         if (count == 0)
         {
             if (raw.Length == 0) empty.Show(L.T("The log is empty"), L.T("The core writes here once something runs."), false);
@@ -82,8 +81,8 @@ public sealed class LogPage : IPage
             empty.Hide();
             if (atEnd)
             {
-                scroll.UpdateLayout();
-                scroll.ChangeView(null, scroll.ScrollableHeight, null, true);
+                text.UpdateLayout();
+                text.ScrollToEnd();
             }
         }
     }
@@ -101,12 +100,12 @@ public sealed class LogPage : IPage
                 if (level > 0 && message > level)
                 {
                     // 2026-11-27T18:38:28.107400000+03:00 → 18:38:28
-                    var stamp = line[6..level];
-                    var t = stamp.Contains('T') ? stamp[(stamp.IndexOf('T') + 1)..] : stamp;
-                    if (t.Length > 8) t = t[..8];
-                    var name = line[(level + 8)..message];
-                    var body = line[(message + 6)..];
-                    if (body.EndsWith('"')) body = body[..^1];
+                    var stamp = line.Substring(6, level - 6);
+                    var t = stamp.IndexOf('T') >= 0 ? stamp.Substring(stamp.IndexOf('T') + 1) : stamp;
+                    if (t.Length > 8) t = t.Substring(0, 8);
+                    var name = line.Substring(level + 8, message - level - 8);
+                    var body = line.Substring(message + 6);
+                    if (body.EndsWith("\"")) body = body.Substring(0, body.Length - 1);
                     body = body.Replace("\\\"", "\"");
                     Tint? tint = name switch { "warning" => FlClash.Tint.Orange, "error" or "fatal" => FlClash.Tint.Red, _ => null };
                     return new(t, body, tint, name == "debug");
@@ -115,7 +114,7 @@ public sealed class LogPage : IPage
             if (line.Length > 20 && line[4] == '/')
             {
                 // 2026/11/27 18:38:15 the core died…
-                var body = line[20..];
+                var body = line.Substring(20);
                 bool bad = body.Contains("died") || body.Contains("did not") || body.StartsWith("guard:") || body.StartsWith("system proxy:");
                 return new(line.Substring(11, 8), body, bad ? FlClash.Tint.Orange : null, false);
             }

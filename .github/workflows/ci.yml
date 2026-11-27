@@ -64,7 +64,7 @@ jobs:
           check-latest: true
       # Pinned so a new release cannot demand a newer toolchain unseen.
       - run: go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
-      - run: '"$(go env GOPATH)/bin/govulncheck" -tags with_gvisor ./...'
+      - run: '"$(go env GOPATH)/bin/govulncheck" -tags no_easytier,no_zerotier ./...'
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}

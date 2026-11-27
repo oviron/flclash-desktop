@@ -61,6 +61,11 @@ RestartApplications=no
 Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
 
+[InstallDelete]
+; The window is replaced whole: files of an earlier window, such as the
+; runtime the WinUI one carried, would stay behind otherwise.
+Type: filesandordirs; Name: "{app}\window"
+
 [Files]
 Source: "{#Source}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 

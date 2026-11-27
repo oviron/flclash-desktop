@@ -9,14 +9,18 @@ VERSION := 0.0.0-dev
 endif
 SHORT := $(firstword $(subst +, ,$(subst -, ,$(VERSION))))
 BUILD := $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
+# The core leaves out the outbounds the importer never produces: EasyTier and
+# ZeroTier, about 12 MB of the core. The tunnel runs on the mips stack, which
+# needs no gVisor, so with_gvisor (and Tailscale with it) stays out too.
+CORE_TAGS := no_easytier,no_zerotier
 RELEASE := -trimpath -ldflags "-s -w -X github.com/oviron/flclash-desktop/internal/build.Version=$(VERSION)"
 
 .PHONY: tools bridge app check version
 
 # The command line, the privileged supervisor and the core it runs.
 tools:
-	go build -tags with_gvisor $(RELEASE) -o flclashctl ./cmd/flclashctl
-	go build -tags with_gvisor $(RELEASE) -o flclash-core ./cmd/flclash-core
+	go build $(RELEASE) -o flclashctl ./cmd/flclashctl
+	go build -tags $(CORE_TAGS) $(RELEASE) -o flclash-core ./cmd/flclash-core
 	go build $(RELEASE) -o flclash-helper ./cmd/flclash-helper
 
 # The engine as a C library for the app to link.

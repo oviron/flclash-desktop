@@ -6,6 +6,24 @@ workflow takes the notes of a release from its section here.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-28
+
+### Changed
+
+- The core leaves out the EasyTier, ZeroTier and Tailscale outbounds and the
+  gVisor stack, none of which the app uses: it is 39 MB instead of 64 on macOS
+  and starts with about 6 MB less memory.
+
+- The Windows window is WPF on the .NET Framework that Windows carries, in
+  place of WinUI 3 with its own .NET and Windows App SDK: it is about 1 MB
+  instead of 85, takes about a third less memory while open, and one build
+  serves x64 and Arm64. The installer removes the earlier window's files.
+
+### Removed
+
+- `flclashctl run`: the app runs the local port itself. The command line no
+  longer carries a copy of the core and is 7 MB instead of 64.
+
 ## [0.2.0] - 2026-11-28
 
 ### Added
@@ -58,6 +76,7 @@ The first public release.
 - Releases with SHA-256 sums and build provenance attestations; a Windows
   installer for the current user.
 
-[Unreleased]: https://github.com/oviron/flclash-desktop/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/oviron/flclash-desktop/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/oviron/flclash-desktop/releases/tag/v0.3.0
 [0.2.0]: https://github.com/oviron/flclash-desktop/releases/tag/v0.2.0
 [0.1.0]: https://github.com/oviron/flclash-desktop/releases/tag/v0.1.0

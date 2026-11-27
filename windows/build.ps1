@@ -1,6 +1,7 @@
 # Builds FlClash for Windows into dist\windows\FlClash\: the agent with the
 # icon in the notification area (FlClash.exe), the core, the helper and the
-# command line from the Go sources, and the WinUI window under window\.
+# command line from the Go sources, and the window under window\: WPF on the
+# .NET Framework that Windows carries, the same build for x64 and Arm64.
 #
 #   powershell -ExecutionPolicy Bypass -File windows\build.ps1 [-Arch x64|arm64] [-Version X.Y.Z] [-SkipGo] [-SkipWindow]
 #
@@ -74,9 +75,10 @@ try {
         $ldflags = "-s -w -X github.com/oviron/flclash-desktop/internal/build.Version=$Version"
         go build -trimpath -ldflags "$ldflags -H windowsgui" -o "$out\FlClash.exe" ./cmd/flclash-windows
         if ($LASTEXITCODE -ne 0) { throw 'FlClash.exe did not build' }
-        go build -tags with_gvisor -trimpath -ldflags $ldflags -o "$out\flclash-core.exe" ./cmd/flclash-core
+        # The same tags as CORE_TAGS in the Makefile.
+        go build -tags no_easytier,no_zerotier -trimpath -ldflags $ldflags -o "$out\flclash-core.exe" ./cmd/flclash-core
         if ($LASTEXITCODE -ne 0) { throw 'flclash-core.exe did not build' }
-        go build -tags with_gvisor -trimpath -ldflags $ldflags -o "$out\flclashctl.exe" ./cmd/flclashctl
+        go build -trimpath -ldflags $ldflags -o "$out\flclashctl.exe" ./cmd/flclashctl
         if ($LASTEXITCODE -ne 0) { throw 'flclashctl.exe did not build' }
         go build -trimpath -ldflags $ldflags -o "$out\flclash-helper.exe" ./cmd/flclash-helper
         if ($LASTEXITCODE -ne 0) { throw 'flclash-helper.exe did not build' }
@@ -85,7 +87,7 @@ try {
     if (-not $SkipWindow) {
         $window = Join-Path $out 'window'
         if (Test-Path $window) { Remove-Item -Recurse -Force $window }
-        dotnet publish windows\FlClash.Window\FlClash.Window.csproj -c Release -r "win-$Arch" -p:Platform=$Arch -p:Version=$short -p:InformationalVersion=$Version -o $window --nologo
+        dotnet build windows\FlClash.Window\FlClash.Window.csproj -c Release -p:Version=$short -p:InformationalVersion=$Version -o $window --nologo
         if ($LASTEXITCODE -ne 0) { throw 'the window did not build' }
     }
 }

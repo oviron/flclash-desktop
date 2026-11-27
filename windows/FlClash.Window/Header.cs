@@ -1,10 +1,8 @@
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Shapes;
-using Windows.ApplicationModel.DataTransfer;
-using Windows.Foundation;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Media;
+using Shapes = System.Windows.Shapes;
 
 namespace FlClash;
 
@@ -27,13 +25,11 @@ public readonly record struct Look(Tint Tint, string Glyph, string Mark, double 
 }
 
 /// A round badge that says the state with a symbol and a colour.
-/// (The views are held, not derived from: a C# class derived from a XAML
-/// one breaks the window when the system calls back into it.)
 public sealed class Badge
 {
     public readonly Grid View = new();
-    readonly Ellipse disc = new();
-    readonly FontIcon icon = new();
+    readonly Shapes.Ellipse disc = new();
+    readonly TextBlock icon = new() { FontFamily = Ui.Icons, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     readonly TextBlock mark = new() { FontWeight = Ui.Semibold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
 
     public Badge(double side = 46)
@@ -53,7 +49,7 @@ public sealed class Badge
         var c = Ui.Color(look.Tint);
         disc.Fill = new SolidColorBrush(Ui.Alpha(c, 0.18));
         disc.Stroke = new SolidColorBrush(Ui.Alpha(c, 0.35));
-        icon.Glyph = look.Glyph;
+        icon.Text = look.Glyph;
         icon.Foreground = new SolidColorBrush(c);
         mark.Text = look.Mark;
         mark.Foreground = new SolidColorBrush(c);
@@ -66,10 +62,10 @@ public sealed class TrafficGraph
 {
     public readonly Canvas View = new();
     const int HistoryLength = 60;
-    readonly Line ground = new() { StrokeThickness = 1 };
-    readonly Polygon area = new();
-    readonly Polyline down = new() { StrokeThickness = 1.5, StrokeLineJoin = PenLineJoin.Round };
-    readonly Polyline up = new() { StrokeThickness = 1, StrokeLineJoin = PenLineJoin.Round };
+    readonly Shapes.Line ground = new() { StrokeThickness = 1 };
+    readonly Shapes.Polygon area = new();
+    readonly Shapes.Polyline down = new() { StrokeThickness = 1.5, StrokeLineJoin = PenLineJoin.Round };
+    readonly Shapes.Polyline up = new() { StrokeThickness = 1, StrokeLineJoin = PenLineJoin.Round };
 
     public TrafficGraph()
     {
@@ -85,27 +81,35 @@ public sealed class TrafficGraph
     {
         double w = View.Width, h = View.Height;
         ground.X1 = 1; ground.X2 = w - 1; ground.Y1 = ground.Y2 = h - 1.5;
-        ground.Stroke = Ui.Res("DividerStrokeColorDefaultBrush");
+        ground.Stroke = Ui.B("Divider");
         var c = Ui.Color(tint);
-        down.Points.Clear(); up.Points.Clear(); area.Points.Clear();
-        if (samples.Count < 2) return;
-        // The scale never drops under a few kilobytes: an idle line lies flat.
-        double peak = Math.Max(samples.Max(s => Math.Max(s[0], s[1])), 8 << 10);
-        double left = 1, right = w - 1, bottom = h - 2, height = h - 4;
-        double step = (right - left) / (HistoryLength - 1);
-        double start = right - step * (samples.Count - 1);
-        for (int i = 0; i < samples.Count; i++)
+        var downs = new PointCollection();
+        var ups = new PointCollection();
+        var shape = new PointCollection();
+        samples = samples.Where(s => s != null && s.Length >= 2).ToList();
+        if (samples.Count >= 2)
         {
-            double x = start + step * i;
-            down.Points.Add(new Point(x, bottom - height * samples[i][0] / peak));
-            up.Points.Add(new Point(x, bottom - height * samples[i][1] / peak));
+            // The scale never drops under a few kilobytes: an idle line lies flat.
+            double peak = Math.Max(samples.Max(s => Math.Max(s[0], s[1])), 8 << 10);
+            double left = 1, right = w - 1, bottom = h - 2, height = h - 4;
+            double step = (right - left) / (HistoryLength - 1);
+            double start = right - step * (samples.Count - 1);
+            for (int i = 0; i < samples.Count; i++)
+            {
+                double x = start + step * i;
+                downs.Add(new Point(x, bottom - height * samples[i][0] / peak));
+                ups.Add(new Point(x, bottom - height * samples[i][1] / peak));
+            }
+            foreach (var p in downs) shape.Add(p);
+            shape.Add(new Point(right, bottom));
+            shape.Add(new Point(start, bottom));
         }
-        foreach (var p in down.Points) area.Points.Add(p);
-        area.Points.Add(new Point(right, bottom));
-        area.Points.Add(new Point(start, bottom));
-        var fill = new LinearGradientBrush { StartPoint = new(0, 0), EndPoint = new(0, 1) };
-        fill.GradientStops.Add(new GradientStop { Color = Ui.Alpha(c, 0.30), Offset = 0 });
-        fill.GradientStops.Add(new GradientStop { Color = Ui.Alpha(c, 0.02), Offset = 1 });
+        down.Points = downs;
+        up.Points = ups;
+        area.Points = shape;
+        var fill = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+        fill.GradientStops.Add(new GradientStop(Ui.Alpha(c, 0.30), 0));
+        fill.GradientStops.Add(new GradientStop(Ui.Alpha(c, 0.02), 1));
         area.Fill = fill;
         down.Stroke = new SolidColorBrush(Ui.Alpha(c, 0.9));
         up.Stroke = Ui.Secondary;
@@ -126,73 +130,73 @@ public sealed class Header
     readonly Badge badge = new();
     readonly TextBlock headline = Ui.Text("", 18, Ui.Semibold);
     readonly TextBlock detail = Ui.Text("", 12, null, Ui.Secondary);
-    readonly StackPanel exitLine = new() { Orientation = Orientation.Horizontal, Spacing = 6 };
+    readonly StackPanel exitLine = new() { Orientation = Orientation.Horizontal };
     readonly TextBlock testMark = Ui.Text(L.T("Test environment"), 11, Ui.Semibold);
     readonly Button button = new() { MinWidth = 120, Padding = new Thickness(18, 8, 18, 8) };
-    readonly ProgressRing spinner = new() { Width = 18, Height = 18, IsActive = false };
+    readonly Spinner spinner = new();
     readonly TrafficGraph graph = new();
     readonly TextBlock downRate = Ui.Text("", 11, null, Ui.Secondary);
     readonly TextBlock upRate = Ui.Text("", 11, null, Ui.Secondary);
-    readonly StackPanel traffic = new() { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center };
+    readonly StackPanel traffic = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
     readonly ToggleButton[] modes = new ToggleButton[3];
-    static readonly string[] modeNames = ["proxy", "system", "tun"];
+    static readonly string[] modeNames = { "proxy", "system", "tun" };
     readonly ComboBox policies = new() { MinWidth = 200, MaxWidth = 260 };
     readonly Button address = new();
     readonly TextBlock addressText = Ui.Text("", 13, null, Ui.Secondary);
-    readonly FontIcon addressIcon = Ui.Glyph("", 11, Ui.Secondary);
-    readonly Grid noticeRow = new() { ColumnSpacing = 8 };
-    readonly TextBlock notice = Ui.Text("", 12, null, Ui.Secondary, wrap: true);
+    readonly TextBlock addressIcon = Ui.Glyph("", 11, Ui.Secondary);
+    readonly Grid noticeRow = Ui.Columns(Ui.Auto, -1, Ui.Auto);
+    readonly TextBox notice = new() { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Background = Brushes.Transparent, Padding = new Thickness(0), FontSize = 12 };
     readonly Button noticeButton = new();
     bool installing, copied, filling;
 
     public Header(MainWindow window)
     {
         this.window = window;
-        foreach (var t in new[] { headline, detail }) t.MaxLines = 1;
         testMark.Foreground = Ui.Brush(Tint.Orange);
-        testMark.Margin = new Thickness(4, 0, 0, 0);
         var titles = Ui.Column(3, headline, detail, exitLine);
         titles.VerticalAlignment = VerticalAlignment.Center;
 
         // No Enter shortcut: a stray key must not turn the connection on or off.
         button.Click += (_, _) => A.Toggle();
-        downRate.FontFamily = upRate.FontFamily = new FontFamily("Segoe UI Variable Small");
+        downRate.FontFamily = upRate.FontFamily = new FontFamily("Segoe UI Variable Small, Segoe UI");
         var rates = Ui.Column(3, downRate, upRate);
         rates.MinWidth = 84;
         rates.VerticalAlignment = VerticalAlignment.Center;
         traffic.Children.Add(graph.View);
-        traffic.Children.Add(rates);
+        Ui.Add(traffic, rates, 10);
 
-        var top = new Grid { ColumnSpacing = 14 };
-        foreach (var w in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto, GridLength.Auto, GridLength.Auto })
-            top.ColumnDefinitions.Add(new ColumnDefinition { Width = w });
-        var titleRow = new Grid();
-        titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var top = Ui.Columns(Ui.Auto, -1, Ui.Auto, Ui.Auto, Ui.Auto);
+        var titleRow = Ui.Columns(-1, Ui.Auto);
         titleRow.Children.Add(titles);
-        Grid.SetColumn(testMark, 1);
         testMark.VerticalAlignment = VerticalAlignment.Top;
         testMark.Margin = new Thickness(12, 4, 0, 0);
-        titleRow.Children.Add(testMark);
-        Place(top, badge.View, 0); Place(top, titleRow, 1); Place(top, traffic, 2); Place(top, spinner, 3); Place(top, button, 4);
-        spinner.VerticalAlignment = button.VerticalAlignment = VerticalAlignment.Center;
+        Ui.Place(titleRow, testMark, 1);
+        Ui.Place(top, badge.View, 0);
+        Ui.Place(top, titleRow, 1, 14);
+        Ui.Place(top, traffic, 2, 14);
+        Ui.Place(top, spinner.View, 3, 14);
+        Ui.Place(top, button, 4, 14);
+        button.VerticalAlignment = VerticalAlignment.Center;
 
         // The modes as one segmented switch.
-        var segments = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0 };
-        string[] titlesOfModes = [L.T("Port Only"), L.T("System Proxy"), L.T("TUN")];
-        string[] tips = [
+        var segments = new StackPanel { Orientation = Orientation.Horizontal };
+        string[] titlesOfModes = { L.T("Port Only"), L.T("System Proxy"), L.T("TUN") };
+        string[] tips = {
             L.T("Nothing changes in the system: only apps pointed at the local port use it."),
             L.T("Apps that follow the system proxy setting go through the local port."),
             L.T("Everything on this computer goes through the tunnel."),
-        ];
+        };
         for (int i = 0; i < 3; i++)
         {
             int index = i;
-            var b = new ToggleButton { Content = titlesOfModes[i], Padding = new Thickness(14, 5, 14, 6), MinWidth = 70 };
-            b.CornerRadius = i == 0 ? new CornerRadius(6, 0, 0, 6) : i == 2 ? new CornerRadius(0, 6, 6, 0) : new CornerRadius(0);
+            var b = new ToggleButton { Content = titlesOfModes[i], MinWidth = 70 };
+            Ui.SetCorner(b, i == 0 ? new CornerRadius(6, 0, 0, 6) : i == 2 ? new CornerRadius(0, 6, 6, 0) : new CornerRadius(0));
             if (i > 0) b.Margin = new Thickness(-1, 0, 0, 0);
-            ToolTipService.SetToolTip(b, tips[i]);
-            b.Click += async (_, _) =>
+            b.ToolTip = tips[i];
+            // Checked, not Click: Narrator and other assistive tools toggle the
+            // button without a click.
+            b.Unchecked += (_, _) => { if (!filling) Update(); };
+            b.Checked += async (_, _) =>
             {
                 if (filling) return;
                 Update();
@@ -206,7 +210,7 @@ public sealed class Header
         }
         segments.VerticalAlignment = VerticalAlignment.Center;
 
-        ToolTipService.SetToolTip(policies, L.T("Routing: which connections go through the server."));
+        policies.ToolTip = L.T("Routing: which connections go through the server.");
         policies.VerticalAlignment = VerticalAlignment.Center;
         policies.SelectionChanged += (_, _) =>
         {
@@ -214,35 +218,33 @@ public sealed class Header
             if (name != A.S.View.Policy) A.SelectPolicy(name);
         };
 
+        address.Style = Ui.Style("SubtleButton");
         address.Content = Ui.Row(6, addressText, addressIcon);
-        address.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        address.BorderThickness = new Thickness(0);
         address.Padding = new Thickness(6, 4, 6, 4);
         address.VerticalAlignment = VerticalAlignment.Center;
-        ToolTipService.SetToolTip(address, L.T("The local port for HTTP and SOCKS. Click to copy; change it in Settings."));
+        address.ToolTip = L.T("The local port for HTTP and SOCKS. Click to copy; change it in Settings.");
         address.Click += (_, _) => CopyAddress();
 
-        var choices = new Grid { ColumnSpacing = 10 };
-        choices.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        choices.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        choices.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        choices.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Place(choices, segments, 0); Place(choices, policies, 1); Place(choices, address, 3);
+        var choices = Ui.Columns(Ui.Auto, Ui.Auto, -1, Ui.Auto);
+        Ui.Place(choices, segments, 0);
+        Ui.Place(choices, policies, 1, 10);
+        Ui.Place(choices, address, 3, 10);
 
         var warning = Ui.Glyph("", 14, Ui.Brush(Tint.Yellow));
         warning.VerticalAlignment = VerticalAlignment.Top;
         warning.Margin = new Thickness(0, 2, 0, 0);
-        notice.IsTextSelectionEnabled = true;
+        notice.SetResourceReference(Control.ForegroundProperty, "Text2");
+        notice.Style = null;
+        notice.Template = PlainText();
         noticeButton.VerticalAlignment = VerticalAlignment.Top;
         noticeButton.Padding = new Thickness(10, 3, 10, 4);
         noticeButton.Click += (_, _) => NoticeAction();
-        noticeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        noticeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        noticeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Place(noticeRow, warning, 0); Place(noticeRow, notice, 1); Place(noticeRow, noticeButton, 2);
+        Ui.Place(noticeRow, warning, 0);
+        Ui.Place(noticeRow, notice, 1, 8);
+        Ui.Place(noticeRow, noticeButton, 2, 8);
 
         var column = Ui.Column(14, top, choices, noticeRow);
-        column.Padding = new Thickness(16, 16, 16, 14);
+        column.Margin = new Thickness(16, 16, 16, 14);
 
         card.CornerRadius = wash.CornerRadius = new CornerRadius(16);
         card.BorderThickness = new Thickness(1);
@@ -254,10 +256,16 @@ public sealed class Header
         View.Children.Add(card);
     }
 
-    static void Place(Grid g, FrameworkElement e, int column)
+    /// Text that can be selected and copied, drawn as text.
+    static ControlTemplate PlainText()
     {
-        Grid.SetColumn(e, column);
-        g.Children.Add(e);
+        var t = new ControlTemplate(typeof(TextBox));
+        var host = new FrameworkElementFactory(typeof(ScrollViewer), "PART_ContentHost");
+        host.SetValue(ScrollViewer.FocusableProperty, false);
+        host.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+        host.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+        t.VisualTree = host;
+        return t;
     }
 
     public void Update()
@@ -267,15 +275,15 @@ public sealed class Header
         filling = true;
         var look = Look.Of(s);
         badge.Show(look);
-        card.Background = Ui.Res("CardBackgroundFillColorDefaultBrush");
-        card.BorderBrush = Ui.Res("CardStrokeColorDefaultBrush");
+        card.Background = Ui.B("Card");
+        card.BorderBrush = Ui.B("CardStroke");
         if (look.Wash > 0)
         {
             var c = Ui.Color(look.Tint);
-            var g = new LinearGradientBrush { StartPoint = new(0, 0.5), EndPoint = new(1, 0.5) };
-            g.GradientStops.Add(new GradientStop { Color = Ui.Alpha(c, look.Wash), Offset = 0 });
-            g.GradientStops.Add(new GradientStop { Color = Ui.Alpha(c, look.Wash * 0.25), Offset = 0.45 });
-            g.GradientStops.Add(new GradientStop { Color = Ui.Alpha(c, 0), Offset = 0.9 });
+            var g = new LinearGradientBrush { StartPoint = new Point(0, 0.5), EndPoint = new Point(1, 0.5) };
+            g.GradientStops.Add(new GradientStop(Ui.Alpha(c, look.Wash), 0));
+            g.GradientStops.Add(new GradientStop(Ui.Alpha(c, look.Wash * 0.25), 0.45));
+            g.GradientStops.Add(new GradientStop(Ui.Alpha(c, 0), 0.9));
             wash.Background = g;
         }
         else wash.Background = null;
@@ -307,9 +315,9 @@ public sealed class Header
             if (!string.IsNullOrEmpty(exit.Country))
             {
                 exitLine.Children.Add(Ui.CountryPlate(exit.Country, 9));
-                exitLine.Children.Add(Ui.Text(Format.Country(exit.Country!) + "  ·  " + exit.Ip, 12, null, Ui.Secondary));
+                Ui.Add(exitLine, Ui.Text(Format.Country(exit.Country!) + "  ·  " + exit.Ip, 12, null, Ui.Secondary), 6);
             }
-            else exitLine.Children.Add(Ui.Text(exit.Ip, 12, null, Ui.Secondary));
+            else exitLine.Children.Add(Ui.Text(exit.Ip ?? "", 12, null, Ui.Secondary));
             exitLine.Visibility = Visibility.Visible;
         }
         else exitLine.Visibility = Visibility.Collapsed;
@@ -328,11 +336,7 @@ public sealed class Header
         {
             policies.Items.Clear();
             foreach (var p in s.View.Policies)
-            {
-                var item = new ComboBoxItem { Content = Format.PolicyTitle(p.Name), Tag = p.Name };
-                ToolTipService.SetToolTip(item, Format.PolicyAbout(p));
-                policies.Items.Add(item);
-            }
+                policies.Items.Add(new ComboBoxItem { Content = Format.PolicyTitle(p.Name), Tag = p.Name, ToolTip = Format.PolicyAbout(p) });
         }
         policies.SelectedIndex = s.View.Policies.FindIndex(p => p.Name == policy);
         policies.IsEnabled = !s.Busy;
@@ -349,12 +353,11 @@ public sealed class Header
         button.Content = st.Running ? L.T("Disconnect") : st.Blocked ? L.T("Connect Again") : L.T("Connect");
         button.IsEnabled = s.HelperReady && !s.Busy && (st.Running || s.SelectedServer != null);
         // Turning on is the thing to do here; turning off is not.
-        if (button.IsEnabled && !st.Running) button.Style = (Style)Ui.Find(Application.Current.Resources, "AccentButtonStyle")!;
+        if (button.IsEnabled && !st.Running) button.Style = Ui.Style("AccentButton");
         else button.ClearValue(FrameworkElement.StyleProperty);
         spinner.IsActive = s.Busy || installing;
-        spinner.Visibility = spinner.IsActive ? Visibility.Visible : Visibility.Collapsed;
 
-        ToolTipService.SetToolTip(notice, null);
+        notice.ToolTip = null;
         noticeButton.Visibility = Visibility.Visible;
         noticeRow.Visibility = Visibility.Visible;
         if (!s.HelperReady && !st.Installed)
@@ -386,7 +389,7 @@ public sealed class Header
         else if (st.Running && st.GuardProblem.Length > 0)
         {
             notice.Text = L.T("Protection did not turn on: traffic can leave past the tunnel.");
-            ToolTipService.SetToolTip(notice, st.GuardProblem);
+            notice.ToolTip = st.GuardProblem;
             noticeButton.Visibility = Visibility.Collapsed;
         }
         else noticeRow.Visibility = Visibility.Collapsed;
@@ -406,7 +409,7 @@ public sealed class Header
         graph.Draw(s.History, look.Tint);
         downRate.Text = "↓ " + Format.Rate(stats.Down);
         upRate.Text = "↑ " + Format.Rate(stats.Up);
-        ToolTipService.SetToolTip(traffic, L.F("Since the tunnel came up: %@ down, %@ up", Format.Amount(stats.DownTotal), Format.Amount(stats.UpTotal)));
+        traffic.ToolTip = L.F("Since the tunnel came up: %@ down, %@ up", Format.Amount(stats.DownTotal), Format.Amount(stats.UpTotal));
     }
 
     /// Puts the address of the local port on the clipboard, and says so for a moment.
@@ -415,17 +418,17 @@ public sealed class Header
         if (copied) return;
         if (Ui.Copy(addressText.Text, secret: false) is { } problem)
         {
-            await Ui.Say(View.XamlRoot, L.T("Nothing was copied"), problem);
+            await Ui.Say(L.T("Nothing was copied"), problem);
             return;
         }
         var shown = addressText.Text;
         copied = true;
         addressText.Text = L.T("Copied");
-        addressIcon.Glyph = "";
+        addressIcon.Text = "";
         await Task.Delay(1200);
         copied = false;
         addressText.Text = shown;
-        addressIcon.Glyph = "";
+        addressIcon.Text = "";
         Update();
     }
 
@@ -443,7 +446,6 @@ public sealed class Header
         var reply = await A.InstallHelper();
         installing = false;
         Update();
-        if (!string.IsNullOrEmpty(reply.Error) && View.XamlRoot != null)
-            await Ui.Say(View.XamlRoot, L.T("The helper was not installed"), reply.Error);
+        if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(L.T("The helper was not installed"), reply.Error!);
     }
 }
