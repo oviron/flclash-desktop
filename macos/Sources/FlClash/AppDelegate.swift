@@ -25,6 +25,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
 
+    /// Quitting turns the connection off, whatever the mode.
+    func applicationWillTerminate(_ notification: Notification) { Model.shared.stop() }
+
     /// The app lives in the menu bar; the window comes and goes.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 

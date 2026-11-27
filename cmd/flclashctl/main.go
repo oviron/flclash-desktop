@@ -28,7 +28,8 @@ const usage = `usage:
                                               a running tunnel moves to the new choice
   flclashctl policy import NAME FILE          add a routing policy from a rules file
   flclashctl policy remove NAME               delete an imported policy
-  flclashctl on | off | status                turn the tunnel on or off, or show what is true right now
+  flclashctl on | off | status                turn the tunnel (mode tun) on or off through the helper, or show it;
+                                              the local port and the system proxy run in the app
   flclashctl sub add NAME URL                 add a group that is filled from a subscription address
   flclashctl sub update [NAME] | remove NAME  read a subscription again (all that are due without NAME), or delete it
   flclashctl mode tun | system | proxy        capture everything, set the system proxy, or only open the local port

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/oviron/flclash-desktop/internal/app"
@@ -8,7 +9,15 @@ import (
 	"github.com/oviron/flclash-desktop/internal/store"
 )
 
+// The command line reaches the helper only, and the helper runs the tunnel
+// only: the local port and the system proxy run inside the app.
+const inApp = "the local port and the system proxy run inside the FlClash app: turn them on there, " +
+	"or use flclashctl run -local-port N for a core that runs while the command does"
+
 func cmdOn(st *store.Store, _ []string) error {
+	if state, err := st.Load(); err == nil && state.Mode != helper.ModeTUN {
+		return errors.New(inApp)
+	}
 	status, err := app.On(st)
 	if err != nil {
 		if status.Running {
@@ -22,6 +31,10 @@ func cmdOn(st *store.Store, _ []string) error {
 
 func cmdOff(_ *store.Store, _ []string) error {
 	status, err := app.Off()
+	if helper.IsNotInstalled(err) {
+		fmt.Println("the helper is not installed, so no tunnel runs; " + inApp)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -31,10 +44,18 @@ func cmdOff(_ *store.Store, _ []string) error {
 
 func cmdStatus(_ *store.Store, _ []string) error {
 	status, err := app.Status()
+	if helper.IsNotInstalled(err) {
+		fmt.Println("no tunnel: the helper, which only the tunnel needs, is not installed; " + inApp)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	fmt.Println(describe(status))
+	text := describe(status)
+	if !status.Running && !status.Blocked {
+		text += " (the tunnel; the local port and the system proxy are shown in the app)"
+	}
+	fmt.Println(text)
 	return nil
 }
 

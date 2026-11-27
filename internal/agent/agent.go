@@ -14,12 +14,14 @@ package agent
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/oviron/flclash-desktop/internal/bridge"
+	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/model"
 )
 
@@ -90,9 +92,12 @@ type Agent struct {
 	Open func(page string)
 	// InstallHelper asks for the helper to be installed and waits for it.
 	InstallHelper func() error
-	SetHotKey     func(HotKey) error
-	SetLogin      func(on bool) error
-	Quit          func()
+
+	installMu  sync.Mutex
+	installing bool
+	SetHotKey  func(HotKey) error
+	SetLogin   func(on bool) error
+	Quit       func()
 	// A host that does one of these itself leaves it nil, and the action
 	// is refused.
 
@@ -315,6 +320,67 @@ func (a *Agent) Local(emit func([]byte)) (send func([]byte), stop func()) {
 	return send, stop
 }
 
+// ErrCancelled is what InstallHelper returns when the person declined the
+// system's prompt: nothing to report, and nothing to go on with.
+var ErrCancelled = errors.New("cancelled")
+
+// SetMode chooses how the host is served. The tunnel needs the helper; when it
+// is missing or from another version, it is installed first, through the
+// system's prompt, and the mode changes only once it is there. Declined, the
+// mode stays as it was. While the prompt is up no other mode is taken: the
+// answer to it decides.
+func (a *Agent) SetMode(mode string, reply func(bridge.Reply)) {
+	done := func(r bridge.Reply) {
+		if reply != nil {
+			reply(r)
+		}
+	}
+	a.installMu.Lock()
+	if a.installing {
+		a.installMu.Unlock()
+		done(bridge.Reply{})
+		return
+	}
+	change := func() { a.Model.Change(bridge.Request{Op: "mode", Text: mode}, false, reply) }
+	if mode != helper.ModeTUN || a.InstallHelper == nil {
+		a.installMu.Unlock()
+		change()
+		return
+	}
+	a.installing = true
+	a.installMu.Unlock()
+	go func() {
+		defer func() {
+			a.installMu.Lock()
+			a.installing = false
+			a.installMu.Unlock()
+		}()
+		// Asked now, not from the last status: the prompt is costly to show
+		// for nothing, and a helper that does not answer must not pass.
+		h := helper.Probe()
+		if h.Problem != nil {
+			a.Model.Report(h.Problem.Error())
+			done(bridge.Reply{})
+			return
+		}
+		if h.Installed && !h.Outdated {
+			change()
+			return
+		}
+		err := a.InstallHelper()
+		a.Model.Refresh()
+		switch {
+		case err == nil:
+			change()
+			return
+		case !errors.Is(err, ErrCancelled):
+			// Shown where every other failure is: the mode did not change.
+			a.Model.Report(err.Error())
+		}
+		done(bridge.Reply{})
+	}()
+}
+
 func (a *Agent) handle(c *client, m Message) {
 	reply := func(r bridge.Reply) {
 		if m.ID != 0 {
@@ -376,6 +442,10 @@ func (a *Agent) handle(c *client, m Message) {
 		}
 		switch m.Action {
 		case "change":
+			if m.Request.Op == "mode" {
+				a.SetMode(m.Request.Text, reply)
+				return
+			}
 			model.Change(*m.Request, m.Quiet, reply)
 		case "do":
 			model.Do(*m.Request, m.Quiet, reply)
@@ -391,6 +461,9 @@ func (a *Agent) handle(c *client, m Message) {
 		go func() {
 			err := a.InstallHelper()
 			model.Refresh()
+			if errors.Is(err, ErrCancelled) {
+				err = nil
+			}
 			errReply(err)
 		}()
 	case "hotKey":

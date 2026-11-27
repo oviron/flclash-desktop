@@ -44,7 +44,8 @@ type Snapshot struct {
 	Exit *helper.Exit `json:"exit,omitempty"`
 	// Updating are the subscriptions being read right now.
 	Updating []string `json:"updating"`
-	// HelperReady: the helper is there and takes this app's requests.
+	// HelperReady: the mode can run: it needs no helper, or the helper is
+	// there and takes this app's requests.
 	HelperReady bool `json:"helperReady"`
 	// Test: the app was pointed at a helper or a data folder of its own.
 	Test bool `json:"test"`
@@ -80,6 +81,8 @@ type Model struct {
 	started    bool
 	listeners  map[int]func()
 	nextID     int
+	// closing: the app is quitting; the tunnel takes no new changes.
+	closing bool
 
 	// Requests go to one of four lines, each served in order:
 	// changes of the tunnel, measurements, subscriptions, the counters.
@@ -229,7 +232,19 @@ func (m *Model) Snapshot() Snapshot {
 	return s
 }
 
-func (m *Model) helperReady() bool { return m.status.Installed && !m.status.Outdated }
+// helperReady: what the mode needs is there. Only the tunnel needs the
+// helper; the other modes run in the app. While something runs, its mode is
+// the one that counts.
+func (m *Model) helperReady() bool {
+	mode := m.view.Mode
+	if (m.status.Running || m.status.Blocked) && m.status.Mode != "" {
+		mode = m.status.Mode
+	}
+	if mode != helper.ModeTUN {
+		return true
+	}
+	return m.status.Installed && !m.status.Outdated
+}
 
 func (m *Model) changed() {
 	m.mu.Lock()
@@ -246,6 +261,12 @@ func (m *Model) changed() {
 // call sends a request down a line and hands the reply to then, in order.
 func (m *Model) call(l *line, req bridge.Request, then func(bridge.Reply)) {
 	req.Lang = m.Lang
+	m.mu.Lock()
+	closing := m.closing
+	m.mu.Unlock()
+	if closing && l == m.engine {
+		return
+	}
 	l.push(func() {
 		reply := m.Call(req)
 		if then != nil {
@@ -395,6 +416,37 @@ func (m *Model) Change(req bridge.Request, quiet bool, done func(bridge.Reply)) 
 			done(r)
 		}
 	})
+}
+
+// Quit turns off what runs, after the changes already asked for, and takes no
+// new ones: the connection lives with the app. It returns once the core is
+// gone and the system proxy is put back, or after a minute.
+func (m *Model) Quit() {
+	m.mu.Lock()
+	if m.closing {
+		m.mu.Unlock()
+		return
+	}
+	m.closing = true
+	m.mu.Unlock()
+	done := make(chan struct{})
+	req := bridge.Request{Op: "off", Lang: m.Lang}
+	m.engine.push(func() {
+		m.Call(req)
+		close(done)
+	})
+	select {
+	case <-done:
+	case <-time.After(time.Minute):
+	}
+}
+
+// Report shows a problem that did not come from the engine, as one that did.
+func (m *Model) Report(problem string) {
+	m.mu.Lock()
+	m.problem = problem
+	m.mu.Unlock()
+	m.changed()
 }
 
 // Do sends a request that changes nothing that runs: an import, a removal, a

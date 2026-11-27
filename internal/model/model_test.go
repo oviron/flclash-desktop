@@ -126,3 +126,26 @@ func TestToggleAndMeasure(t *testing.T) {
 		t.Fatal("no change was told")
 	}
 }
+
+// Quitting turns off after what was asked before it, and nothing asked after
+// it turns the tunnel back on.
+func TestQuitComesAfterQueuedChanges(t *testing.T) {
+	e := &engine{}
+	m := New("en")
+	m.Call = e.call
+	m.Change(bridge.Request{Op: "on"}, false, nil)
+	m.Quit()
+	m.Change(bridge.Request{Op: "on"}, false, nil)
+	time.Sleep(50 * time.Millisecond)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var changes []string
+	for _, op := range e.ops {
+		if op == "on" || op == "off" {
+			changes = append(changes, op)
+		}
+	}
+	if len(changes) != 2 || changes[0] != "on" || changes[1] != "off" || e.running {
+		t.Fatalf("got %v, running %v", changes, e.running)
+	}
+}

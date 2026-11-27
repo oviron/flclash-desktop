@@ -81,15 +81,13 @@ type Reply struct {
 	Document *app.PolicyDoc `json:"document,omitempty"`
 }
 
-func toStatus(s helper.Status, err error) *Status {
-	out := &Status{Installed: true, Running: s.Running, Captured: s.Captured, Server: s.Server, Policy: s.Policy,
-		Mode: s.Mode, Port: s.Port, LAN: s.LAN, Guard: s.Guard, GuardProblem: s.GuardProblem, Blocked: s.Blocked}
-	out.Outdated = err == nil && s.Version != helper.Version
+// toStatus describes what runs, and the helper, which matters for the tunnel
+// only: the other modes run in the app itself.
+func toStatus(s helper.Status, h helper.HelperState) *Status {
+	out := &Status{Installed: h.Installed, Outdated: h.Outdated, Running: s.Running, Captured: s.Captured, Server: s.Server,
+		Policy: s.Policy, Mode: s.Mode, Port: s.Port, LAN: s.LAN, Guard: s.Guard, GuardProblem: s.GuardProblem, Blocked: s.Blocked}
 	if !s.Since.IsZero() {
 		out.Since = s.Since.Unix()
-	}
-	if err != nil && strings.Contains(err.Error(), "not installed") {
-		out.Installed = false
 	}
 	return out
 }
@@ -109,10 +107,15 @@ func Handle(req Request) (out Reply) {
 	case "snapshot":
 	case "status":
 		s, err := app.Status()
-		out.Status = toStatus(s, err)
+		h := helper.Probe()
+		out.Status = toStatus(s, h)
 		// A missing helper is a state to show, not a failure of the call.
-		if err != nil && out.Status.Installed {
+		if err != nil && !helper.IsNotInstalled(err) {
 			return fail(err)
+		}
+		// A helper that does not answer matters to the tunnel alone.
+		if state, lerr := st.Load(); h.Problem != nil && lerr == nil && state.Mode == helper.ModeTUN && !s.Running {
+			return fail(h.Problem)
 		}
 		return out
 	case "delay":
@@ -141,7 +144,7 @@ func Handle(req Request) (out Reply) {
 		out.Exit = &exit
 		return out
 	case "log":
-		out.Log = logTail(256 << 10)
+		out.Log = logTail(logPath(st), 256<<10)
 		return out
 	case "stats":
 		stats, err := helper.ReadStats()
@@ -152,13 +155,13 @@ func Handle(req Request) (out Reply) {
 		return out
 	case "on":
 		s, err := app.On(st)
-		out.Status = toStatus(s, err)
+		out.Status = toStatus(s, helper.Probe())
 		if err != nil {
 			return fail(err)
 		}
 	case "off":
 		s, err := app.Off()
-		out.Status = toStatus(s, err)
+		out.Status = toStatus(s, helper.Probe())
 		if err != nil {
 			return fail(err)
 		}
@@ -296,9 +299,24 @@ func Handle(req Request) (out Reply) {
 	return out
 }
 
-// logTail reads the end of the helper's log, from the start of a line.
-func logTail(limit int64) string {
-	file, err := os.Open(helper.LogPath())
+// logPath is the log of the core that runs, or would: the helper's for the
+// tunnel, the app's own for the other modes.
+func logPath(st *store.Store) string {
+	mode := ""
+	if s, err := app.Status(); err == nil && s.Running {
+		mode = s.Mode
+	} else if state, err := st.Load(); err == nil {
+		mode = state.Mode
+	}
+	if mode != helper.ModeTUN && helper.LocalLog() != "" {
+		return helper.LocalLog()
+	}
+	return helper.LogPath()
+}
+
+// logTail reads the end of a log, from the start of a line.
+func logTail(path string, limit int64) string {
+	file, err := os.Open(path)
 	if err != nil {
 		return ""
 	}

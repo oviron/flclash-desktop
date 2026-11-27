@@ -72,10 +72,10 @@ public sealed class TunnelStatus
     public string GuardProblem { get; set; } = "";
     public bool Blocked { get; set; }
 
-    /// One line for people: what is true right now.
-    public string Headline =>
-        !Installed ? L.T("Helper is not installed")
-        : Outdated ? L.T("Helper needs an update")
+    /// One line for people: what is true right now. Only the tunnel needs the
+    /// helper, so only a mode that is not ready speaks of it.
+    public string Headline(bool helperReady) =>
+        !helperReady ? (Installed ? L.T("Helper needs an update") : L.T("Helper is not installed"))
         : Blocked ? (Mode == "system" ? L.T("The proxy is down") : L.T("Internet is blocked"))
         : !Running ? L.T("Off")
         : !Captured ? L.T("Not working")

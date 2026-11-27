@@ -192,10 +192,13 @@ public sealed class Header
             b.CornerRadius = i == 0 ? new CornerRadius(6, 0, 0, 6) : i == 2 ? new CornerRadius(0, 6, 6, 0) : new CornerRadius(0);
             if (i > 0) b.Margin = new Thickness(-1, 0, 0, 0);
             ToolTipService.SetToolTip(b, tips[i]);
-            b.Click += (_, _) =>
+            b.Click += async (_, _) =>
             {
                 if (filling) return;
-                A.SetMode(modeNames[index]);
+                Update();
+                // The tunnel installs the helper first; declined, the mode stays
+                // and the switches are drawn again.
+                await A.SetMode(modeNames[index]);
                 Update();
             };
             modes[i] = b;
@@ -279,7 +282,7 @@ public sealed class Header
         testMark.Text = L.T("Test environment");
         testMark.Visibility = s.Test ? Visibility.Visible : Visibility.Collapsed;
 
-        headline.Text = st.Headline;
+        headline.Text = st.Headline(s.HelperReady);
         // While on, say what runs; while off, say what would.
         var server = st.Running ? st.Server : s.SelectedServer?.Name ?? "";
         if (st.Blocked)
@@ -316,7 +319,7 @@ public sealed class Header
         for (int i = 0; i < 3; i++)
         {
             modes[i].IsChecked = modeNames[i] == mode;
-            modes[i].IsEnabled = s.HelperReady && !s.Busy;
+            modes[i].IsEnabled = !s.Busy;
         }
 
         var policy = st.Running && st.Policy.Length > 0 ? st.Policy : s.View.Policy;
@@ -354,13 +357,13 @@ public sealed class Header
         ToolTipService.SetToolTip(notice, null);
         noticeButton.Visibility = Visibility.Visible;
         noticeRow.Visibility = Visibility.Visible;
-        if (!st.Installed)
+        if (!s.HelperReady && !st.Installed)
         {
             notice.Text = L.T("To capture the traffic of this computer, FlClash needs a system helper. Installing it asks for administrator rights once.");
             noticeButton.Content = L.T("Install Helper…");
             noticeButton.IsEnabled = !installing;
         }
-        else if (st.Outdated)
+        else if (!s.HelperReady && st.Outdated)
         {
             notice.Text = L.T("The system helper is from another version of FlClash and has to be installed again. A tunnel that is on will stop for a moment.");
             noticeButton.Content = L.T("Update Helper…");

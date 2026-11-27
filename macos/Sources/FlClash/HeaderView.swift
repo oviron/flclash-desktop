@@ -380,7 +380,7 @@ final class HeaderView: NSView {
         // While on, the switches show what runs; while off, what would.
         let mode = status.running && !status.mode.isEmpty ? status.mode : model.view.mode
         modes.selectedSegment = ["proxy": 0, "system": 1, "tun": 2][mode] ?? 0
-        modes.isEnabled = model.helperReady && !model.busy
+        modes.isEnabled = !model.busy
 
         let policy = status.running && !status.policy.isEmpty ? status.policy : model.view.policy
         policies.removeAllItems()
@@ -407,13 +407,13 @@ final class HeaderView: NSView {
         if model.busy || installing { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
 
         notice.toolTip = nil
-        if !status.installed {
+        if !model.helperReady && !status.installed {
             notice.stringValue = L("To capture the traffic of this Mac, FlClash needs a system helper. Installing it asks for an administrator password once.")
             noticeButton.title = L("Install Helper…")
             noticeButton.isEnabled = !installing
             noticeButton.isHidden = false
             noticeRow.isHidden = false
-        } else if status.outdated {
+        } else if !model.helperReady && status.outdated {
             notice.stringValue = L("The system helper is from another version of FlClash and has to be installed again. A tunnel that is on will stop for a moment.")
             noticeButton.title = L("Update Helper…")
             noticeButton.isEnabled = !installing
@@ -482,7 +482,7 @@ final class HeaderView: NSView {
         }
         installing = true
         update()
-        HelperInstaller.install { [weak self] error in
+        Model.shared.installHelper { [weak self] error in
             self?.installing = false
             if let error, let window = self?.window {
                 let alert = NSAlert()
@@ -525,33 +525,3 @@ func rate(_ bytes: Int) -> String {
     String(format: L("%@/s"), amount(bytes))
 }
 
-/// Installs the privileged helper through the system's administrator prompt.
-enum HelperInstaller {
-    static func install(then done: @escaping (String?) -> Void) {
-        // The helper binaries ship next to the app's own executable.
-        let tool = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/flclashctl").path
-        let command = "'\(tool.replacingOccurrences(of: "'", with: "'\\''"))' helper install -uid \(getuid())"
-        let script = "do shell script \"\(command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\" with administrator privileges"
-        DispatchQueue.global(qos: .userInitiated).async {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            process.arguments = ["-e", script]
-            let errors = Pipe()
-            process.standardError = errors
-            process.standardOutput = Pipe()
-            var failure: String?
-            do {
-                try process.run()
-                process.waitUntilExit()
-                if process.terminationStatus != 0 {
-                    let text = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                    // -128 is the person pressing Cancel: nothing to report.
-                    failure = text.contains("-128") ? nil : text.trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-            } catch {
-                failure = error.localizedDescription
-            }
-            DispatchQueue.main.async { done(failure) }
-        }
-    }
-}

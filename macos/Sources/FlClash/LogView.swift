@@ -90,7 +90,7 @@ final class LogViewController: NSViewController {
         scroll.isHidden = out.length == 0
         if out.length == 0 {
             empty.show(title: raw.isEmpty ? L("The log is empty") : L("Nothing matches the search"),
-                       text: raw.isEmpty ? L("The helper writes here once it is installed and something runs.") : "", button: false)
+                       text: raw.isEmpty ? L("The core writes here once something runs.") : "", button: false)
         } else {
             empty.isHidden = true
             if atEnd { text.scrollToEndOfDocument(nil) }

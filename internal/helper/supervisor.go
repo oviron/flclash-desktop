@@ -66,6 +66,9 @@ type Supervisor struct {
 	// Log takes the output of the cores; nil means stderr, where launchd
 	// writes it to the log file. A Windows service has no stderr.
 	Log io.Writer
+	// TunnelOnly: the helper runs the tunnel alone; the app runs the other
+	// modes itself, and a second core on the same port would only fight it.
+	TunnelOnly bool
 
 	mu      sync.Mutex
 	core    *exec.Cmd
@@ -156,6 +159,12 @@ func (s *Supervisor) handle(conn net.Conn) {
 	if err := json.NewDecoder(io.LimitReader(conn, 1<<20)).Decode(&req); err != nil {
 		return
 	}
+	_ = json.NewEncoder(conn).Encode(s.Answer(req))
+}
+
+// Answer handles one request: what a connection to the helper gets, and what
+// the app gets from the supervisor it runs itself.
+func (s *Supervisor) Answer(req Request) Response {
 	var resp Response
 	var err error
 	switch req.Op {
@@ -177,7 +186,7 @@ func (s *Supervisor) handle(conn net.Conn) {
 	if resp.Status.guardErr != nil {
 		resp.Status.GuardProblem = say.In(req.Lang, resp.Status.guardErr)
 	}
-	_ = json.NewEncoder(conn).Encode(resp)
+	return resp
 }
 
 func (s *Supervisor) do(req Request) error {
@@ -225,6 +234,9 @@ func (s *Supervisor) apply(req Request) error {
 			return say.Errorf("the local port must be between 1024 and 65535, not %d", req.Port)
 		}
 	case ModeSystem, ModeProxy:
+		if s.TunnelOnly {
+			return say.New("the helper runs the tunnel only: the local port and the system proxy run inside the FlClash app")
+		}
 		if req.Port < 1024 || req.Port > 65535 {
 			return say.Errorf("the local port must be between 1024 and 65535, not %d", req.Port)
 		}

@@ -54,6 +54,7 @@ var (
 
 const (
 	wmDestroy       = 0x0002
+	wmEndSession    = 0x0016
 	wmCommand       = 0x0111
 	wmHotKey        = 0x0312
 	wmSettingChange = 0x001A

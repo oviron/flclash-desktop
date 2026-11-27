@@ -52,7 +52,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	sup := &helper.Supervisor{CorePath: *corePath, Guard: helper.NewGuard(), SystemProxy: helper.NewSystemProxy(), UserUID: *uid}
+	sup := &helper.Supervisor{CorePath: *corePath, TunnelOnly: true, Guard: helper.NewGuard(), SystemProxy: helper.NewSystemProxy(), UserUID: *uid}
 	if sup.Guard != nil {
 		// The guard tells the core from everyone else by its group.
 		sup.CoreGID = helper.CoreGID

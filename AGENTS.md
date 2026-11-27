@@ -5,8 +5,8 @@ with a native window per system on top. GPL-3.0. The Android app lives in
 `oviron/FlClash`; this repository shares no code with it yet.
 
 What exists now: import of servers, routing policies, the config compiler, a
-privileged helper that runs the core (a launchd daemon on macOS, a service on
-Windows), the command line, the macOS app (a menu bar item and a window), and
+privileged helper that runs the core for the tunnel (a launchd daemon on macOS,
+a service on Windows), the command line, the macOS app (a menu bar item and a window), and
 the Windows app (an icon in the notification area and a WinUI window). Linux has
 neither helper nor window yet.
 
@@ -32,6 +32,12 @@ on Windows the model the window draws, which is the Go twin of `Model.swift`.
 - Three modes: `proxy` (a local HTTP/SOCKS port only, the default), `system`
   (the port, and the system proxy pointed at it) and `tun` (the whole host).
   A change to one app's behavior is made in the other too, or noted as a gap.
+- Only `tun` needs the helper, and it is installed the first time the person
+  picks the tunnel. The app runs the other two modes itself, with the same
+  `helper.Supervisor` (`helper.RunLocal`); `helper.call` sends each request to
+  the side it belongs to. The connection lives with the app: quitting turns off
+  every mode, and the core of a crashed app ends on its closed stdin. The
+  command line has no supervisor of its own and drives the tunnel only.
 - Nothing the unprivileged side sends reaches the root core as written: the
   helper accepts only the server shape `ingest` produces and rules `policy`
   produces. A new server field or rule type has to be added to those checks.
@@ -44,9 +50,10 @@ on Windows the model the window draws, which is the Go twin of `Model.swift`.
 - `internal/policy` — routing policy documents.
 - `internal/compile` — server + policy → the config the core runs.
 - `internal/core` — mihomo inside a process.
-- `internal/helper` — the privileged supervisor and its protocol. It checks the
-  server and the rules it is handed and builds the config itself; it links no
-  core code.
+- `internal/helper` — the supervisor and its protocol: privileged in the
+  helper for the tunnel, in the app for the other modes. It checks the server
+  and the rules it is handed and builds the config itself; it links no core
+  code.
 - `internal/store` — state on disk; `$FLCLASH_HOME` overrides the directory.
 - `internal/app` — what the product does; the command line and the windows call
   the same functions here.
@@ -60,7 +67,8 @@ on Windows the model the window draws, which is the Go twin of `Model.swift`.
 - `internal/wfp`, `internal/winproxy` — the Windows firewall guard and the
   WinINet system proxy.
 - `cmd/flclash-windows` — `FlClash.exe`: the icon in the notification area,
-  the engine and the model; it starts the window and installs the helper.
+  the engine and the model; it runs the proxy modes, starts the window and
+  installs the helper.
 - `windows` — the WinUI 3 window, a C# project.
 - `macos` — the AppKit app, a Swift package that links the bridge.
 - `l10n` — the strings of every app, keyed by their English text, in the
@@ -85,6 +93,6 @@ windows\build.ps1   # everything into dist\windows\FlClash; -SkipGo, -SkipWindow
 ```
 
 `FlClash.exe` starts the window from `window\` beside it; the helper is
-installed from the window or with `flclashctl helper install` as
-administrator. Look at a window change in the running app on Windows too, and
+installed when the tunnel is first picked, or with `flclashctl helper install`
+as administrator. Look at a window change in the running app on Windows too, and
 keep the two apps saying and doing the same.

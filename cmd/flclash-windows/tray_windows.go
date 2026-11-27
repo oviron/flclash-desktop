@@ -129,6 +129,14 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 			go action()
 		}
 		return 0
+	case message == wmEndSession:
+		// Signing out or shutting down ends the app as Quit does: the
+		// connection goes, and the system proxy is put back while the
+		// session can still be changed.
+		if wParam != 0 {
+			t.host.model.Quit()
+		}
+		return 0
 	case message == wmDestroy:
 		procPostQuitMessage.Call(0)
 		return 0
@@ -203,9 +211,10 @@ func iconState(s model.Snapshot) string {
 func headline(lang string, s model.Snapshot) string {
 	st := s.Status
 	switch {
-	case !st.Installed:
+	// Only the tunnel needs the helper.
+	case !s.HelperReady && !st.Installed:
 		return l10n.T(lang, "Helper is not installed")
-	case st.Outdated:
+	case !s.HelperReady:
 		return l10n.T(lang, "Helper needs an update")
 	case st.Blocked && st.Mode == "system":
 		return l10n.T(lang, "The proxy is down")
@@ -306,11 +315,12 @@ func (t *tray) items() []menuItem {
 		name := mode[0]
 		modes = append(modes, menuItem{title: T(mode[1]), checked: name == s.View.Mode, action: func() {
 			if name != m.Snapshot().View.Mode {
-				m.Change(setMode(name), false, nil)
+				// The tunnel installs the helper first, if it has to.
+				h.agent.SetMode(name, nil)
 			}
 		}})
 	}
-	items = append(items, menuItem{title: T("Mode"), sub: modes, disabled: !s.HelperReady || s.Busy}, separator)
+	items = append(items, menuItem{title: T("Mode"), sub: modes, disabled: s.Busy}, separator)
 	items = append(items,
 		menuItem{title: T("Open FlClash"), action: func() { h.open("") }, bold: true},
 		menuItem{title: T("Settings…"), action: func() { h.open("settings") }},
@@ -395,4 +405,3 @@ func (t *tray) registerHotKey(k agent.HotKey) error {
 
 func selectServer(id string) bridge.Request   { return bridge.Request{Op: "select", Server: id} }
 func selectPolicy(name string) bridge.Request { return bridge.Request{Op: "select", Policy: name} }
-func setMode(mode string) bridge.Request      { return bridge.Request{Op: "mode", Text: mode} }

@@ -15,9 +15,19 @@ import (
 
 // NewSystemProxy returns the system proxy of macOS, set per network service
 // with networksetup. The helper runs it as root, so nobody is asked anything.
-func NewSystemProxy() SystemProxy { return networkSetup{} }
+func NewSystemProxy() SystemProxy {
+	return networkSetup{saved: filepath.Join(StateDir(), "system-proxy.json")}
+}
 
-type networkSetup struct{}
+// userSystemProxy is the same for the app itself. networksetup changes the
+// proxy for an administrator without asking; for anyone else it refuses, and
+// the refusal is what the person is shown.
+func userSystemProxy(home string) SystemProxy {
+	return networkSetup{saved: filepath.Join(home, "system-proxy.json")}
+}
+
+// networkSetup keeps what it replaced in the file saved names.
+type networkSetup struct{ saved string }
 
 // The three proxies a service has; each is read with -get<name> and written
 // with -set<name>.
@@ -34,8 +44,6 @@ type savedService struct {
 	Proxies map[string]proxySetting `json:"proxies"`
 	Bypass  []string                `json:"bypass"`
 }
-
-func savedProxyPath() string { return filepath.Join(StateDir(), "system-proxy.json") }
 
 func networksetup(args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -102,7 +110,7 @@ func parseBypass(out string) []string {
 	return domains
 }
 
-func (networkSetup) Set(port int) error {
+func (n networkSetup) Set(port int) error {
 	names, err := services()
 	if err != nil {
 		return err
@@ -113,7 +121,7 @@ func (networkSetup) Set(port int) error {
 	// What was there is saved once and before anything changes: a second Set
 	// must not save our own port as the thing to go back to.
 	saved := map[string]savedService{}
-	if raw, err := os.ReadFile(savedProxyPath()); err == nil {
+	if raw, err := os.ReadFile(n.saved); err == nil {
 		_ = json.Unmarshal(raw, &saved)
 	}
 	if len(saved) == 0 {
@@ -134,7 +142,7 @@ func (networkSetup) Set(port int) error {
 			saved[name] = entry
 		}
 		raw, _ := json.Marshal(saved)
-		if err := os.WriteFile(savedProxyPath(), raw, 0o600); err != nil {
+		if err := os.WriteFile(n.saved, raw, 0o600); err != nil {
 			return err
 		}
 	}
@@ -157,8 +165,8 @@ func (networkSetup) Set(port int) error {
 	return nil
 }
 
-func (networkSetup) Clear() error {
-	raw, err := os.ReadFile(savedProxyPath())
+func (n networkSetup) Clear() error {
+	raw, err := os.ReadFile(n.saved)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -196,7 +204,7 @@ func (networkSetup) Clear() error {
 	}
 	// A service that is gone cannot be restored, and never will be: the file
 	// goes either way, so that the next Set saves the state of that moment.
-	_ = os.Remove(savedProxyPath())
+	_ = os.Remove(n.saved)
 	if len(failed) > 0 {
 		return errors.New(strings.Join(failed, "; "))
 	}

@@ -283,7 +283,7 @@ public sealed class Agent
     // set is not sent again.
     public void SelectServer(string id) => _ = Change(new Request { Op = "select", Server = id });
     public void SelectPolicy(string name) => _ = Change(new Request { Op = "select", Policy = name });
-    public void SetMode(string mode) { if (mode != S.View.Mode) _ = Change(new Request { Op = "mode", Text = mode }); }
+    public Task<Reply> SetMode(string mode) => mode == S.View.Mode ? Task.FromResult(new Reply()) : Change(new Request { Op = "mode", Text = mode });
     public void SetPort(int port) { if (port != S.View.Port) _ = Change(new Request { Op = "port", Text = port.ToString() }); }
     public void SetLan(bool on) { if (on != S.View.Lan) _ = Change(new Request { Op = "lan", Text = on ? "on" : "off" }); }
     public void SetAuth(string auth) { if (auth != S.View.Auth) _ = Change(new Request { Op = "auth", Text = auth }); }

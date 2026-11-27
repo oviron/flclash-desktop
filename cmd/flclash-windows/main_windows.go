@@ -22,8 +22,11 @@ import (
 	"golang.org/x/sys/windows/registry"
 
 	"github.com/oviron/flclash-desktop/internal/agent"
+	"github.com/oviron/flclash-desktop/internal/app"
+	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/model"
 	"github.com/oviron/flclash-desktop/internal/say"
+	"github.com/oviron/flclash-desktop/internal/store"
 )
 
 // version is set by the build.
@@ -91,6 +94,11 @@ func main() {
 
 	h := &host{sid: sid, pipe: pipe, lang: language(), dir: filepath.Dir(exe)}
 	say.SetLanguage(h.lang)
+	// The local port and the system proxy run here; the helper is for the
+	// tunnel alone. Should this fail, every mode goes to the helper.
+	if st, err := store.Open(); err == nil {
+		_ = helper.RunLocal(filepath.Join(h.dir, app.CoreName), st.CoreDir())
+	}
 	h.model = model.New(h.lang)
 	h.tray = &tray{host: h}
 	h.agent = &agent.Agent{
@@ -173,6 +181,8 @@ func (h *host) quit() {
 	}
 	h.mu.Unlock()
 	h.tray.remove()
+	// Quitting turns the connection off, whatever the mode.
+	h.model.Quit()
 	os.Exit(0)
 }
 
@@ -268,7 +278,7 @@ func (h *host) installHelper() error {
 	info.Size = uint32(unsafe.Sizeof(info))
 	if r, _, err := procShellExecuteExW.Call(uintptr(unsafe.Pointer(&info))); r == 0 {
 		if errno, ok := err.(windows.Errno); ok && errno == errorCancelled {
-			return errors.New(say.In(h.lang, say.New("the administrator's permission was not given")))
+			return agent.ErrCancelled
 		}
 		return err
 	}

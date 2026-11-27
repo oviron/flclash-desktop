@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/oviron/flclash-desktop/internal/say"
+	"github.com/oviron/flclash-desktop/internal/winproxy"
 )
 
 // NewWindowsProxy returns the system proxy of Windows: the WinINet setting of
@@ -59,4 +60,51 @@ func (w *winINet) Clear() error {
 		return err
 	}
 	return os.Remove(savedProxyPath())
+}
+
+// userSystemProxy is the system proxy as the app itself sets it: the app runs
+// as the user, so it changes the setting directly.
+func userSystemProxy(home string) SystemProxy {
+	return userINet{saved: filepath.Join(home, "system-proxy.json")}
+}
+
+// userINet keeps what it replaced in the file saved names.
+type userINet struct{ saved string }
+
+func (u userINet) Set(port int) error {
+	// What was there before is kept once, as in winINet.Set.
+	if _, err := os.Stat(u.saved); errors.Is(err, os.ErrNotExist) {
+		was, err := winproxy.Read()
+		if err != nil {
+			return say.Errorf("the system proxy could not be read: %w", err)
+		}
+		raw, err := json.Marshal(was)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(u.saved, raw, 0o600); err != nil {
+			return err
+		}
+	}
+	return winproxy.Point(port)
+}
+
+func (u userINet) Clear() error {
+	raw, err := os.ReadFile(u.saved)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var was winproxy.Setting
+	if err := json.Unmarshal(raw, &was); err != nil {
+		// What cannot be read cannot be put back; it is not kept either.
+		_ = os.Remove(u.saved)
+		return err
+	}
+	if err := winproxy.Write(was); err != nil {
+		return err
+	}
+	return os.Remove(u.saved)
 }

@@ -92,6 +92,7 @@ func start(sid, corePath string, console io.Writer) (*running, error) {
 	r.listener = listener
 	r.sup = &helper.Supervisor{
 		CorePath:    corePath,
+		TunnelOnly:  true,
 		Guard:       helper.NewWindowsGuard(corePath),
 		SystemProxy: helper.NewWindowsProxy(sid, corePath),
 		UserSID:     sid,

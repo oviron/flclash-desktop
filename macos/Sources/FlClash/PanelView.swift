@@ -211,7 +211,7 @@ final class PanelViewController: NSViewController, NSTableViewDataSource, NSTabl
 
         let mode = status.running && !status.mode.isEmpty ? status.mode : model.view.mode
         modes.selectedSegment = ["proxy": 0, "system": 1, "tun": 2][mode] ?? 0
-        modes.isEnabled = model.helperReady && !model.busy
+        modes.isEnabled = !model.busy
 
         let policy = status.running && !status.policy.isEmpty ? status.policy : model.view.policy
         policies.removeAllItems()

@@ -177,10 +177,23 @@ final class Model {
         request("change", ["op": "select", "server": server, "policy": policy])
     }
 
+    /// The tunnel needs the helper: the engine installs it first, through the
+    /// system's prompt. Declined, the mode stays, and the switches are drawn again.
     func setMode(_ mode: String) {
         guard mode != view.mode else { return }
-        request("change", ["op": "mode", "text": mode])
+        request("change", ["op": "mode", "text": mode]) { _ in
+            NotificationCenter.default.post(name: .modelChanged, object: self)
+        }
     }
+
+    /// Installs the helper through the system's prompt; nil is success or a
+    /// prompt the person declined.
+    func installHelper(then done: @escaping (String?) -> Void) {
+        send("installHelper") { done($0.error) }
+    }
+
+    /// Turns off what runs, before the app quits.
+    func stop() { FlcStop() }
 
     func setPort(_ port: Int) {
         guard port != view.port else { return }
@@ -278,8 +291,8 @@ private let receive: FlcEmit = { raw in
 extension TunnelStatus {
     /// One line for people: what is true right now.
     var headline: String {
-        if !installed { return L("Helper is not installed") }
-        if outdated { return L("Helper needs an update") }
+        // Only the tunnel needs the helper.
+        if !Model.shared.helperReady { return installed ? L("Helper needs an update") : L("Helper is not installed") }
         if blocked { return mode == "system" ? L("The proxy is down") : L("Internet is blocked") }
         if !running { return L("Off") }
         if !captured { return L("Not working") }

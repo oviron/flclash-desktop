@@ -250,13 +250,14 @@ func Delay(server ingest.Server) (int, error) {
 	return resp.Delay, err
 }
 
-func call(req Request, timeout time.Duration) (Response, error) {
+// remote sends one request to the installed helper.
+func remote(req Request, timeout time.Duration) (Response, error) {
 	var resp Response
 	req.Lang = say.Language()
 	conn, err := dial(3 * time.Second)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return resp, notInstalled()
+			return resp, errNotInstalled
 		}
 		if errors.Is(err, os.ErrPermission) {
 			return resp, say.New("the helper was installed for another user")

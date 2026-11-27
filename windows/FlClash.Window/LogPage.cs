@@ -74,7 +74,7 @@ public sealed class LogPage : IPage
         scroll.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
         if (count == 0)
         {
-            if (raw.Length == 0) empty.Show(L.T("The log is empty"), L.T("The helper writes here once it is installed and something runs."), false);
+            if (raw.Length == 0) empty.Show(L.T("The log is empty"), L.T("The core writes here once something runs."), false);
             else empty.Show(L.T("Nothing matches the search"), "", false);
         }
         else

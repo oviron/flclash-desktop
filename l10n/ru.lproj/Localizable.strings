@@ -177,7 +177,7 @@
 "The file could not be read" = "Не удалось прочитать файл";
 "The file dialog did not open" = "Окно выбора файла не открылось";
 "The helper was not installed" = "Помощник не установлен";
-"The helper writes here once it is installed and something runs." = "Помощник пишет сюда, когда установлен и что-то запущено.";
+"The core writes here once something runs." = "Ядро пишет сюда, когда что-то запущено.";
 "The home network and local addresses go directly, the rest through the server." = "Домашняя сеть и локальные адреса идут напрямую, остальное через сервер.";
 "The internet is off until the tunnel is back." = "Интернета нет, пока туннель не вернётся.";
 "The last update failed" = "Последнее обновление не удалось";

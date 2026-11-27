@@ -154,7 +154,7 @@ final class StatusMenu: NSObject, NSMenuDelegate, NSPopoverDelegate {
             modeMenu.addItem(entry)
         }
         modes.submenu = modeMenu
-        modes.isEnabled = model.helperReady && !model.busy
+        modes.isEnabled = !model.busy
         menu.addItem(modes)
         menu.addItem(.separator())
 

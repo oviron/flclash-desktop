@@ -10,5 +10,7 @@ typedef void (*FlcEmit)(const char *event);
 void FlcStart(char *lang, FlcEmit emit);
 // Hands the model one message as JSON; it does not wait.
 void FlcSend(char *message);
+// Turns off what runs, as the app quits; returns once the system is as it was.
+void FlcStop(void);
 
 #endif
