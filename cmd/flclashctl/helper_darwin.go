@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -21,8 +22,15 @@ const (
 )
 
 func cmdHelper(args []string) error {
-	if len(args) != 1 || (args[0] != "install" && args[0] != "uninstall") {
-		return errors.New("usage: sudo flclashctl helper install | uninstall")
+	if len(args) == 0 || (args[0] != "install" && args[0] != "uninstall") {
+		return errors.New("usage: sudo flclashctl helper install [-uid UID] | uninstall")
+	}
+	flags := flag.NewFlagSet("helper", flag.ContinueOnError)
+	// The app installs through the system's administrator prompt, which sets
+	// no SUDO_UID, so it says whom to serve.
+	uidFlag := flags.Int("uid", 0, "the user the helper serves; default: the one who ran sudo")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
 	}
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("run it with sudo: sudo flclashctl helper %s", args[0])
@@ -39,9 +47,12 @@ func cmdHelper(args []string) error {
 	}
 
 	// The helper serves the user who ran sudo, not root.
-	uid, err := strconv.Atoi(os.Getenv("SUDO_UID"))
-	if err != nil || uid <= 0 {
-		return errors.New("cannot tell which user to serve: run through sudo from your own account")
+	uid := *uidFlag
+	if uid == 0 {
+		uid, _ = strconv.Atoi(os.Getenv("SUDO_UID"))
+	}
+	if uid <= 0 {
+		return errors.New("cannot tell which user to serve: run through sudo from your own account, or pass -uid")
 	}
 	self, err := os.Executable()
 	if err != nil {

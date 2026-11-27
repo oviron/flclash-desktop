@@ -1,39 +1,16 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"time"
 
+	"github.com/oviron/flclash-desktop/internal/app"
 	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/store"
 )
 
 func cmdOn(st *store.Store, _ []string) error {
-	state, err := st.Load()
+	status, err := app.On(st)
 	if err != nil {
-		return err
-	}
-	if state.Selected == "" {
-		return errors.New("no server is selected: flclashctl select SERVER")
-	}
-	entry, err := state.Find(state.Selected)
-	if err != nil {
-		return err
-	}
-	pol, err := st.Policy(state.Policy)
-	if err != nil {
-		return err
-	}
-	status, err := helper.Call(helper.Request{
-		Op:       helper.OpApply,
-		Revision: time.Now().UnixNano(),
-		Server:   entry.Server,
-		Policy:   pol.Name,
-		Rules:    pol.Rules,
-	}, 90*time.Second)
-	if err != nil {
-		// What is still true matters most when the change did not go through.
 		if status.Running {
 			return fmt.Errorf("%w; still running: %s", err, describe(status))
 		}
@@ -44,7 +21,7 @@ func cmdOn(st *store.Store, _ []string) error {
 }
 
 func cmdOff(_ *store.Store, _ []string) error {
-	status, err := helper.Call(helper.Request{Op: helper.OpStop}, 30*time.Second)
+	status, err := app.Off()
 	if err != nil {
 		return err
 	}
@@ -53,7 +30,7 @@ func cmdOff(_ *store.Store, _ []string) error {
 }
 
 func cmdStatus(_ *store.Store, _ []string) error {
-	status, err := helper.Call(helper.Request{Op: helper.OpStatus}, 10*time.Second)
+	status, err := app.Status()
 	if err != nil {
 		return err
 	}

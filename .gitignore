@@ -2,4 +2,6 @@
 /flclash-helper
 /flclash-core
 /dist/
+/macos/.build/
+/macos/Bridge/
 .DS_Store

@@ -12,12 +12,10 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
-	"time"
 
+	"github.com/oviron/flclash-desktop/internal/app"
 	"github.com/oviron/flclash-desktop/internal/compile"
 	"github.com/oviron/flclash-desktop/internal/core"
-	"github.com/oviron/flclash-desktop/internal/helper"
-	"github.com/oviron/flclash-desktop/internal/ingest"
 	"github.com/oviron/flclash-desktop/internal/store"
 )
 
@@ -105,33 +103,25 @@ func cmdImport(st *store.Store, args []string) error {
 			return err
 		}
 	}
-	state, err := st.Load()
+	result, err := app.Import(st, *group, strings.Join(lines, "\n"))
+	for _, server := range result.Imported {
+		fmt.Printf("%s  %s\n", server.ID, server.Name)
+	}
+	for _, failure := range result.Failed {
+		// The line itself is not echoed: it holds credentials.
+		fmt.Fprintf(os.Stderr, "entry %d: not imported: %s\n", failure.Entry, failure.Reason)
+	}
 	if err != nil {
 		return err
 	}
-	failed := 0
-	for i, line := range lines {
-		server, err := ingest.FromThrone(line)
-		if err != nil {
-			failed++
-			// The line itself is not echoed: it holds credentials.
-			fmt.Fprintf(os.Stderr, "entry %d: not imported: %v\n", i+1, err)
-			continue
-		}
-		entry := state.Put(*group, server)
-		fmt.Printf("%s  %s\n", entry.ID, entry.Name)
-	}
-	if err := st.Save(state); err != nil {
-		return err
-	}
-	if failed > 0 {
-		return fmt.Errorf("%d of %d entries were not imported", failed, len(lines))
+	if len(result.Failed) > 0 {
+		return fmt.Errorf("%d of %d entries were not imported", len(result.Failed), len(result.Failed)+len(result.Imported))
 	}
 	return nil
 }
 
 func cmdList(st *store.Store, _ []string) error {
-	state, err := st.Load()
+	view, err := app.Snapshot(st)
 	if err != nil {
 		return err
 	}
@@ -142,16 +132,12 @@ func cmdList(st *store.Store, _ []string) error {
 		return " "
 	}
 	fmt.Println("servers:")
-	for _, e := range state.Servers {
-		fmt.Printf(" %s %s  %-10s %-9s %s\n", mark(e.ID == state.Selected), e.ID, e.Group, e.Proxy["type"], e.Name)
-	}
-	names, err := st.PolicyNames()
-	if err != nil {
-		return err
+	for _, e := range view.Servers {
+		fmt.Printf(" %s %s  %-10s %-22s %s\n", mark(e.ID == view.Selected), e.ID, e.Group, e.Protocol, e.Name)
 	}
 	fmt.Println("policies:")
-	for _, name := range names {
-		fmt.Printf(" %s %s\n", mark(name == state.Policy), name)
+	for _, name := range view.Policies {
+		fmt.Printf(" %s %s\n", mark(name == view.Policy), name)
 	}
 	return nil
 }
@@ -173,31 +159,7 @@ func cmdSelect(st *store.Store, args []string) error {
 	if ref == "" && *policyName == "" {
 		return errors.New("name a server, a policy, or both")
 	}
-	state, err := st.Load()
-	if err != nil {
-		return err
-	}
-	if ref != "" {
-		entry, err := state.Find(ref)
-		if err != nil {
-			return err
-		}
-		state.Selected = entry.ID
-	}
-	if *policyName != "" {
-		if _, err := st.Policy(*policyName); err != nil {
-			return err
-		}
-		state.Policy = *policyName
-	}
-	if err := st.Save(state); err != nil {
-		return err
-	}
-	// The choice is saved either way; a tunnel that is up follows it.
-	if status, err := helper.Call(helper.Request{Op: helper.OpStatus}, 5*time.Second); err == nil && status.Running {
-		return cmdOn(st, nil)
-	}
-	return nil
+	return app.Select(st, ref, *policyName)
 }
 
 func cmdPolicy(st *store.Store, args []string) error {
