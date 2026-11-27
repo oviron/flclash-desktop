@@ -497,12 +497,11 @@ func markCell(_ chosen: Bool) -> NSView {
     return cell
 }
 
-/// The colour of a delay: quick, bearable, slow. The number is the time of a
-/// cold first request, about four round trips to the server, so a good
-/// server at 55 ms of ping shows about 250: the green band reaches past that.
+/// The colour of a delay: quick, bearable, slow. The number is one round trip
+/// to a site through the server over a connection that is already up.
 func delayColor(_ ms: Int) -> NSColor {
-    if ms < 350 { return .systemGreen }
-    if ms < 800 { return .systemYellow }
+    if ms < 150 { return .systemGreen }
+    if ms < 400 { return .systemYellow }
     return .systemOrange
 }
 
@@ -521,7 +520,7 @@ func delayCell(_ delay: Model.Delay?) -> NSView {
         label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         label.textColor = .secondaryLabelColor
         cell.textField = label
-        cell.toolTip = L("The time of a first request through the server: a new connection, the handshake and one small request. It is several times the ping.")
+        cell.toolTip = L("One round trip to a site through this server, over a connection that is already up. Opening a connection takes several times longer.")
         views = [dot, label]
     case .failed(let reason):
         let dot = NSImageView(image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil) ?? NSImage())

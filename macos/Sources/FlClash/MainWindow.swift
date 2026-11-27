@@ -62,7 +62,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     @objc private func pageChanged() {
         guard let window else { return }
         let page = root.page
-        window.title = page.title
+        window.title = Model.testEnvironment ? page.title + " — " + L("Test environment") : page.title
         switch page {
         case .servers:
             let count = Model.shared.view.servers.count

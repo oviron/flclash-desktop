@@ -14,6 +14,13 @@ func L(_ key: String) -> String { NSLocalizedString(key, comment: "") }
 final class Model {
     static let shared = Model()
 
+    /// The app was pointed at a helper or a data folder of its own, as a test
+    /// run is. Windows mark themselves then.
+    static let testEnvironment: Bool = {
+        let environment = ProcessInfo.processInfo.environment
+        return environment["FLCLASH_HELPER_SOCK"] != nil || environment["FLCLASH_HOME"] != nil
+    }()
+
     private(set) var view = EngineView()
     private(set) var status = TunnelStatus()
     /// A change of the tunnel is on its way to the helper.

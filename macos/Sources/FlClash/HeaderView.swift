@@ -156,6 +156,7 @@ final class HeaderView: NSView {
     private let modes = NSSegmentedControl(labels: [L("Port Only"), L("System Proxy"), L("TUN")], trackingMode: .selectOne, target: nil, action: nil)
     private let policies = NSPopUpButton(frame: .zero, pullsDown: false)
     private let address = NSButton(title: "", target: nil, action: nil)
+    private let testMark = NSTextField(labelWithString: L("Test environment"))
     private let notice = NSTextField(wrappingLabelWithString: "")
     private let noticeButton = NSButton(title: "", target: nil, action: nil)
     private let noticeRow = NSStackView()
@@ -226,7 +227,14 @@ final class HeaderView: NSView {
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.init(1), for: .horizontal)
-        let top = NSStackView(views: [badge, titles, spacer, traffic, spinner, button])
+        // A window that talks to something other than the system helper, or
+        // keeps its data elsewhere, shows numbers that may not be real. It says so.
+        testMark.font = .systemFont(ofSize: 11, weight: .semibold)
+        testMark.textColor = .systemOrange
+        testMark.toolTip = L("This window was started with its own helper or data folder. What it shows may not be real.")
+        testMark.isHidden = !Model.testEnvironment
+        testMark.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let top = NSStackView(views: [badge, titles, testMark, spacer, traffic, spinner, button])
         top.orientation = .horizontal
         top.alignment = .centerY
         top.spacing = 14

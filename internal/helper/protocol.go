@@ -43,7 +43,7 @@ func LogPath() string { return "/var/log/flclash-helper.log" }
 // Version says which requests the installed helper understands. Raise it
 // whenever the helper or the core it runs has to be reinstalled for the app to
 // work: a new rule type, a new server field, a change of this protocol.
-const Version = 8
+const Version = 9
 
 // Operations of Request.Op.
 const (
@@ -57,8 +57,9 @@ const (
 	OpStats = "stats"
 )
 
-// The measurement of a delay is one request for DelayURL through the server,
-// given DelayTimeout to answer. The helper sets both: its caller does not get
+// The measurement of a delay is a connection through the server and two
+// requests for DelayURL, the second of which is timed; DelayTimeout is for
+// all of it. The helper sets both: its caller does not get
 // to send the root core wherever it likes.
 const (
 	DelayURL     = "https://www.gstatic.com/generate_204"

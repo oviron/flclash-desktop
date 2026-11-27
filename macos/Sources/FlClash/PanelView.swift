@@ -193,7 +193,7 @@ final class PanelViewController: NSViewController, NSTableViewDataSource, NSTabl
         let look = Look.current
         badge.show(look)
         graph.tint = look.tint
-        headline.stringValue = status.headline
+        headline.stringValue = Model.testEnvironment ? status.headline + " · " + L("Test environment") : status.headline
 
         let server = status.running || status.blocked ? status.server : (model.selectedServer?.name ?? "")
         if !model.helperReady {

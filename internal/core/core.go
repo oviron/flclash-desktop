@@ -44,10 +44,14 @@ func Stop() {
 	executor.Shutdown()
 }
 
-// Delay opens a new connection through a server, asks for the URL and says how
-// long the answer took, in milliseconds. It needs no running config, and it
-// leaves a running one alone.
+// Delay opens a new connection through a server, asks for the URL twice and
+// says how long the second answer took, in milliseconds: the time of one
+// round trip over a connection that is already up. The first request pays for
+// the handshakes, several round trips of them, and people read the number as
+// a ping. It needs no running config, and it leaves a running one alone.
 func Delay(proxy map[string]any, url string, timeout time.Duration) (int, error) {
+	// Applying a config sets this from the config, so it is set on every call.
+	adapter.UnifiedDelay.Store(true)
 	p, err := adapter.ParseProxy(proxy)
 	if err != nil {
 		return 0, fmt.Errorf("the core refused the server: %w", err)

@@ -63,8 +63,10 @@ func Config(in Input) ([]byte, error) {
 		"allow-lan":       false,
 		"bind-address":    "127.0.0.1",
 		"geo-auto-update": false,
-		"profile":         map[string]any{"store-selected": false, "store-fake-ip": false},
-		"proxies":         []any{proxy},
+		// A delay is the time of a request over a warm connection; see core.Delay.
+		"unified-delay": true,
+		"profile":       map[string]any{"store-selected": false, "store-fake-ip": false},
+		"proxies":       []any{proxy},
 		// The policy says PROXY; this group is what PROXY is.
 		"proxy-groups": []any{map[string]any{
 			"name":    policy.Proxy,
