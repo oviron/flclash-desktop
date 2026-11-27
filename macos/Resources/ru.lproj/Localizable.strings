@@ -109,6 +109,7 @@
 "Order" = "Порядок";
 "Other devices at home can point at this Mac's address and the port." = "Другие устройства дома смогут указать адрес этого Mac и порт.";
 "Paste" = "Вставить";
+"Pause" = "Пауза";
 "Policy “%@”" = "Политика «%@»";
 "Port Only" = "Только порт";
 "Press the keys…" = "Нажмите клавиши…";
@@ -121,6 +122,7 @@
 "refused" = "отклонено";
 "Resolves names for what goes through the tunnel." = "Разрешает имена для того, что идёт через туннель.";
 "Restore from a Backup…" = "Восстановить из копии…";
+"Resume" = "Продолжить";
 "Routing" = "Маршрутизация";
 "Routing: which connections go through the server." = "Маршрутизация: какие соединения идут через сервер.";
 "Rule" = "Правило";

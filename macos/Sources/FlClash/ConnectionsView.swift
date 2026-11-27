@@ -1,10 +1,30 @@
 import AppKit
 
+extension Notification.Name {
+    /// The connections page was paused or let go.
+    static let connectionsPaused = Notification.Name("FlClashConnectionsPaused")
+}
+
 /// What goes through the core right now: where to, by which rule, how much.
 final class ConnectionsViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
     private let table = NSTableView()
     private let empty = EmptyStateView(symbol: "arrow.left.arrow.right")
     private var rows: [Connection] = []
+
+    /// The list as it was when the person paused it; nil while it follows the core.
+    private var frozen: [Connection]?
+
+    /// A paused list stays as it is, to be read and acted on; the counters in
+    /// the header go on.
+    var paused: Bool {
+        get { frozen != nil }
+        set {
+            guard newValue != paused else { return }
+            frozen = newValue ? (Model.shared.status.running ? (Model.shared.stats?.connections ?? []) : []) : nil
+            if isViewLoaded { reload() }
+            NotificationCenter.default.post(name: .connectionsPaused, object: self)
+        }
+    }
 
     /// What the search field of the toolbar holds.
     var query = "" {
@@ -71,7 +91,9 @@ final class ConnectionsViewController: NSViewController, NSTableViewDataSource, 
         // The list changes every second; nothing to do while nobody looks.
         guard view.window != nil || rows.isEmpty else { return }
         let chosen = table.selectedRow >= 0 && table.selectedRow < rows.count ? rows[table.selectedRow].id : nil
-        let all = Model.shared.status.running ? (Model.shared.stats?.connections ?? []) : []
+        // Nothing to hold once the tunnel is off.
+        if frozen != nil, !Model.shared.status.running { paused = false; return }
+        let all = frozen ?? (Model.shared.status.running ? (Model.shared.stats?.connections ?? []) : [])
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         rows = needle.isEmpty ? all : all.filter { ($0.host + " " + $0.via + " " + $0.rule).lowercased().contains(needle) }
         table.reloadData()
@@ -94,7 +116,13 @@ final class ConnectionsViewController: NSViewController, NSTableViewDataSource, 
     @objc private func closeClicked() {
         let row = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
         guard row >= 0, row < rows.count else { return }
-        Model.shared.close(connection: rows[row].id)
+        let id = rows[row].id
+        Model.shared.close(connection: id)
+        // A paused list does not hear of it: the row goes now.
+        if frozen != nil {
+            frozen?.removeAll { $0.id == id }
+            reload()
+        }
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }

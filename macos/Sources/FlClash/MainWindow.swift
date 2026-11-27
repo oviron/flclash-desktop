@@ -6,6 +6,7 @@ private extension NSToolbarItem.Identifier {
     static let addServers = NSToolbarItem.Identifier("addServers")
     static let addPolicy = NSToolbarItem.Identifier("addPolicy")
     static let search = NSToolbarItem.Identifier("search")
+    static let pause = NSToolbarItem.Identifier("pause")
 }
 
 /// The window: a sidebar, a toolbar that follows the page, and the page.
@@ -49,10 +50,13 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
                 case .routing: break
                 }
             }
+            // A pause holds the list for a look; leaving the page lets it go.
+            if let self, self.root.page != .connections { self.root.content.connections.paused = false }
             self?.pageChanged()
         }
         NotificationCenter.default.addObserver(self, selector: #selector(pageChanged), name: .modelChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(pageChanged), name: .statsChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(pageChanged), name: .connectionsPaused, object: nil)
         pageChanged()
     }
 
@@ -80,6 +84,13 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
             case .measure, .order, .addServers: item.isHidden = page != .servers
             case .search: item.isHidden = page == .routing
             case .addPolicy: item.isHidden = page != .routing
+            case .pause:
+                item.isHidden = page != .connections
+                let paused = root.content.connections.paused
+                item.image = NSImage(systemSymbolName: paused ? "play.fill" : "pause.fill", accessibilityDescription: paused ? L("Resume") : L("Pause"))
+                item.label = paused ? L("Resume") : L("Pause")
+                item.toolTip = item.label
+                item.isEnabled = Model.shared.status.running
             default: break
             }
         }
@@ -88,7 +99,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     // MARK: Toolbar
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.sidebarTrackingSeparator, .flexibleSpace, .order, .measure, .addServers, .addPolicy, .search]
+        [.sidebarTrackingSeparator, .flexibleSpace, .pause, .order, .measure, .addServers, .addPolicy, .search]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -141,6 +152,18 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
             item.menu = menu
             item.isHidden = root.page != .routing
             return item
+        case .pause:
+            let item = NSToolbarItem(itemIdentifier: id)
+            item.image = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: L("Pause"))
+            item.label = L("Pause")
+            item.toolTip = L("Pause")
+            item.isBordered = true
+            item.target = self
+            item.action = #selector(togglePause(_:))
+            // Enabled only while something runs; pageChanged says when.
+            item.autovalidates = false
+            item.isHidden = root.page != .connections
+            return item
         case .search:
             let item = NSSearchToolbarItem(itemIdentifier: id)
             item.searchField.placeholderString = L("Search")
@@ -171,6 +194,10 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     @objc func showRouting(_ sender: Any?) { root.show(.routing) }
     @objc func showConnections(_ sender: Any?) { root.show(.connections) }
     @objc func showLog(_ sender: Any?) { root.show(.log) }
+    @objc func togglePause(_ sender: Any?) {
+        guard root.page == .connections else { return }
+        root.content.connections.paused.toggle()
+    }
 
     @objc func importFromClipboard(_ sender: Any?) {
         root.show(.servers)
