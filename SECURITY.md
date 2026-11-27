@@ -17,9 +17,11 @@ The port and the system proxy run in the app, as the user. Only TUN needs
 administrator rights, and only through the helper: a launchd daemon on macOS,
 a service on Windows. It listens on a socket or a named pipe that only the
 system and the user it was installed for may open. It does not take a config:
-it takes a server and rules, checks them with the same code the app uses on
-import, builds the core's config itself and runs the core it was installed
-with. Anything those checks do not know is refused.
+it takes a server and rules, builds the core's config itself and runs the core
+it was installed with. A server must have the shape the importer writes: a
+known type, an address, a valid port, and no field outside the importer's list.
+Rules go through the same parser as an imported policy, and a rule it does not
+know is refused.
 
 `flclashctl helper uninstall`, run with `sudo` on macOS or as administrator on
 Windows, removes the helper.

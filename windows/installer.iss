@@ -67,9 +67,19 @@ Source: "{#Source}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs cre
 [Icons]
 Name: "{userprograms}\FlClash"; Filename: "{app}\FlClash.exe"
 
-[Registry]
-; Start with Windows is the app's own setting; the uninstaller clears it.
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "FlClash"; Flags: dontcreatekey uninsdeletevalue
-
 [Run]
 Filename: "{app}\FlClash.exe"; Description: "{cm:LaunchProgram,FlClash}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+const RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
+
+{ Start with Windows is the app's own setting. The uninstaller clears it when
+  it starts this copy, not another one, such as one unpacked from the zip. }
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Command: String;
+begin
+  if (CurUninstallStep = usPostUninstall) and RegQueryStringValue(HKCU, RunKey, 'FlClash', Command)
+    and (Pos(Lowercase(ExpandConstant('{app}\FlClash.exe')), Lowercase(Command)) > 0) then
+    RegDeleteValue(HKCU, RunKey, 'FlClash');
+end;

@@ -60,7 +60,7 @@ func cmdStatus(_ *store.Store, _ []string) error {
 }
 
 func describe(s helper.Status) string {
-	if s.Version != helper.Version {
+	if !s.Current() {
 		return "the installed helper is from another version of the app: sudo flclashctl helper install"
 	}
 	guard := map[string]string{

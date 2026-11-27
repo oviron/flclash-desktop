@@ -127,7 +127,13 @@ func TestSetModeOneInstallAtATime(t *testing.T) {
 	a, modes := modeAgent(func() error { close(asked); return <-answer })
 	first := make(chan bridge.Reply, 1)
 	a.SetMode(helper.ModeTUN, func(r bridge.Reply) { first <- r })
-	<-asked
+	select {
+	case <-asked:
+	case r := <-first:
+		t.Fatalf("answered before the prompt: %+v", r)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the helper was not asked for")
+	}
 	setMode(t, a, helper.ModeProxy)
 	if got := modes(); len(got) != 0 {
 		t.Fatalf("a mode was taken during the prompt: %v", got)

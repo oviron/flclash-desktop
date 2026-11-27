@@ -13,6 +13,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/oviron/flclash-desktop/internal/build"
 	"github.com/oviron/flclash-desktop/internal/ingest"
 	"github.com/oviron/flclash-desktop/internal/say"
 )
@@ -196,7 +197,14 @@ type Status struct {
 	// Version is the Version of the helper that answers; a helper from before
 	// versions existed leaves it zero.
 	Version int `json:"version,omitempty"`
+	// Build is the version of the app the helper was installed from. A new
+	// release may change the helper or the core it runs without a new
+	// protocol, so a helper of another build is installed again.
+	Build string `json:"build,omitempty"`
 }
+
+// Current says whether the helper that answered is the one this app carries.
+func (s Status) Current() bool { return s.Version == Version && s.Build == build.Version }
 
 // Response answers a request. Status is set also when Error is.
 type Response struct {

@@ -7,9 +7,9 @@ VERSION ?= $(shell git describe --tags --match 'v[0-9]*' 2>/dev/null | sed 's/^v
 ifeq ($(VERSION),)
 VERSION := 0.0.0-dev
 endif
-SHORT := $(firstword $(subst -, ,$(VERSION)))
+SHORT := $(firstword $(subst +, ,$(subst -, ,$(VERSION))))
 BUILD := $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
-RELEASE := -trimpath -ldflags "-s -w -X main.version=$(VERSION)"
+RELEASE := -trimpath -ldflags "-s -w -X github.com/oviron/flclash-desktop/internal/build.Version=$(VERSION)"
 
 .PHONY: tools bridge app check version
 

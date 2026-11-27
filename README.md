@@ -57,8 +57,12 @@ To remove the helper TUN installed, before removing the app:
 sudo /Applications/FlClash.app/Contents/MacOS/flclashctl helper uninstall
 ```
 
-On Windows, run `flclashctl.exe helper uninstall` from the app's folder as
-administrator.
+On Windows, in PowerShell as administrator, from the app's folder
+(`%LOCALAPPDATA%\Programs\FlClash` for the installer):
+
+```powershell
+.\flclashctl.exe helper uninstall
+```
 
 ### Checking a download
 

@@ -15,7 +15,19 @@ env:
   GO_VERSION: '1.27'
 
 jobs:
+  # A version the file versions and the installer can carry: X.Y.Z, or
+  # X.Y.Z-something for a pre-release.
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: |
+          if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "$GITHUB_REF_NAME is not vX.Y.Z or vX.Y.Z-PRERELEASE"; exit 1
+          fi
+
   macos:
+    needs: tag
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -48,6 +60,7 @@ jobs:
           if-no-files-found: error
 
   windows:
+    needs: tag
     runs-on: windows-latest
     timeout-minutes: 40
     strategy:
@@ -130,7 +143,7 @@ jobs:
             /^## / { if (found) exit; if (index($0, "[" v "]")) { found = 1; next } }
             found { print }
           ' CHANGELOG.md > notes.md
-          if [ ! -s notes.md ]; then echo "CHANGELOG.md has no section for $version"; exit 1; fi
+          if ! grep -q '[^[:space:]]' notes.md; then echo "CHANGELOG.md has no notes for $version"; exit 1; fi
           cat >> notes.md <<'NOTES'
 
           The builds are not signed by Apple or Microsoft yet. See [Installing](https://github.com/oviron/flclash-desktop#installing) for the first start and how to check that a file is the one built here.

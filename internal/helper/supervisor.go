@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/oviron/flclash-desktop/internal/build"
 	"github.com/oviron/flclash-desktop/internal/compile"
 	"github.com/oviron/flclash-desktop/internal/ingest"
 	"github.com/oviron/flclash-desktop/internal/policy"
@@ -212,7 +213,7 @@ func (s *Supervisor) Status() Status {
 	} else {
 		st.Captured = st.Running && s.Listening(st.Port)
 	}
-	st.Version = Version
+	st.Version, st.Build = Version, build.Version
 	if st.guardErr != nil {
 		st.GuardProblem = st.guardErr.Error()
 	}

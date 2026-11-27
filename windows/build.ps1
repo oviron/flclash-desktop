@@ -23,7 +23,7 @@ try {
         try { $Version = (git describe --tags --match 'v[0-9]*' 2>$null) -replace '^v', '' } catch { $Version = '' }
         if (-not $Version) { $Version = '0.0.0-dev' }
     }
-    $short = ($Version -split '-')[0]
+    $short = ($Version -split '[-+]')[0]
     # The icon of the window and of the files, from the one picture all desktops use.
     $icon = Join-Path $root 'windows\FlClash.ico'
     $png = Join-Path $root 'assets\icon-1024.png'
@@ -61,20 +61,24 @@ try {
     }
 
     if (-not $SkipGo) {
-        $env:GOOS = 'windows'
-        $env:GOARCH = if ($Arch -eq 'arm64') { 'arm64' } else { 'amd64' }
-        # The agent carries the icon and a manifest; without them it still works.
+        # The agent carries the icon, a manifest and its version. go-winres
+        # runs here, so it is built for this machine, before GOARCH is set;
+        # it writes the resources for both architectures.
+        Remove-Item Env:GOOS, Env:GOARCH -ErrorAction SilentlyContinue
         go run github.com/tc-hib/go-winres@v0.3.3 simply --icon assets/icon-1024.png --manifest gui `
             --product-name FlClash --file-description FlClash --product-version $short --file-version $short `
-            --original-filename FlClash.exe --out cmd/flclash-windows/rsrc
-        if ($LASTEXITCODE -ne 0) { Write-Warning 'go-winres failed: FlClash.exe is built without its icon' }
-        go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=$Version" -o "$out\FlClash.exe" ./cmd/flclash-windows
+            --original-filename FlClash.exe --arch amd64,arm64 --out cmd/flclash-windows/rsrc
+        if ($LASTEXITCODE -ne 0) { throw 'go-winres failed' }
+        $env:GOOS = 'windows'
+        $env:GOARCH = if ($Arch -eq 'arm64') { 'arm64' } else { 'amd64' }
+        $ldflags = "-s -w -X github.com/oviron/flclash-desktop/internal/build.Version=$Version"
+        go build -trimpath -ldflags "$ldflags -H windowsgui" -o "$out\FlClash.exe" ./cmd/flclash-windows
         if ($LASTEXITCODE -ne 0) { throw 'FlClash.exe did not build' }
-        go build -tags with_gvisor -trimpath -ldflags '-s -w' -o "$out\flclash-core.exe" ./cmd/flclash-core
+        go build -tags with_gvisor -trimpath -ldflags $ldflags -o "$out\flclash-core.exe" ./cmd/flclash-core
         if ($LASTEXITCODE -ne 0) { throw 'flclash-core.exe did not build' }
-        go build -tags with_gvisor -trimpath -ldflags "-s -w -X main.version=$Version" -o "$out\flclashctl.exe" ./cmd/flclashctl
+        go build -tags with_gvisor -trimpath -ldflags $ldflags -o "$out\flclashctl.exe" ./cmd/flclashctl
         if ($LASTEXITCODE -ne 0) { throw 'flclashctl.exe did not build' }
-        go build -trimpath -ldflags '-s -w' -o "$out\flclash-helper.exe" ./cmd/flclash-helper
+        go build -trimpath -ldflags $ldflags -o "$out\flclash-helper.exe" ./cmd/flclash-helper
         if ($LASTEXITCODE -ne 0) { throw 'flclash-helper.exe did not build' }
     }
 

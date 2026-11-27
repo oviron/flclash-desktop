@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/oviron/flclash-desktop/internal/app"
+	"github.com/oviron/flclash-desktop/internal/build"
 	"github.com/oviron/flclash-desktop/internal/compile"
 	"github.com/oviron/flclash-desktop/internal/core"
 	"github.com/oviron/flclash-desktop/internal/helper"
@@ -46,9 +47,6 @@ const usage = `usage:
   flclashctl run -local-port N                run the core without privileges on a loopback HTTP/SOCKS port
   flclashctl version                          print the version
 `
-
-// version is set at build time from the git tag.
-var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -139,7 +137,7 @@ func main() {
 		},
 	}
 	if os.Args[1] == "version" {
-		fmt.Println(version)
+		fmt.Println(build.Version)
 		return
 	}
 	if os.Args[1] == "helper" {

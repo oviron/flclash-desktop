@@ -56,16 +56,19 @@ func cmdHelper(args []string) error {
 			if err != nil {
 				return err
 			}
-			for _, path := range []string{helperDir(), helper.BaseDir()} {
-				if err := os.RemoveAll(path); err != nil {
-					return err
-				}
-			}
-			fmt.Println("the helper is removed")
-			return nil
+		} else {
+			s.Close()
 		}
-		s.Close()
-	} else if args[0] == "uninstall" {
+	}
+	if args[0] == "uninstall" {
+		// Also when the service is already gone: a file that was held the
+		// last time is removed now.
+		for _, path := range []string{helperDir(), helper.BaseDir()} {
+			if err := os.RemoveAll(path); err != nil {
+				return err
+			}
+		}
+		fmt.Println("the helper is removed")
 		return nil
 	}
 

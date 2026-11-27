@@ -126,6 +126,7 @@ var ru = map[string]string{
 	"is missing":                                                                   "отсутствует",
 	"the server has no name":                                                       "у сервера нет имени",
 	"the server has no address":                                                    "у сервера нет адреса",
+	"server port %v is not a port":                                                 "порт сервера %v не похож на порт",
 	"server type %q is not allowed":                                                "тип сервера «%s» не допускается",
 	"server field %q is not allowed":                                               "поле сервера «%s» не допускается",
 	"server field %q must be a plain value":                                        "поле сервера «%s» должно быть простым значением",

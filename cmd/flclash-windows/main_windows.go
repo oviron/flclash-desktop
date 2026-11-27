@@ -23,14 +23,12 @@ import (
 
 	"github.com/oviron/flclash-desktop/internal/agent"
 	"github.com/oviron/flclash-desktop/internal/app"
+	"github.com/oviron/flclash-desktop/internal/build"
 	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/model"
 	"github.com/oviron/flclash-desktop/internal/say"
 	"github.com/oviron/flclash-desktop/internal/store"
 )
-
-// version is set by the build.
-var version = "dev"
 
 type host struct {
 	sid   string
@@ -208,7 +206,7 @@ func (h *host) prefs() prefs {
 }
 
 func (h *host) app() agent.App {
-	return agent.App{Lang: h.lang, HotKey: h.prefs().HotKey, Login: h.login(), Version: version}
+	return agent.App{Lang: h.lang, HotKey: h.prefs().HotKey, Login: h.login(), Version: build.Version}
 }
 
 func (h *host) setHotKey(k agent.HotKey) error {

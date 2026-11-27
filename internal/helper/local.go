@@ -135,7 +135,8 @@ type HelperState struct {
 	// Installed is false when there is no helper to ask.
 	Installed bool
 	// Outdated: the helper is from another version of the app and has to be
-	// installed again before it takes this app's requests.
+	// installed again: before it takes this app's requests, or to run this
+	// version's core.
 	Outdated bool
 	// Problem: the helper is there but did not answer.
 	Problem error
@@ -146,7 +147,7 @@ func Probe() HelperState {
 	resp, err := remote(Request{Op: OpStatus}, 10*time.Second)
 	switch {
 	case err == nil:
-		return HelperState{Installed: true, Outdated: resp.Status.Version != Version}
+		return HelperState{Installed: true, Outdated: !resp.Status.Current()}
 	case IsNotInstalled(err):
 		return HelperState{}
 	}
