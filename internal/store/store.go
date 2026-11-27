@@ -173,6 +173,21 @@ func (s *Store) ImportPolicy(name, text string) error {
 	return writeAtomic(s.policyPath(name), []byte(text))
 }
 
+// RemovePolicy deletes an imported policy; the built-in ones stay.
+func (s *Store) RemovePolicy(name string) error {
+	if _, isBuiltin := policy.Builtin(name); isBuiltin {
+		return fmt.Errorf("%q is a built-in policy and cannot be removed", name)
+	}
+	if !policyName.MatchString(name) {
+		return fmt.Errorf("no policy %q", name)
+	}
+	err := os.Remove(s.policyPath(name))
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("no policy %q", name)
+	}
+	return err
+}
+
 // Policy returns a built-in or an imported policy.
 func (s *Store) Policy(name string) (policy.Policy, error) {
 	if p, ok := policy.Builtin(name); ok {

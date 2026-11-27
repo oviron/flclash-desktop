@@ -112,6 +112,10 @@ func handle(req request) (out reply) {
 		if err := st.ImportPolicy(req.Name, req.Text); err != nil {
 			return fail(err)
 		}
+	case "policyRemove":
+		if err := app.RemovePolicy(st, req.Name); err != nil {
+			return fail(err)
+		}
 	default:
 		out.Error = "unknown operation " + req.Op
 		return out

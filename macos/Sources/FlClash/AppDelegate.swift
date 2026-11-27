@@ -9,9 +9,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusMenu = StatusMenu(openWindow: { [weak self] in self?.showWindow() })
         Model.shared.start()
         // Started by hand, the app shows its window; started at login it stays in the menu bar.
-        if !CommandLine.arguments.contains("--background") {
+        if !CommandLine.arguments.contains("--background"), !startedAtLogin {
             showWindow()
         }
+    }
+
+    /// The system marks the launch it makes for a login item.
+    private var startedAtLogin: Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent, event.eventID == kAEOpenApplication else { return false }
+        return event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
 
     /// The app lives in the menu bar; the window comes and goes.
@@ -36,6 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Model.shared.refresh()
     }
 
+    /// The command line may have changed the lists while the window was aside.
+    func windowDidBecomeKey(_ notification: Notification) { Model.shared.refresh() }
+
     func windowWillClose(_ notification: Notification) {
         // Let go of the window and everything in it: closed means gone, not hidden.
         window = nil
@@ -56,8 +65,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let fileItem = NSMenuItem()
         let fileMenu = NSMenu(title: L("File"))
-        fileMenu.addItem(withTitle: L("Import from Clipboard"), action: #selector(ServersViewController.importFromClipboard(_:)), keyEquivalent: "V").keyEquivalentModifierMask = [.command, .shift]
-        fileMenu.addItem(withTitle: L("Import from File…"), action: #selector(ServersViewController.importFromFile(_:)), keyEquivalent: "o")
+        fileMenu.addItem(withTitle: L("Import from Clipboard"), action: #selector(MainWindowController.importFromClipboard(_:)), keyEquivalent: "V").keyEquivalentModifierMask = [.command, .shift]
+        fileMenu.addItem(withTitle: L("Import from File…"), action: #selector(MainWindowController.importFromFile(_:)), keyEquivalent: "o")
+        fileMenu.addItem(withTitle: L("Import a Policy…"), action: #selector(MainWindowController.importPolicy(_:)), keyEquivalent: "")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: L("Close Window"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         fileItem.submenu = fileMenu
@@ -68,11 +78,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         editMenu.addItem(withTitle: L("Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         editMenu.addItem(withTitle: L("Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: L("Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: L("Delete"), action: #selector(ServersViewController.delete(_:)), keyEquivalent: "\u{8}")
         editMenu.addItem(withTitle: L("Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: L("Find"), action: #selector(ServersViewController.focusSearch(_:)), keyEquivalent: "f")
+        editMenu.addItem(withTitle: L("Find"), action: #selector(MainWindowController.focusSearch(_:)), keyEquivalent: "f")
         editItem.submenu = editMenu
         main.addItem(editItem)
+
+        let viewItem = NSMenuItem()
+        let viewMenu = NSMenu(title: L("View"))
+        viewMenu.addItem(withTitle: L("Servers"), action: #selector(MainWindowController.showServers(_:)), keyEquivalent: "1")
+        viewMenu.addItem(withTitle: L("Routing"), action: #selector(MainWindowController.showRouting(_:)), keyEquivalent: "2")
+        viewItem.submenu = viewMenu
+        main.addItem(viewItem)
 
         let windowItem = NSMenuItem()
         let windowMenu = NSMenu(title: L("Window"))

@@ -89,4 +89,13 @@ func TestPolicyImport(t *testing.T) {
 	if _, err := s.Policy("broken"); err == nil {
 		t.Fatal("a refused policy must not be stored")
 	}
+	if err := s.RemovePolicy("all"); err == nil {
+		t.Fatal("a built-in policy must not be removed")
+	}
+	if err := s.RemovePolicy("work"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Policy("work"); err == nil {
+		t.Fatal("a removed policy must be gone")
+	}
 }

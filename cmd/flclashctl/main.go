@@ -25,6 +25,7 @@ const usage = `usage:
   flclashctl select SERVER [-policy NAME]     choose the server (ID or name) and, optionally, the policy;
                                               a running tunnel moves to the new choice
   flclashctl policy import NAME FILE          add a routing policy from a rules file
+  flclashctl policy remove NAME               delete an imported policy
   flclashctl on | off | status                turn the tunnel on or off, or show what is true right now
   flclashctl helper install | uninstall       set up or remove the privileged helper (run with sudo)
   flclashctl config -tun | -local-port N      print the config the core would run (it contains credentials)
@@ -136,8 +137,8 @@ func cmdList(st *store.Store, _ []string) error {
 		fmt.Printf(" %s %s  %-10s %-22s %s\n", mark(e.ID == view.Selected), e.ID, e.Group, e.Protocol, e.Name)
 	}
 	fmt.Println("policies:")
-	for _, name := range view.Policies {
-		fmt.Printf(" %s %s\n", mark(name == view.Policy), name)
+	for _, p := range view.Policies {
+		fmt.Printf(" %s %s\n", mark(p.Name == view.Policy), p.Name)
 	}
 	return nil
 }
@@ -163,8 +164,11 @@ func cmdSelect(st *store.Store, args []string) error {
 }
 
 func cmdPolicy(st *store.Store, args []string) error {
+	if len(args) == 2 && args[0] == "remove" {
+		return app.RemovePolicy(st, args[1])
+	}
 	if len(args) != 3 || args[0] != "import" {
-		return errors.New("usage: flclashctl policy import NAME FILE")
+		return errors.New("usage: flclashctl policy import NAME FILE | policy remove NAME")
 	}
 	text, err := os.ReadFile(args[2])
 	if err != nil {

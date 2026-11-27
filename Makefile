@@ -18,9 +18,13 @@ bridge:
 app: tools bridge
 	cd macos && swift build -c release
 	mkdir -p dist/FlClash.app/Contents/MacOS dist/FlClash.app/Contents/Resources
-	cp macos/.build/release/FlClash flclashctl flclash-helper flclash-core dist/FlClash.app/Contents/MacOS/
+	cp flclashctl flclash-helper flclash-core dist/FlClash.app/Contents/MacOS/
+	# SwiftPM stamps the binary with the deployment target as its SDK, and the
+	# system then draws the app the old way. Put the SDK it was built with.
+	vtool -set-build-version macos 15.0 $$(xcrun --show-sdk-version) -replace \
+		-output dist/FlClash.app/Contents/MacOS/FlClash macos/.build/release/FlClash
 	cp macos/Resources/Info.plist dist/FlClash.app/Contents/
-	cp -R macos/Resources/en.lproj macos/Resources/ru.lproj dist/FlClash.app/Contents/Resources/
+	cp -R macos/Resources/AppIcon.icns macos/Resources/en.lproj macos/Resources/ru.lproj dist/FlClash.app/Contents/Resources/
 	codesign --force --deep --sign - dist/FlClash.app
 
 check:

@@ -1,41 +1,22 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// The servers: one table, a search field, and the ways to add to it.
-final class ServersViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSMenuItemValidation {
-    private let table = NSTableView()
-    private let search = NSSearchField()
-    private let empty = NSTextField(labelWithString: "")
+/// The servers: one table, filled by importing, pasting or dropping links.
+final class ServersViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate, NSMenuItemValidation {
+    private let table = ListTableView()
+    private let empty = EmptyStateView(symbol: "server.rack")
     private var rows: [Server] = []
 
+    /// What the search field of the toolbar holds.
+    var query = "" {
+        didSet { if isViewLoaded, query != oldValue { reload() } }
+    }
+
     override func loadView() {
-        let root = NSView()
+        let root = DropView()
+        root.onDrop = { [weak self] text, _ in self?.importText(text) }
 
-        search.placeholderString = L("Search")
-        search.delegate = self
-        search.sendsSearchStringImmediately = true
-        search.controlSize = .regular
-
-        let add = NSPopUpButton(frame: .zero, pullsDown: true)
-        add.bezelStyle = .rounded
-        (add.cell as? NSPopUpButtonCell)?.arrowPosition = .arrowAtBottom
-        add.addItem(withTitle: "")
-        add.item(at: 0)?.image = NSImage(systemSymbolName: "plus", accessibilityDescription: L("Add servers"))
-        add.addItem(withTitle: L("Import from Clipboard"))
-        add.lastItem?.action = #selector(importFromClipboard(_:))
-        add.lastItem?.target = self
-        add.addItem(withTitle: L("Import from File…"))
-        add.lastItem?.action = #selector(importFromFile(_:))
-        add.lastItem?.target = self
-        add.toolTip = L("Add servers")
-
-        let bar = NSStackView(views: [add, NSView(), search])
-        bar.orientation = .horizontal
-        bar.spacing = 8
-        bar.edgeInsets = NSEdgeInsets(top: 10, left: 14, bottom: 8, right: 14)
-        search.widthAnchor.constraint(equalToConstant: 200).isActive = true
-
-        for (id, title, width) in [("mark", "", 22.0), ("name", L("Name"), 200.0), ("protocol", L("Protocol"), 170.0), ("group", L("Group"), 90.0)] {
+        for (id, title, width) in [("mark", "", 22.0), ("name", L("Name"), 220.0), ("protocol", L("Protocol"), 190.0), ("group", L("Group"), 100.0)] {
             let column = NSTableColumn(identifier: .init(id))
             column.title = title
             column.width = width
@@ -48,18 +29,19 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         table.style = .inset
         table.rowSizeStyle = .medium
         table.usesAlternatingRowBackgroundColors = false
-        table.allowsMultipleSelection = false
+        table.allowsMultipleSelection = true
         // Every column gives way together, so none is pushed out of a narrow window.
         table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         table.dataSource = self
         table.delegate = self
         table.target = self
         table.doubleAction = #selector(useSelected(_:))
+        table.onDelete = { [weak self] in self?.delete(nil) }
         table.setAccessibilityLabel(L("Servers"))
         let menu = NSMenu()
         menu.addItem(withTitle: L("Use This Server"), action: #selector(useSelected(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: L("Remove"), action: #selector(removeSelected(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L("Delete"), action: #selector(delete(_:)), keyEquivalent: "").target = self
         table.menu = menu
 
         let scroll = NSScrollView()
@@ -68,25 +50,22 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
 
-        empty.font = .systemFont(ofSize: 13)
-        empty.textColor = .secondaryLabelColor
-        empty.alignment = .center
+        empty.button.title = L("Import from Clipboard")
+        empty.button.target = self
+        empty.button.action = #selector(importFromClipboardPressed(_:))
 
-        for subview in [bar, scroll, empty] as [NSView] {
+        for subview in [scroll, empty] as [NSView] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(subview)
         }
         NSLayoutConstraint.activate([
-            bar.topAnchor.constraint(equalTo: root.topAnchor),
-            bar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: bar.bottomAnchor),
+            scroll.topAnchor.constraint(equalTo: root.topAnchor),
             scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            empty.centerXAnchor.constraint(equalTo: scroll.centerXAnchor),
-            empty.centerYAnchor.constraint(equalTo: scroll.centerYAnchor),
-            empty.widthAnchor.constraint(lessThanOrEqualTo: scroll.widthAnchor, constant: -40),
+            empty.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            empty.centerYAnchor.constraint(equalTo: root.centerYAnchor),
+            empty.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, constant: -60),
         ])
         view = root
     }
@@ -103,11 +82,12 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
     }
 
     @objc private func reload() {
-        let chosen = table.selectedRow >= 0 && table.selectedRow < rows.count ? rows[table.selectedRow].id : nil
-        let query = search.stringValue.trimmingCharacters(in: .whitespaces).lowercased()
-        var list = Model.shared.view.servers
-        if !query.isEmpty {
-            list = list.filter { ($0.name + " " + $0.proto + " " + $0.group).lowercased().contains(query) }
+        let chosen = Set(table.selectedRowIndexes.filter { $0 < rows.count }.map { rows[$0].id })
+        let all = Model.shared.view.servers
+        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        var list = all
+        if !needle.isEmpty {
+            list = list.filter { ($0.name + " " + $0.proto + " " + $0.group).lowercased().contains(needle) }
         }
         if let sort = table.sortDescriptors.first, let key = sort.key {
             let value: (Server) -> String = { key == "protocol" ? $0.proto : key == "group" ? $0.group : $0.name }
@@ -117,16 +97,26 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
             }
         }
         rows = list
-        table.reloadData()
-        if let chosen, let index = rows.firstIndex(where: { $0.id == chosen }) {
-            table.selectRowIndexes([index], byExtendingSelection: false)
+
+        // One group needs no column to say so.
+        let grouped = Set(all.map(\.group)).count > 1
+        if let column = table.tableColumn(withIdentifier: .init("group")), column.isHidden == grouped {
+            column.isHidden = !grouped
+            table.sizeToFit()
         }
-        if Model.shared.view.servers.isEmpty {
-            empty.stringValue = L("No servers yet. Copy a link in Throne and choose Import from Clipboard.")
+        table.reloadData()
+        table.selectRowIndexes(IndexSet(rows.indices.filter { chosen.contains(rows[$0].id) }), byExtendingSelection: false)
+
+        // An empty table would still draw its header line.
+        table.enclosingScrollView?.isHidden = rows.isEmpty
+        if all.isEmpty {
+            empty.show(title: L("No servers yet"),
+                       text: L("Copy a server link in Throne and paste it here, or drop a file with links onto this window."),
+                       button: true)
         } else if rows.isEmpty {
-            empty.stringValue = L("Nothing matches the search")
+            empty.show(title: L("Nothing matches the search"), text: "", button: false)
         } else {
-            empty.stringValue = ""
+            empty.isHidden = true
         }
     }
 
@@ -135,74 +125,62 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard let column = tableColumn else { return nil }
         let server = rows[row]
-        let cell = NSTableCellView()
-        if column.identifier.rawValue == "mark" {
-            let image = NSImageView()
-            if server.id == Model.shared.view.selected {
-                image.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: L("Selected"))
-                image.contentTintColor = .controlAccentColor
-            }
-            image.translatesAutoresizingMaskIntoConstraints = false
-            cell.addSubview(image)
-            NSLayoutConstraint.activate([
-                image.centerXAnchor.constraint(equalTo: cell.centerXAnchor),
-                image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            ])
-            return cell
-        }
+        let selected = server.id == Model.shared.view.selected
+        if column.identifier.rawValue == "mark" { return markCell(selected) }
         let text: String
         switch column.identifier.rawValue {
         case "protocol": text = server.proto
         case "group": text = server.group
         default: text = server.name
         }
-        let label = NSTextField(labelWithString: text)
-        label.lineBreakMode = .byTruncatingTail
-        if column.identifier.rawValue != "name" { label.textColor = .secondaryLabelColor }
-        if server.id == Model.shared.view.selected, column.identifier.rawValue == "name" {
-            label.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
-        }
-        label.translatesAutoresizingMaskIntoConstraints = false
-        cell.addSubview(label)
-        cell.textField = label
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-            label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
-            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        ])
-        return cell
+        return textCell(text, secondary: column.identifier.rawValue != "name", strong: selected)
     }
 
     func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) { reload() }
 
-    func controlTextDidChange(_ obj: Notification) { reload() }
-
-    /// The row an action is about: the one under a right-click, else the selected one.
-    private var actionRow: Server? {
-        let row = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
-        return row >= 0 && row < rows.count ? rows[row] : nil
+    /// The rows an action is about: the one under a right-click when it is
+    /// outside the selection, else the selection.
+    private var actionRows: [Server] {
+        let clicked = table.clickedRow
+        let indexes = clicked >= 0 && !table.selectedRowIndexes.contains(clicked)
+            ? IndexSet(integer: clicked) : table.selectedRowIndexes
+        return indexes.filter { $0 < rows.count }.map { rows[$0] }
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
-        case #selector(useSelected(_:)), #selector(removeSelected(_:)): return actionRow != nil
+        case #selector(useSelected(_:)): return actionRows.count == 1
+        case #selector(delete(_:)): return !actionRows.isEmpty
         default: return true
         }
     }
 
     @objc func useSelected(_ sender: Any?) {
-        if let server = actionRow { Model.shared.select(server: server.id) }
+        let servers = actionRows
+        if servers.count == 1 { Model.shared.select(server: servers[0].id) }
     }
 
-    @objc func removeSelected(_ sender: Any?) {
-        if let server = actionRow { Model.shared.remove(server: server.id) }
+    /// Edit > Delete and the Delete key.
+    @objc func delete(_ sender: Any?) {
+        let servers = actionRows
+        guard !servers.isEmpty, let window = view.window else { return }
+        let alert = NSAlert()
+        alert.messageText = servers.count == 1
+            ? String(format: L("Delete the server “%@”?"), servers[0].name)
+            : L("Delete the selected servers?")
+        alert.informativeText = servers.count == 1
+            ? L("To get it back, you will have to import it again.")
+            : servers.map(\.name).joined(separator: ", ")
+        alert.addButton(withTitle: L("Delete")).hasDestructiveAction = true
+        alert.addButton(withTitle: L("Cancel"))
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn { Model.shared.remove(servers: servers.map(\.id)) }
+        }
     }
 
-    @objc func focusSearch(_ sender: Any?) {
-        view.window?.makeFirstResponder(search)
-    }
+    @objc private func importFromClipboardPressed(_ sender: Any?) { importFromClipboard() }
 
-    @objc func importFromClipboard(_ sender: Any?) {
+    func importFromClipboard() {
         guard let text = NSPasteboard.general.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             report(title: L("The clipboard has no text"), text: L("Copy a server link first: in Throne, right-click a profile and copy it as a link."))
             return
@@ -210,7 +188,7 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         importText(text)
     }
 
-    @objc func importFromFile(_ sender: Any?) {
+    func importFromFile() {
         guard let window = view.window else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.plainText, .json, .text]
@@ -247,5 +225,80 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         alert.messageText = title
         alert.informativeText = text
         alert.beginSheetModal(for: window)
+    }
+}
+
+/// The cell of the column that marks the chosen row.
+func markCell(_ chosen: Bool) -> NSView {
+    let cell = NSTableCellView()
+    let image = NSImageView()
+    if chosen {
+        image.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: L("Selected"))
+        image.symbolConfiguration = .init(pointSize: 12, weight: .semibold)
+        image.contentTintColor = .controlAccentColor
+    }
+    image.translatesAutoresizingMaskIntoConstraints = false
+    cell.addSubview(image)
+    cell.imageView = image
+    NSLayoutConstraint.activate([
+        image.centerXAnchor.constraint(equalTo: cell.centerXAnchor),
+        image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+    ])
+    return cell
+}
+
+/// A one-line text cell; the table recolours it on a selected row.
+func textCell(_ text: String, secondary: Bool, strong: Bool) -> NSView {
+    let cell = NSTableCellView()
+    let label = NSTextField(labelWithString: text)
+    label.lineBreakMode = .byTruncatingTail
+    if secondary { label.textColor = .secondaryLabelColor }
+    if strong, !secondary { label.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold) }
+    label.translatesAutoresizingMaskIntoConstraints = false
+    cell.addSubview(label)
+    cell.textField = label
+    NSLayoutConstraint.activate([
+        label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+        label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
+        label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+    ])
+    return cell
+}
+
+/// What a page shows in place of an empty list.
+final class EmptyStateView: NSStackView {
+    let button = NSButton(title: "", target: nil, action: nil)
+    private let title = NSTextField(labelWithString: "")
+    private let text = NSTextField(wrappingLabelWithString: "")
+
+    init(symbol: String) {
+        super.init(frame: .zero)
+        let image = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) ?? NSImage())
+        image.symbolConfiguration = .init(pointSize: 34, weight: .regular)
+        image.contentTintColor = .tertiaryLabelColor
+        title.font = .systemFont(ofSize: 15, weight: .semibold)
+        title.textColor = .secondaryLabelColor
+        text.font = .systemFont(ofSize: 12)
+        text.textColor = .secondaryLabelColor
+        text.alignment = .center
+        button.bezelStyle = .push
+        orientation = .vertical
+        alignment = .centerX
+        spacing = 8
+        setViews([image, title, text, button], in: .center)
+        setCustomSpacing(12, after: image)
+        setCustomSpacing(14, after: text)
+        text.widthAnchor.constraint(lessThanOrEqualToConstant: 340).isActive = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    func show(title: String, text: String, button: Bool) {
+        self.title.stringValue = title
+        self.text.stringValue = text
+        self.text.isHidden = text.isEmpty
+        self.button.isHidden = !button
+        isHidden = false
     }
 }

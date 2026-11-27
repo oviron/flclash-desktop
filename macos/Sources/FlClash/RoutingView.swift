@@ -1,61 +1,49 @@
 import AppKit
 
 /// The routing policies: pick one, or bring your own from a rules file.
-final class RoutingViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
-    private let table = NSTableView()
-    private var rows: [String] = []
-    private let builtin: Set<String> = ["all", "lan-direct", "ru-direct"]
+final class RoutingViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate, NSMenuItemValidation {
+    private let table = ListTableView()
+    private var rows: [Policy] = []
 
     override func loadView() {
-        let root = NSView()
-
-        let add = NSButton(image: NSImage(systemSymbolName: "plus", accessibilityDescription: L("Import a policy")) ?? NSImage(), target: self, action: #selector(importPolicy(_:)))
-        add.bezelStyle = .rounded
-        add.toolTip = L("Import a policy from a rules file")
-        let hint = NSTextField(labelWithString: L("A policy decides which connections go through the server."))
-        hint.font = .systemFont(ofSize: 12)
-        hint.textColor = .secondaryLabelColor
-        hint.lineBreakMode = .byTruncatingTail
-        let bar = NSStackView(views: [add, hint, NSView()])
-        bar.orientation = .horizontal
-        bar.spacing = 10
-        bar.edgeInsets = NSEdgeInsets(top: 10, left: 14, bottom: 8, right: 14)
-
-        for (id, title, width) in [("mark", "", 22.0), ("name", L("Policy"), 300.0), ("kind", L("Kind"), 140.0)] {
-            let column = NSTableColumn(identifier: .init(id))
-            column.title = title
-            column.width = width
-            if id == "mark" { column.maxWidth = 22; column.minWidth = 22 }
-            table.addTableColumn(column)
+        let root = DropView()
+        root.onDrop = { [weak self] text, url in
+            self?.importPolicy(text: text, suggestedName: url?.deletingPathExtension().lastPathComponent ?? "policy")
         }
+
+        let mark = NSTableColumn(identifier: .init("mark"))
+        mark.width = 22
+        mark.minWidth = 22
+        mark.maxWidth = 22
+        table.addTableColumn(mark)
+        table.addTableColumn(NSTableColumn(identifier: .init("name")))
+        // A short list of things to choose from, not a sheet of data: no header.
+        table.headerView = nil
         table.style = .inset
-        table.rowSizeStyle = .medium
+        table.rowHeight = 46
         table.allowsMultipleSelection = false
-        // Every column gives way together, so none is pushed out of a narrow window.
-        table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         table.dataSource = self
         table.delegate = self
         table.target = self
         table.doubleAction = #selector(useSelected(_:))
+        table.onDelete = { [weak self] in self?.delete(nil) }
         table.setAccessibilityLabel(L("Routing"))
         let menu = NSMenu()
         menu.addItem(withTitle: L("Use This Policy"), action: #selector(useSelected(_:)), keyEquivalent: "").target = self
+        menu.addItem(.separator())
+        menu.addItem(withTitle: L("Delete"), action: #selector(delete(_:)), keyEquivalent: "").target = self
         table.menu = menu
 
         let scroll = NSScrollView()
         scroll.documentView = table
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
-
-        for subview in [bar, scroll] as [NSView] {
-            subview.translatesAutoresizingMaskIntoConstraints = false
-            root.addSubview(subview)
-        }
+        scroll.borderType = .noBorder
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(scroll)
         NSLayoutConstraint.activate([
-            bar.topAnchor.constraint(equalTo: root.topAnchor),
-            bar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: bar.bottomAnchor),
+            scroll.topAnchor.constraint(equalTo: root.topAnchor),
             scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
@@ -69,58 +57,91 @@ final class RoutingViewController: NSViewController, NSTableViewDataSource, NSTa
         reload()
     }
 
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        table.sizeToFit()
+    }
+
     @objc private func reload() {
+        let chosen = table.selectedRow >= 0 && table.selectedRow < rows.count ? rows[table.selectedRow].name : nil
         rows = Model.shared.view.policies
         table.reloadData()
+        if let chosen, let index = rows.firstIndex(where: { $0.name == chosen }) {
+            table.selectRowIndexes([index], byExtendingSelection: false)
+        }
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard let column = tableColumn else { return nil }
-        let name = rows[row]
-        let chosen = name == Model.shared.view.policy
+        let policy = rows[row]
+        let chosen = policy.name == Model.shared.view.policy
+        if column.identifier.rawValue == "mark" { return markCell(chosen) }
+
+        let title = NSTextField(labelWithString: policyTitle(policy.name))
+        title.lineBreakMode = .byTruncatingTail
+        if chosen { title.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold) }
+        let about = NSTextField(labelWithString: policyAbout(policy))
+        about.font = .systemFont(ofSize: 11)
+        about.textColor = .secondaryLabelColor
+        about.lineBreakMode = .byTruncatingTail
+        let lines = NSStackView(views: [title, about])
+        lines.orientation = .vertical
+        lines.alignment = .leading
+        lines.spacing = 2
+        lines.translatesAutoresizingMaskIntoConstraints = false
         let cell = NSTableCellView()
-        if column.identifier.rawValue == "mark" {
-            let image = NSImageView()
-            if chosen {
-                image.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: L("Selected"))
-                image.contentTintColor = .controlAccentColor
-            }
-            image.translatesAutoresizingMaskIntoConstraints = false
-            cell.addSubview(image)
-            NSLayoutConstraint.activate([
-                image.centerXAnchor.constraint(equalTo: cell.centerXAnchor),
-                image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            ])
-            return cell
-        }
-        let text = column.identifier.rawValue == "kind"
-            ? (builtin.contains(name) ? L("Built-in") : L("Imported"))
-            : policyTitle(name)
-        let label = NSTextField(labelWithString: text)
-        label.lineBreakMode = .byTruncatingTail
-        if column.identifier.rawValue == "kind" { label.textColor = .secondaryLabelColor }
-        if chosen, column.identifier.rawValue == "name" {
-            label.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
-        }
-        label.translatesAutoresizingMaskIntoConstraints = false
-        cell.addSubview(label)
-        cell.textField = label
+        cell.addSubview(lines)
+        cell.textField = title
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-            label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
-            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            lines.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+            lines.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -2),
+            lines.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
         ])
         return cell
     }
 
-    @objc private func useSelected(_ sender: Any?) {
+    private var actionRow: Policy? {
         let row = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
-        if row >= 0, row < rows.count { Model.shared.select(policy: rows[row]) }
+        return row >= 0 && row < rows.count ? rows[row] : nil
     }
 
-    @objc private func importPolicy(_ sender: Any?) {
+    /// An imported policy that is not the one in use can go.
+    private func removable(_ policy: Policy?) -> Bool {
+        guard let policy else { return false }
+        return !policy.builtin && policy.name != Model.shared.view.policy
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(useSelected(_:)): return actionRow != nil
+        case #selector(delete(_:)): return removable(actionRow)
+        default: return true
+        }
+    }
+
+    @objc private func useSelected(_ sender: Any?) {
+        if let policy = actionRow { Model.shared.select(policy: policy.name) }
+    }
+
+    /// Edit > Delete and the Delete key.
+    @objc func delete(_ sender: Any?) {
+        guard let policy = actionRow, removable(policy), let window = view.window else {
+            NSSound.beep()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = String(format: L("Delete the policy “%@”?"), policy.name)
+        alert.informativeText = L("To get it back, you will have to import it again.")
+        alert.addButton(withTitle: L("Delete")).hasDestructiveAction = true
+        alert.addButton(withTitle: L("Cancel"))
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn { Model.shared.remove(policy: policy.name) }
+        }
+    }
+
+    func importPolicy() {
         guard let window = view.window else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.plainText, .text]
@@ -129,16 +150,29 @@ final class RoutingViewController: NSViewController, NSTableViewDataSource, NSTa
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
-            // The file name becomes the policy name, in the form the engine takes.
-            let raw = url.deletingPathExtension().lastPathComponent.lowercased()
-            let name = String(raw.map { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") ? $0 : "-" })
-            Model.shared.importPolicy(name: name, text: text) { error in
-                guard let error, let window = self?.view.window else { return }
-                let alert = NSAlert()
-                alert.messageText = L("The policy was not imported")
-                alert.informativeText = error
-                alert.beginSheetModal(for: window)
-            }
+            self?.importPolicy(text: text, suggestedName: url.deletingPathExtension().lastPathComponent)
         }
+    }
+
+    private func importPolicy(text: String, suggestedName: String) {
+        // The file name becomes the policy name, in the form the engine takes.
+        let name = String(suggestedName.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") ? $0 : "-" })
+        Model.shared.importPolicy(name: name, text: text) { [weak self] error in
+            guard let error, let window = self?.view.window else { return }
+            let alert = NSAlert()
+            alert.messageText = L("The policy was not imported")
+            alert.informativeText = error
+            alert.beginSheetModal(for: window)
+        }
+    }
+}
+
+/// One line on what a policy does.
+func policyAbout(_ policy: Policy) -> String {
+    switch policy.name {
+    case "all": return L("All traffic goes through the server.")
+    case "lan-direct": return L("The home network and local addresses go directly, the rest through the server.")
+    case "ru-direct": return L("Russian sites go directly, the rest through the server.")
+    default: return String.localizedStringWithFormat(L("Imported, %d rules"), policy.rules)
     }
 }

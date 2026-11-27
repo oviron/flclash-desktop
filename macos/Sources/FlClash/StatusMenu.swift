@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 
 /// The menu bar item: the state at a glance, and the choices people change most.
 final class StatusMenu: NSObject, NSMenuDelegate {
@@ -75,11 +76,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
         let policies = NSMenuItem(title: L("Routing"), action: nil, keyEquivalent: "")
         let policyMenu = NSMenu()
-        for name in model.view.policies {
-            let entry = NSMenuItem(title: policyTitle(name), action: #selector(pickPolicy(_:)), keyEquivalent: "")
+        for policy in model.view.policies {
+            let entry = NSMenuItem(title: policyTitle(policy.name), action: #selector(pickPolicy(_:)), keyEquivalent: "")
             entry.target = self
-            entry.representedObject = name
-            entry.state = name == model.view.policy ? .on : .off
+            entry.representedObject = policy.name
+            entry.state = policy.name == model.view.policy ? .on : .off
             policyMenu.addItem(entry)
         }
         policies.submenu = policyMenu
@@ -89,12 +90,28 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let open = NSMenuItem(title: L("Open FlClash"), action: #selector(open), keyEquivalent: "")
         open.target = self
         menu.addItem(open)
+        let login = NSMenuItem(title: L("Launch at Login"), action: #selector(toggleLogin), keyEquivalent: "")
+        login.target = self
+        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(login)
         menu.addItem(.separator())
         menu.addItem(withTitle: L("Quit FlClash"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
 
     @objc private func toggle() { Model.shared.toggle() }
     @objc private func open() { openWindow() }
+
+    /// The system keeps the list of what starts at login; this adds or removes the app.
+    @objc private func toggleLogin() {
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled { try service.unregister() } else { try service.register() }
+        } catch {
+            let alert = NSAlert(error: error)
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        }
+    }
 
     @objc private func pickServer(_ sender: NSMenuItem) {
         if let id = sender.representedObject as? String { Model.shared.select(server: id) }

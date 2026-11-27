@@ -1,8 +1,42 @@
 import AppKit
 
+/// A round badge that says the state with a symbol and a colour.
+private final class StatusBadge: NSView {
+    private let image = NSImageView()
+    private var tint = NSColor.secondaryLabelColor
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        image.symbolConfiguration = .init(pointSize: 17, weight: .medium)
+        image.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(image)
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 38),
+            heightAnchor.constraint(equalToConstant: 38),
+            image.centerXAnchor.constraint(equalTo: centerXAnchor),
+            image.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    func show(symbol: String, tint: NSColor) {
+        self.tint = tint
+        image.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        image.contentTintColor = tint
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        tint.withAlphaComponent(0.16).setFill()
+        NSBezierPath(ovalIn: bounds).fill()
+    }
+}
+
 /// What is true right now, and the one button that changes it.
 final class HeaderView: NSView {
-    private let dot = NSImageView()
+    private let badge = StatusBadge()
     private let headline = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
     private let button = NSButton(title: "", target: nil, action: nil)
@@ -12,13 +46,32 @@ final class HeaderView: NSView {
     private let noticeRow = NSStackView()
     private var installing = false
 
+    private static let time: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let dayAndTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        formatter.doesRelativeDateFormatting = true
+        return formatter
+    }()
+
     override init(frame: NSRect) {
         super.init(frame: frame)
 
         headline.font = .systemFont(ofSize: 15, weight: .semibold)
+        headline.lineBreakMode = .byTruncatingTail
         detail.font = .systemFont(ofSize: 12)
         detail.textColor = .secondaryLabelColor
         detail.lineBreakMode = .byTruncatingTail
+        for label in [headline, detail] {
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
         let titles = NSStackView(views: [headline, detail])
         titles.orientation = .vertical
         titles.alignment = .leading
@@ -28,25 +81,28 @@ final class HeaderView: NSView {
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
 
-        button.bezelStyle = .rounded
+        button.bezelStyle = .push
         button.controlSize = .large
         button.target = self
         button.action = #selector(toggle)
+        button.setContentHuggingPriority(.required, for: .horizontal)
         // No Return shortcut: a stray Enter must not turn the tunnel on or off.
 
-        let top = NSStackView(views: [dot, titles, NSView(), spinner, button])
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.init(1), for: .horizontal)
+        let top = NSStackView(views: [badge, titles, spacer, spinner, button])
         top.orientation = .horizontal
         top.alignment = .centerY
-        top.spacing = 10
-        top.setHuggingPriority(.defaultLow, for: .horizontal)
+        top.spacing = 12
 
         notice.font = .systemFont(ofSize: 12)
         notice.textColor = .secondaryLabelColor
         notice.isSelectable = true
-        noticeButton.bezelStyle = .rounded
+        noticeButton.bezelStyle = .push
         noticeButton.controlSize = .small
         noticeButton.target = self
         noticeButton.action = #selector(noticeAction)
+        noticeButton.setContentHuggingPriority(.required, for: .horizontal)
         let warning = NSImageView(image: NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil) ?? NSImage())
         warning.contentTintColor = .systemYellow
         noticeRow.orientation = .horizontal
@@ -55,29 +111,35 @@ final class HeaderView: NSView {
         noticeRow.setViews([warning, notice, noticeButton], in: .leading)
         notice.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let separator = NSBox()
-        separator.boxType = .separator
+        // The state sits on a card of its own, apart from the list under it.
+        let card = NSBox()
+        card.boxType = .custom
+        card.titlePosition = .noTitle
+        card.borderWidth = 0
+        card.cornerRadius = 14
+        card.fillColor = .quaternarySystemFill
+        card.contentViewMargins = .zero
 
         let column = NSStackView(views: [top, noticeRow])
         column.orientation = .vertical
         column.alignment = .leading
-        column.spacing = 10
-        column.edgeInsets = NSEdgeInsets(top: 14, left: 18, bottom: 14, right: 18)
+        column.spacing = 12
+        column.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 16)
         column.translatesAutoresizingMaskIntoConstraints = false
-        separator.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(column)
-        addSubview(separator)
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.contentView?.addSubview(column)
+        addSubview(card)
         NSLayoutConstraint.activate([
-            column.topAnchor.constraint(equalTo: topAnchor),
-            column.leadingAnchor.constraint(equalTo: leadingAnchor),
-            column.trailingAnchor.constraint(equalTo: trailingAnchor),
-            top.widthAnchor.constraint(equalTo: column.widthAnchor, constant: -36),
-            noticeRow.widthAnchor.constraint(lessThanOrEqualTo: column.widthAnchor, constant: -36),
-            separator.topAnchor.constraint(equalTo: column.bottomAnchor),
-            separator.leadingAnchor.constraint(equalTo: leadingAnchor),
-            separator.trailingAnchor.constraint(equalTo: trailingAnchor),
-            separator.bottomAnchor.constraint(equalTo: bottomAnchor),
-            dot.widthAnchor.constraint(equalToConstant: 14),
+            card.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            card.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            card.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            card.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+            column.topAnchor.constraint(equalTo: card.topAnchor),
+            column.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            column.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            column.bottomAnchor.constraint(equalTo: card.bottomAnchor),
+            top.widthAnchor.constraint(equalTo: column.widthAnchor, constant: -30),
+            noticeRow.widthAnchor.constraint(lessThanOrEqualTo: column.widthAnchor, constant: -30),
         ])
 
         NotificationCenter.default.addObserver(self, selector: #selector(update), name: .modelChanged, object: nil)
@@ -91,17 +153,21 @@ final class HeaderView: NSView {
         let model = Model.shared
         let status = model.status
 
-        let color: NSColor
         if !model.helperReady || (status.running && !status.captured) {
-            color = .systemOrange
+            badge.show(symbol: "exclamationmark.shield.fill", tint: .systemOrange)
         } else if status.running {
-            color = .systemGreen
+            badge.show(symbol: "checkmark.shield.fill", tint: .systemGreen)
         } else {
-            color = .tertiaryLabelColor
+            badge.show(symbol: "shield", tint: .secondaryLabelColor)
         }
-        dot.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)
-        dot.contentTintColor = color
-        headline.stringValue = status.headline
+
+        var title = status.headline
+        if status.running, status.captured, status.since > 0 {
+            let since = Date(timeIntervalSince1970: TimeInterval(status.since))
+            let formatter = Calendar.current.isDateInToday(since) ? Self.time : Self.dayAndTime
+            title = String(format: L("Connected since %@"), formatter.string(from: since))
+        }
+        headline.stringValue = title
 
         // While on, say what runs; while off, say what would.
         let server = status.running ? status.server : (model.selectedServer?.name ?? "")
@@ -114,25 +180,24 @@ final class HeaderView: NSView {
 
         button.title = status.running ? L("Disconnect") : L("Connect")
         button.isEnabled = model.helperReady && !model.busy && (status.running || model.selectedServer != nil)
+        // Turning on is the thing to do here; turning off is not.
+        button.bezelColor = button.isEnabled && !status.running ? .controlAccentColor : nil
         if model.busy || installing { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
 
         if !status.installed {
             notice.stringValue = L("To capture the traffic of this Mac, FlClash needs a system helper. Installing it asks for an administrator password once.")
             noticeButton.title = L("Install Helper…")
             noticeButton.isEnabled = !installing
-            noticeButton.isHidden = false
             noticeRow.isHidden = false
         } else if status.outdated {
             notice.stringValue = L("The system helper is from another version of FlClash and has to be installed again. A tunnel that is on will stop for a moment.")
             noticeButton.title = L("Update Helper…")
             noticeButton.isEnabled = !installing
-            noticeButton.isHidden = false
             noticeRow.isHidden = false
         } else if let problem = model.problem {
             notice.stringValue = problem
             noticeButton.title = L("Dismiss")
             noticeButton.isEnabled = true
-            noticeButton.isHidden = false
             noticeRow.isHidden = false
         } else {
             noticeRow.isHidden = true

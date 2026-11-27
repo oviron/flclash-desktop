@@ -65,8 +65,10 @@ final class Model {
         }
     }
 
-    func remove(server: String) {
-        Engine.call(["op": "remove", "server": server]) { [weak self] reply in self?.take(reply) }
+    func remove(servers: [String]) {
+        for id in servers {
+            Engine.call(["op": "remove", "server": id]) { [weak self] reply in self?.take(reply) }
+        }
     }
 
     func importServers(_ text: String, then done: @escaping (ImportResult?, String?) -> Void) {
@@ -81,6 +83,10 @@ final class Model {
             self?.take(reply, quiet: true)
             done(reply.error)
         }
+    }
+
+    func remove(policy: String) {
+        Engine.call(["op": "policyRemove", "name": policy]) { [weak self] reply in self?.take(reply) }
     }
 
     func dismissProblem() {

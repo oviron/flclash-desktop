@@ -13,10 +13,16 @@ struct Server: Decodable, Equatable {
     }
 }
 
+struct Policy: Decodable, Equatable {
+    let name: String
+    let builtin: Bool
+    let rules: Int
+}
+
 struct EngineView: Decodable, Equatable {
     var servers: [Server] = []
     var selected = ""
-    var policies: [String] = []
+    var policies: [Policy] = []
     var policy = ""
 }
 

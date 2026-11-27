@@ -4,7 +4,7 @@ import PackageDescription
 // The engine is the Go library in Bridge/, built by `make bridge`.
 let package = Package(
     name: "FlClash",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS("15.0")],
     targets: [
         .target(name: "CFlClash"),
         .executableTarget(

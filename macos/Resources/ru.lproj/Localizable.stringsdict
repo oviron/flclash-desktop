@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>%d servers</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d сервер</string>
+			<key>few</key>
+			<string>%d сервера</string>
+			<key>many</key>
+			<string>%d серверов</string>
+			<key>other</key>
+			<string>%d сервера</string>
+		</dict>
+	</dict>
+	<key>Imported, %d rules</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Импортированная, %d правило</string>
+			<key>few</key>
+			<string>Импортированная, %d правила</string>
+			<key>many</key>
+			<string>Импортированная, %d правил</string>
+			<key>other</key>
+			<string>Импортированная, %d правила</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

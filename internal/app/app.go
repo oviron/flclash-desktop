@@ -9,6 +9,7 @@ import (
 
 	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/ingest"
+	"github.com/oviron/flclash-desktop/internal/policy"
 	"github.com/oviron/flclash-desktop/internal/store"
 )
 
@@ -20,11 +21,19 @@ type Server struct {
 	Protocol string `json:"protocol"`
 }
 
+// Policy is a routing policy as a front end shows it.
+type Policy struct {
+	Name    string `json:"name"`
+	Builtin bool   `json:"builtin"`
+	// Rules counts the rules; zero for a stored policy that no longer reads.
+	Rules int `json:"rules"`
+}
+
 // View is everything a front end lists.
 type View struct {
 	Servers  []Server `json:"servers"`
 	Selected string   `json:"selected"`
-	Policies []string `json:"policies"`
+	Policies []Policy `json:"policies"`
 	Policy   string   `json:"policy"`
 }
 
@@ -38,7 +47,12 @@ func Snapshot(st *store.Store) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	view := View{Servers: []Server{}, Selected: state.Selected, Policies: names, Policy: state.Policy}
+	view := View{Servers: []Server{}, Selected: state.Selected, Policies: []Policy{}, Policy: state.Policy}
+	for _, name := range names {
+		_, isBuiltin := policy.Builtin(name)
+		p, _ := st.Policy(name)
+		view.Policies = append(view.Policies, Policy{Name: name, Builtin: isBuiltin, Rules: len(p.Rules)})
+	}
 	for _, e := range state.Servers {
 		view.Servers = append(view.Servers, Server{ID: e.ID, Name: e.Name, Group: e.Group, Protocol: protocol(e.Proxy)})
 	}
@@ -210,4 +224,17 @@ func Off() (helper.Status, error) {
 // Status asks the helper what is true right now.
 func Status() (helper.Status, error) {
 	return helper.Call(helper.Request{Op: helper.OpStatus}, 10*time.Second)
+}
+
+// RemovePolicy deletes an imported policy. The one in use stays until another
+// is chosen, so the choice never points at nothing.
+func RemovePolicy(st *store.Store, name string) error {
+	state, err := st.Load()
+	if err != nil {
+		return err
+	}
+	if state.Policy == name {
+		return errors.New("this policy is in use: choose another first")
+	}
+	return st.RemovePolicy(name)
 }
