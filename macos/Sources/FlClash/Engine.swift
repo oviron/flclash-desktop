@@ -1,4 +1,3 @@
-import CFlClash
 import Foundation
 
 struct Server: Decodable, Equatable {
@@ -142,69 +141,4 @@ struct Reply: Decodable {
     var log: String? = nil
     var exit: Exit? = nil
     var link: String? = nil
-}
-
-/// The Go engine. Calls can take as long as a tunnel takes to come up, so they
-/// run off the main thread, one at a time and in the order they were made.
-enum Engine {
-    private static let queue = DispatchQueue(label: "flclash.engine", qos: .userInitiated)
-
-    static func call(_ request: [String: String], then done: @escaping (Reply) -> Void) {
-        queue.async {
-            let reply = callSync(request)
-            DispatchQueue.main.async { done(reply) }
-        }
-    }
-
-    /// Measurements take seconds each and wait for one another, but must not
-    /// hold up turning the tunnel on or off: they have a line of their own.
-    private static let measuring = DispatchQueue(label: "flclash.engine.delay", qos: .utility)
-
-    static func measure(server: String, then done: @escaping (Reply) -> Void) {
-        measure(["op": "delay", "server": server], then: done)
-    }
-
-    static func measure(_ request: [String: String], then done: @escaping (Reply) -> Void) {
-        measuring.async {
-            let reply = callSync(request)
-            DispatchQueue.main.async { done(reply) }
-        }
-    }
-
-    /// Reading a subscription waits for a provider; it has a line of its own too.
-    private static let fetching = DispatchQueue(label: "flclash.engine.subscriptions", qos: .utility)
-
-    static func subscription(_ request: [String: String], then done: @escaping (Reply) -> Void) {
-        fetching.async {
-            let reply = callSync(request)
-            DispatchQueue.main.async { done(reply) }
-        }
-    }
-
-    /// The counters are read every second while a window shows them; they
-    /// must not wait behind a tunnel that is coming up, nor hold it up.
-    private static let counting = DispatchQueue(label: "flclash.engine.stats", qos: .utility)
-
-    static func stats(_ request: [String: String] = ["op": "stats"], then done: @escaping (Reply) -> Void) {
-        counting.async {
-            let reply = callSync(request)
-            DispatchQueue.main.async { done(reply) }
-        }
-    }
-
-    /// The language the app shows; the engine writes its messages in it.
-    private static let language = Bundle.main.preferredLocalizations.first ?? "en"
-
-    private static func callSync(_ request: [String: String]) -> Reply {
-        var request = request
-        request["lang"] = language
-        guard let data = try? JSONSerialization.data(withJSONObject: request),
-              let text = String(data: data, encoding: .utf8)
-        else { return Reply(error: "bad request", view: nil, status: nil, imported: nil) }
-        let raw: UnsafeMutablePointer<CChar>? = text.withCString { FlcCall(UnsafeMutablePointer(mutating: $0)) }
-        guard let raw else { return Reply(error: "no reply", view: nil, status: nil, imported: nil) }
-        defer { FlcFree(raw) }
-        let reply = try? JSONDecoder().decode(Reply.self, from: Data(String(cString: raw).utf8))
-        return reply ?? Reply(error: "unreadable reply", view: nil, status: nil, imported: nil)
-    }
 }

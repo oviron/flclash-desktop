@@ -60,8 +60,8 @@ final class LogViewController: NSViewController {
     }
 
     private func read() {
-        Engine.stats(["op": "log"]) { [weak self] reply in
-            guard let self, let log = reply.log, log != self.raw else {
+        Model.shared.readLog { [weak self] log in
+            guard let self, let log, log != self.raw else {
                 if self?.raw.isEmpty == true { self?.render() }
                 return
             }

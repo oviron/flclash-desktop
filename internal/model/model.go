@@ -1,8 +1,8 @@
 // Package model is what a front end knows, kept in one place: the state of
 // the engine and of the helper, what is in progress, the measurements, the
-// traffic. Every window and menu reads it and hears when it changes. It is
-// the Go side of what the macOS app keeps in Model.swift, so the Windows app
-// behaves the same without a second copy of the rules.
+// traffic. Every window and menu reads it and hears when it changes. The
+// macOS and Windows apps both run on it, through internal/agent, so the
+// rules are written once.
 package model
 
 import (
@@ -81,7 +81,7 @@ type Model struct {
 	listeners  map[int]func()
 	nextID     int
 
-	// Requests go to one of four lines, each served in order, as on macOS:
+	// Requests go to one of four lines, each served in order:
 	// changes of the tunnel, measurements, subscriptions, the counters.
 	engine, measuring, fetching, counting *line
 	stop                                  chan struct{}

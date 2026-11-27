@@ -1,10 +1,9 @@
 // Package bridge is the engine as the windows see it: one request in, one
-// reply out, both JSON. The macOS app reaches it through a C library, the
-// Windows one through its agent.
+// reply out. The shared model sends them; the windows of both systems reach
+// the model through internal/agent.
 package bridge
 
 import (
-	"encoding/json"
 	"os"
 	"strconv"
 	"strings"
@@ -318,17 +317,4 @@ func logTail(limit int64) string {
 		}
 	}
 	return text
-}
-
-// Call answers a request written as JSON with a reply written as JSON.
-func Call(input []byte) []byte {
-	var req Request
-	var out Reply
-	if err := json.Unmarshal(input, &req); err != nil {
-		out.Error = "bad request: " + err.Error()
-	} else {
-		out = Handle(req)
-	}
-	raw, _ := json.Marshal(out)
-	return raw
 }

@@ -1,4 +1,5 @@
 import AppKit
+import CFlClash
 
 extension Notification.Name {
     static let modelChanged = Notification.Name("flclash.modelChanged")
@@ -9,8 +10,11 @@ extension Notification.Name {
 
 func L(_ key: String) -> String { NSLocalizedString(key, comment: "") }
 
-/// What the app knows, kept in one place: the menu and the window both read it
-/// and both hear when it changes.
+/// What the app knows: the shared Go model (internal/model), the same one
+/// the Windows app runs on. It keeps the rules: what is in progress, which
+/// line a request waits on, when the counters and the exit address are read.
+/// This side holds the last state it sent, so the menu and the window read it
+/// and hear when it changes, and hands it what the person does.
 final class Model {
     static let shared = Model()
 
@@ -46,383 +50,229 @@ final class Model {
     /// Where the running server lets traffic out; nil until it is known, and
     /// when it could not be found out.
     private(set) var exit: Exit?
-    /// What `exit` was asked for: the server and the start of the core.
-    private var exitKey = ""
-    private var exitFailed = false
 
     /// The subscriptions that are being read right now.
     private(set) var updating: Set<String> = []
 
-    private var timer: Timer?
-    private var dueTimer: Timer?
-    private var statsTimer: Timer?
-    private var statsPending = false
-    private var watchers = 0
-    /// The first answers came, and what the app does once at start is done.
-    private var started = false
+    /// The helper is there and takes this app's requests.
+    private(set) var helperReady = false
 
     var selectedServer: Server? { view.servers.first { $0.id == view.selected } }
 
-    /// The helper is there and takes this app's requests.
-    var helperReady: Bool { status.installed && !status.outdated }
+    /// What waits for a reply, by the ID of its message.
+    private var pending: [Int: (Reply) -> Void] = [:]
+    private var lastID = 0
 
     func start() {
-        refresh()
-        // The helper does not push changes yet; a slow poll keeps the icon honest.
-        let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in self?.refreshStatus() }
-        timer.tolerance = 1
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
-        // Subscriptions whose time has come are read at start and then hourly.
-        let due = Timer(timeInterval: 3600, repeats: true) { [weak self] _ in self?.updateDueSubscriptions() }
-        due.tolerance = 300
-        RunLoop.main.add(due, forMode: .common)
-        dueTimer = due
-        updateDueSubscriptions()
+        let language = Bundle.main.preferredLocalizations.first ?? "en"
+        language.withCString { FlcStart(UnsafeMutablePointer(mutating: $0), receive) }
     }
 
-    private func updateDueSubscriptions() {
-        Engine.subscription(["op": "subUpdate", "name": ""]) { [weak self] reply in self?.take(reply, quiet: true) }
+    /// An event of the model, as it comes from the engine.
+    fileprivate struct Event: Decodable {
+        let event: String
+        var id: Int? = nil
+        var model: Snapshot? = nil
+        var reply: Reply? = nil
     }
 
-    func addSubscription(name: String, address: String, then done: @escaping (ImportResult?, String?) -> Void) {
-        Engine.subscription(["op": "subAdd", "name": name, "text": address]) { [weak self] reply in
-            self?.take(reply, quiet: true)
-            done(reply.imported, reply.error)
+    fileprivate struct Snapshot: Decodable {
+        struct Measured: Decodable {
+            let state: String
+            var ms: Int? = nil
+            var error: String? = nil
+        }
+
+        let view: EngineView
+        let status: TunnelStatus
+        let busy: Bool
+        var problem: String? = nil
+        let delays: [String: Measured]
+        var stats: Stats? = nil
+        let history: [[Int]]
+        var exit: Exit? = nil
+        let updating: [String]
+        let helperReady: Bool
+    }
+
+    /// Takes an event on the main thread: the state first, then the reply
+    /// that waits on it, which the engine sends after the state it made.
+    fileprivate func take(_ event: Event) {
+        if let snapshot = event.model { take(snapshot) }
+        if event.event == "reply", let id = event.id, let done = pending.removeValue(forKey: id) {
+            done(event.reply ?? Reply(error: nil, view: nil, status: nil, imported: nil))
         }
     }
 
-    func updateSubscription(_ name: String, then done: @escaping (String?) -> Void) {
-        guard !updating.contains(name) else { return }
-        updating.insert(name)
-        changed()
-        Engine.subscription(["op": "subUpdate", "name": name]) { [weak self] reply in
-            self?.updating.remove(name)
-            self?.take(reply, quiet: true)
-            done(reply.error)
-        }
-    }
-
-    func updateAllSubscriptions() {
-        for subscription in view.subscriptions { updateSubscription(subscription.name) { _ in } }
-    }
-
-    func removeSubscription(_ name: String) {
-        Engine.call(["op": "subRemove", "name": name]) { [weak self] reply in self?.take(reply) }
-    }
-
-    /// A window that shows traffic asks for the counters; without one nobody
-    /// reads them.
-    func watchStats(_ on: Bool) {
-        // The window and the menu bar panel both watch; the reading stops
-        // when the last of them is gone.
-        watchers = max(0, watchers + (on ? 1 : -1))
-        if on, statsTimer != nil { return }
-        if !on, watchers > 0 { return }
-        statsTimer?.invalidate()
-        statsTimer = nil
-        guard on else {
-            stats = nil
-            history = []
-            return
-        }
-        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.readStats() }
-        timer.tolerance = 0.2
-        RunLoop.main.add(timer, forMode: .common)
-        statsTimer = timer
-        readStats()
-        // An address that could not be found out is asked for again when
-        // someone opens a window to look.
-        exitFailed = false
-        askExit()
-    }
-
-    private func readStats() {
-        guard status.running else {
-            if stats != nil {
-                stats = nil
-                history = []
-                NotificationCenter.default.post(name: .statsChanged, object: self)
+    private func take(_ s: Snapshot) {
+        var delays: [String: Delay] = [:]
+        for (id, d) in s.delays {
+            switch d.state {
+            case "waiting": delays[id] = .waiting
+            case "ms": delays[id] = .ms(d.ms ?? 0)
+            default: delays[id] = .failed(d.error ?? "")
             }
-            return
         }
-        guard !statsPending, !busy else { return }
-        statsPending = true
-        Engine.stats { [weak self] reply in
-            guard let self else { return }
-            self.statsPending = false
-            guard self.statsTimer != nil else { return }
-            self.stats = reply.stats
-            if let stats = reply.stats {
-                self.history.append((stats.down, stats.up))
-                if self.history.count > Model.historyLength { self.history.removeFirst(self.history.count - Model.historyLength) }
-            }
-            NotificationCenter.default.post(name: .statsChanged, object: self)
-        }
+        let problem = s.problem.flatMap { $0.isEmpty ? nil : $0 }
+        let updating = Set(s.updating)
+        let history = s.history.compactMap { $0.count == 2 ? (down: $0[0], up: $0[1]) : nil }
+        // The counters change every second; the lists are redrawn only when
+        // something else did.
+        let changed = view != s.view || status != s.status || busy != s.busy || self.problem != problem
+            || self.delays != delays || exit != s.exit || self.updating != updating || helperReady != s.helperReady
+        let counted = stats != s.stats || !self.history.elementsEqual(history, by: { $0 == $1 })
+        view = s.view
+        status = s.status
+        busy = s.busy
+        self.problem = problem
+        self.delays = delays
+        stats = s.stats
+        self.history = history
+        exit = s.exit
+        self.updating = updating
+        helperReady = s.helperReady
+        if changed { NotificationCenter.default.post(name: .modelChanged, object: self) }
+        if counted { NotificationCenter.default.post(name: .statsChanged, object: self) }
     }
+
+    /// Hands the model an action; with done, its reply comes back to it.
+    private func send(_ action: String, _ fields: [String: Any] = [:], then done: ((Reply) -> Void)? = nil) {
+        var message = fields
+        message["action"] = action
+        if let done {
+            lastID += 1
+            message["id"] = lastID
+            pending[lastID] = done
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: message),
+              let text = String(data: data, encoding: .utf8)
+        else { return }
+        text.withCString { FlcSend(UnsafeMutablePointer(mutating: $0)) }
+    }
+
+    /// An engine request on one of the model's lines: "change" for what alters
+    /// what runs, "do" for the rest, "aside" for quick reads beside the
+    /// changes, "subscription" for what waits for a provider. A quiet
+    /// request's error goes to done alone.
+    private func request(_ line: String, _ request: [String: String], quiet: Bool = false, then done: ((Reply) -> Void)? = nil) {
+        send(line, ["request": request, "quiet": quiet], then: done)
+    }
+
+    func refresh() { send("refresh") }
+    func toggle() { send("toggle") }
+    func turnOff() { send("turnOff") }
+    func dismissProblem() { send("dismiss") }
 
     /// Chooses a server and turns the tunnel on through it.
-    func connect(server: String) {
-        busy = true
-        changed()
-        Engine.call(["op": "select", "server": server, "policy": ""]) { [weak self] reply in
-            guard let self else { return }
-            self.take(reply)
-            // A tunnel that was up has moved already; one that was off starts now.
-            guard reply.error == nil, !self.status.running else {
-                self.busy = false
-                self.changed()
-                self.refreshStatus()
-                return
-            }
-            Engine.call(["op": "on"]) { [weak self] reply in
-                self?.busy = false
-                self?.take(reply)
-            }
-        }
-    }
+    func connect(server: String) { send("connect", ["server": server]) }
 
-    func setAutoConnect(_ on: Bool) {
-        Engine.call(["op": "autoConnect", "text": on ? "on" : "off"]) { [weak self] reply in self?.take(reply) }
-    }
+    /// Measures the servers one after another; results arrive one by one.
+    func measure(servers: [String]) { send("measure", ["servers": servers]) }
 
-    func refresh() {
-        Engine.call(["op": "snapshot"]) { [weak self] reply in self?.take(reply) }
-        refreshStatus()
-    }
-
-    func refreshStatus() {
-        guard !busy else { return }
-        Engine.call(["op": "status"]) { [weak self] reply in self?.take(reply, quiet: true) }
-    }
-
-    func toggle() {
-        guard !busy else { return }
-        busy = true
-        changed()
-        Engine.call(["op": status.running ? "off" : "on"]) { [weak self] reply in
-            self?.busy = false
-            self?.take(reply)
-        }
-    }
+    /// A window that shows traffic asks for the counters; without one nobody
+    /// reads them. The window and the menu bar panel both watch.
+    func watchStats(_ on: Bool) { send("watch", ["on": on]) }
 
     func select(server: String = "", policy: String = "") {
-        // Moving a running tunnel takes a moment; show it as work in progress.
-        busy = status.running
-        changed()
-        Engine.call(["op": "select", "server": server, "policy": policy]) { [weak self] reply in
-            self?.busy = false
-            self?.take(reply)
-            self?.refreshStatus()
-        }
-    }
-
-    func remove(servers: [String]) {
-        for id in servers {
-            Engine.call(["op": "remove", "server": id]) { [weak self] reply in self?.take(reply) }
-        }
-    }
-
-    func importServers(_ text: String, then done: @escaping (ImportResult?, String?) -> Void) {
-        Engine.call(["op": "import", "text": text]) { [weak self] reply in
-            self?.take(reply, quiet: true)
-            done(reply.imported, reply.error)
-        }
-    }
-
-    func importPolicy(name: String, text: String, then done: @escaping (String?) -> Void) {
-        Engine.call(["op": "policyImport", "name": name, "text": text]) { [weak self] reply in
-            self?.take(reply, quiet: true)
-            done(reply.error)
-        }
-    }
-
-    func remove(policy: String) {
-        Engine.call(["op": "policyRemove", "name": policy]) { [weak self] reply in self?.take(reply) }
-    }
-
-    /// Measures the servers one after another: a connection and a small
-    /// request each. Results arrive one by one.
-    func measure(servers: [String]) {
-        let fresh = servers.filter { delays[$0] != .waiting }
-        guard !fresh.isEmpty else { return }
-        for id in fresh { delays[id] = .waiting }
-        changed()
-        var left = fresh.count
-        for id in fresh {
-            Engine.measure(server: id) { [weak self] reply in
-                guard let self else { return }
-                if let ms = reply.delay, ms > 0 {
-                    self.delays[id] = .ms(ms)
-                } else {
-                    self.delays[id] = .failed(reply.error ?? "")
-                }
-                self.changed()
-                // A measurement may have learned where servers let traffic out.
-                left -= 1
-                if left == 0 { self.refresh() }
-            }
-        }
-    }
-
-    func turnOff() {
-        guard !busy else { return }
-        busy = true
-        changed()
-        Engine.call(["op": "off"]) { [weak self] reply in
-            self?.busy = false
-            self?.take(reply)
-        }
+        request("change", ["op": "select", "server": server, "policy": policy])
     }
 
     func setMode(_ mode: String) {
         guard mode != view.mode else { return }
-        change(["op": "mode", "text": mode])
+        request("change", ["op": "mode", "text": mode])
     }
 
     func setPort(_ port: Int) {
         guard port != view.port else { return }
-        change(["op": "port", "text": String(port)])
-    }
-
-    /// A change of a setting; what runs takes it at once, which takes a moment.
-    private func change(_ request: [String: String]) {
-        busy = status.running
-        changed()
-        Engine.call(request) { [weak self] reply in
-            self?.busy = false
-            self?.take(reply)
-            self?.refreshStatus()
-        }
+        request("change", ["op": "port", "text": String(port)])
     }
 
     func setLAN(_ on: Bool) {
         guard on != view.lan else { return }
-        change(["op": "lan", "text": on ? "on" : "off"])
+        request("change", ["op": "lan", "text": on ? "on" : "off"])
     }
 
     func setAuth(_ auth: String) {
         guard auth != view.auth else { return }
-        change(["op": "auth", "text": auth])
+        request("change", ["op": "auth", "text": auth])
     }
 
     func setDNS(_ address: String) {
         guard address != view.dns else { return }
-        change(["op": "dns", "text": address])
+        request("change", ["op": "dns", "text": address])
     }
 
-    func close(connection id: String) {
-        Engine.measure(["op": "close", "name": id]) { _ in }
+    func setProtect(_ on: Bool) { request("change", ["op": "protect", "text": on ? "on" : "off"]) }
+
+    func setAutoConnect(_ on: Bool) { request("do", ["op": "autoConnect", "text": on ? "on" : "off"]) }
+
+    func remove(servers: [String]) {
+        for id in servers { request("do", ["op": "remove", "server": id]) }
+    }
+
+    func importServers(_ text: String, then done: @escaping (ImportResult?, String?) -> Void) {
+        request("do", ["op": "import", "text": text], quiet: true) { done($0.imported, $0.error) }
     }
 
     /// A server as a share link; it carries the keys of the server.
     func link(server: String, then done: @escaping (String?, String?) -> Void) {
-        Engine.call(["op": "link", "server": server]) { reply in done(reply.link, reply.error) }
+        request("do", ["op": "link", "server": server], quiet: true) { done($0.link, $0.error) }
     }
 
-    func editSubscription(_ name: String, address: String, agent: String, every: Int, skip: String, then done: @escaping (String?) -> Void) {
-        updating.insert(name)
-        changed()
-        Engine.subscription(["op": "subEdit", "name": name, "text": address, "agent": agent, "every": String(every), "skip": skip]) { [weak self] reply in
-            self?.updating.remove(name)
-            self?.take(reply, quiet: true)
-            done(reply.error)
-        }
+    func importPolicy(name: String, text: String, then done: @escaping (String?) -> Void) {
+        request("do", ["op": "policyImport", "name": name, "text": text], quiet: true) { done($0.error) }
     }
 
-    func writeBackup(to path: String, then done: @escaping (String?) -> Void) {
-        Engine.call(["op": "backupWrite", "name": path]) { reply in done(reply.error) }
-    }
-
-    func readBackup(from path: String, then done: @escaping (String?) -> Void) {
-        Engine.call(["op": "backupRead", "name": path]) { [weak self] reply in
-            self?.take(reply, quiet: true)
-            done(reply.error)
-        }
-    }
-
-    func setProtect(_ on: Bool) {
-        // A running tunnel takes the new setting at once, which takes a moment.
-        busy = status.running
-        changed()
-        Engine.call(["op": "protect", "text": on ? "on" : "off"]) { [weak self] reply in
-            self?.busy = false
-            self?.take(reply)
-            self?.refreshStatus()
-        }
-    }
+    func remove(policy: String) { request("do", ["op": "policyRemove", "name": policy]) }
 
     func readPolicy(_ name: String, then done: @escaping (PolicyDocument?, String?) -> Void) {
-        Engine.call(["op": "policyRead", "name": name]) { reply in done(reply.document, reply.error) }
+        request("do", ["op": "policyRead", "name": name], quiet: true) { done($0.document, $0.error) }
     }
 
     /// Saves a policy; a tunnel that runs by it takes the new rules at once.
-    func writePolicy(_ request: [String: String], then done: @escaping (String?) -> Void) {
-        busy = status.running
-        changed()
-        Engine.call(request) { [weak self] reply in
-            self?.busy = false
-            self?.take(reply, quiet: true)
-            self?.refreshStatus()
-            done(reply.error)
-        }
+    func writePolicy(_ policy: [String: String], then done: @escaping (String?) -> Void) {
+        request("change", policy, quiet: true) { done($0.error) }
     }
 
-    func dismissProblem() {
-        problem = nil
-        changed()
+    func writeBackup(to path: String, then done: @escaping (String?) -> Void) {
+        request("do", ["op": "backupWrite", "name": path], quiet: true) { done($0.error) }
     }
 
-    private var haveView = false
-    private var haveStatus = false
-
-    /// Asks for the exit address when what runs has changed. It is asked once
-    /// per connection, and only while something on screen shows it.
-    private func askExit() {
-        let key = status.running && status.captured ? status.server + "|" + String(status.since) + "|" + status.mode : ""
-        if key != exitKey {
-            exitKey = key
-            exit = nil
-            exitFailed = false
-        }
-        guard !key.isEmpty, exit == nil, !exitFailed, watchers > 0, !exitPending else { return }
-        exitPending = true
-        Engine.measure(["op": "exit"]) { [weak self] reply in
-            guard let self else { return }
-            self.exitPending = false
-            // The answer is about what ran when it was asked.
-            guard self.exitKey == key else { return }
-            self.exit = reply.exit
-            self.exitFailed = reply.exit == nil
-            self.changed()
-            // The engine kept the country for the list as well.
-            if let country = reply.exit?.country,
-               self.view.servers.first(where: { $0.id == self.view.selected })?.country != country {
-                self.refresh()
-            }
-        }
+    func readBackup(from path: String, then done: @escaping (String?) -> Void) {
+        request("do", ["op": "backupRead", "name": path], quiet: true) { done($0.error) }
     }
 
-    private var exitPending = false
+    func close(connection id: String) { request("aside", ["op": "close", "name": id]) }
 
-    private func take(_ reply: Reply, quiet: Bool = false) {
-        if let view = reply.view { self.view = view; haveView = true }
-        if let status = reply.status { self.status = status; haveStatus = true }
-        askExit()
-        if let error = reply.error, !quiet { problem = error }
-        changed()
-        if !started, haveView, haveStatus {
-            started = true
-            // Once, at start: connect if that is what the person set.
-            if view.autoConnect, helperReady, !status.running, !status.blocked, selectedServer != nil, !busy {
-                toggle()
-            }
-        }
+    /// The end of the helper's log.
+    func readLog(then done: @escaping (String?) -> Void) {
+        request("aside", ["op": "log"]) { done($0.log) }
     }
 
-    private func changed() {
-        NotificationCenter.default.post(name: .modelChanged, object: self)
+    func addSubscription(name: String, address: String, then done: @escaping (ImportResult?, String?) -> Void) {
+        request("subscription", ["op": "subAdd", "name": name, "text": address]) { done($0.imported, $0.error) }
     }
+
+    func updateSubscription(_ name: String, then done: @escaping (String?) -> Void) {
+        request("subscription", ["op": "subUpdate", "name": name]) { done($0.error) }
+    }
+
+    func editSubscription(_ name: String, address: String, agent: String, every: Int, skip: String, then done: @escaping (String?) -> Void) {
+        request("subscription", ["op": "subEdit", "name": name, "text": address, "agent": agent, "every": String(every), "skip": skip]) { done($0.error) }
+    }
+
+    func updateAllSubscriptions() { send("updateAll") }
+
+    func removeSubscription(_ name: String) { request("do", ["op": "subRemove", "name": name]) }
+}
+
+/// Hears the engine, off the main thread: the event is read here and taken
+/// on the main thread, in the order it came.
+private let receive: FlcEmit = { raw in
+    guard let raw else { return }
+    let data = Data(bytes: raw, count: strlen(raw))
+    guard let event = try? JSONDecoder().decode(Model.Event.self, from: data) else { return }
+    DispatchQueue.main.async { Model.shared.take(event) }
 }
 
 extension TunnelStatus {
