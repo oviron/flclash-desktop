@@ -4,9 +4,10 @@ Desktop FlClash for macOS, Windows and Linux: a Go engine around the mihomo core
 with a native window per system on top. GPL-3.0. The Android app lives in
 `oviron/FlClash`; this repository shares no code with it yet.
 
-What exists now is the engine without privileges: import of servers, routing
-policies, the config compiler and the core embedded in `flclashctl`. TUN, the
-privileged helper, the tray and the windows are not built.
+What exists now: import of servers, routing policies, the config compiler, and
+a privileged helper for macOS that runs the core with a TUN device, driven from
+`flclashctl`. The tray and the windows are not built; the helper for Windows and
+Linux is not written.
 
 ## Constraints
 
@@ -20,7 +21,11 @@ privileged helper, the tray and the windows are not built.
 - Entries and compiled configs hold credentials. Files are written `0600`,
   nothing prints an imported line, test fixtures use made-up hosts and keys.
 - The product captures traffic through TUN and opens no local port.
-  `-local-port` exists to check the core without privileges.
+  `run -local-port` exists to check the core without privileges.
+- Nothing the unprivileged side sends reaches the root core as written: the
+  helper accepts only the server shape `ingest` produces and rules `policy`
+  produces. A new server field or rule type has to be added to those checks.
+- "On" means the tunnel device exists, not that the core accepted a config.
 - Public files are in English and carry no private context.
 
 ## Layout
@@ -28,9 +33,13 @@ privileged helper, the tray and the windows are not built.
 - `internal/ingest` — what the user pastes → servers in mihomo's proxy shape.
 - `internal/policy` — routing policy documents.
 - `internal/compile` — server + policy → the config the core runs.
-- `internal/core` — mihomo inside this process.
+- `internal/core` — mihomo inside a process.
+- `internal/helper` — the privileged supervisor and its protocol. It checks the
+  server and the rules it is handed and builds the config itself; it links no
+  core code.
 - `internal/store` — state on disk; `$FLCLASH_HOME` overrides the directory.
-- `cmd/flclashctl` — the command line.
+- `cmd/flclashctl` — the command line. `cmd/flclash-helper` — the supervisor,
+  root. `cmd/flclash-core` — the core process the supervisor runs.
 
 ## Checks
 
@@ -38,5 +47,5 @@ privileged helper, the tray and the windows are not built.
 gofmt -l .
 go vet ./...
 go test ./...
-go build -tags with_gvisor ./cmd/flclashctl
+go build -tags with_gvisor ./cmd/...
 ```

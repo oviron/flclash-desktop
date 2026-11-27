@@ -9,13 +9,14 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/oviron/flclash-desktop/internal/compile"
 	"github.com/oviron/flclash-desktop/internal/core"
+	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/ingest"
 	"github.com/oviron/flclash-desktop/internal/store"
 )
@@ -23,12 +24,13 @@ import (
 const usage = `usage:
   flclashctl import [-group NAME] [FILE...]   add servers: Throne links or profile JSON, one per line (stdin without FILE)
   flclashctl list                             show servers and policies
-  flclashctl select SERVER [-policy NAME]     choose the server (ID or name) and, optionally, the policy
+  flclashctl select SERVER [-policy NAME]     choose the server (ID or name) and, optionally, the policy;
+                                              a running tunnel moves to the new choice
   flclashctl policy import NAME FILE          add a routing policy from a rules file
+  flclashctl on | off | status                turn the tunnel on or off, or show what is true right now
+  flclashctl helper install | uninstall       set up or remove the privileged helper (run with sudo)
   flclashctl config -tun | -local-port N      print the config the core would run (it contains credentials)
-  flclashctl run -tun | -local-port N         run the core with the current choice until interrupted:
-                                              -tun captures the whole host and needs root,
-                                              -local-port opens an HTTP/SOCKS port on loopback
+  flclashctl run -local-port N                run the core without privileges on a loopback HTTP/SOCKS port
 `
 
 func main() {
@@ -43,6 +45,17 @@ func main() {
 		"policy": cmdPolicy,
 		"config": cmdConfig,
 		"run":    cmdRun,
+		"on":     cmdOn,
+		"off":    cmdOff,
+		"status": cmdStatus,
+	}
+	if os.Args[1] == "helper" {
+		// Runs as root: it must not create the user's store with root as owner.
+		if err := cmdHelper(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "flclashctl:", err)
+			os.Exit(1)
+		}
+		return
 	}
 	command, ok := commands[os.Args[1]]
 	if !ok {
@@ -177,7 +190,14 @@ func cmdSelect(st *store.Store, args []string) error {
 		}
 		state.Policy = *policyName
 	}
-	return st.Save(state)
+	if err := st.Save(state); err != nil {
+		return err
+	}
+	// The choice is saved either way; a tunnel that is up follows it.
+	if status, err := helper.Call(helper.Request{Op: helper.OpStatus}, 5*time.Second); err == nil && status.Running {
+		return cmdOn(st, nil)
+	}
+	return nil
 }
 
 func cmdPolicy(st *store.Store, args []string) error {
@@ -202,9 +222,8 @@ func current(st *store.Store, args []string, command string) ([]byte, string, er
 	if *port == 0 && !*tun {
 		return nil, "", errors.New("say how to capture: -tun or -local-port N")
 	}
-	// The privileged helper is not built yet, so TUN runs only as root for now.
-	if *tun && command == "run" && os.Geteuid() != 0 {
-		return nil, "", errors.New("-tun needs root for now: sudo flclashctl run -tun")
+	if *tun && command == "run" {
+		return nil, "", errors.New("the tunnel is run by the helper: flclashctl on")
 	}
 	state, err := st.Load()
 	if err != nil {
@@ -246,12 +265,7 @@ func cmdRun(st *store.Store, args []string) error {
 	if err != nil {
 		return err
 	}
-	dir := st.CoreDir()
-	if os.Geteuid() == 0 {
-		// Root must not leave its files in the user's directory.
-		dir = filepath.Join(os.TempDir(), "flclash-desktop-core-root")
-	}
-	if err := core.Apply(dir, config); err != nil {
+	if err := core.Apply(st.CoreDir(), config); err != nil {
 		return err
 	}
 	fmt.Fprintln(os.Stderr, "running:", summary)

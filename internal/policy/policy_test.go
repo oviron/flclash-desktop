@@ -53,3 +53,24 @@ func TestBuiltinsParse(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckAcceptsOnlyWhatParseProduces(t *testing.T) {
+	for _, name := range BuiltinNames() {
+		p, _ := Builtin(name)
+		if err := Check(p.Rules); err != nil {
+			t.Errorf("built-in %q does not pass its own check: %v", name, err)
+		}
+	}
+	for _, rules := range [][]string{
+		{"MATCH,DIRECT", "MATCH,PROXY"},
+		{"DOMAIN,Example.com,DIRECT", "MATCH,PROXY"}, // not lower case: not canonical
+		{"IP-CIDR,10.0.0.0/8,DIRECT", "MATCH,PROXY"}, // no-resolve missing
+		{"SCRIPT,x,PROXY", "MATCH,PROXY"},
+		{"MATCH,PROXY\nMATCH,DIRECT"},
+		{},
+	} {
+		if err := Check(rules); err == nil {
+			t.Errorf("%q must be refused", rules)
+		}
+	}
+}

@@ -122,6 +122,10 @@ func parseRule(line string) (string, error) {
 		}
 		return kind + "," + strings.ToLower(parts[1]) + "," + t, nil
 	case "IP-CIDR", "IP-CIDR6":
+		// A written no-resolve is accepted, since every address rule gets it anyway.
+		if len(parts) == 4 && strings.EqualFold(parts[3], "no-resolve") {
+			parts = parts[:3]
+		}
 		if len(parts) != 3 {
 			return "", fmt.Errorf("%s takes a network and a destination", kind)
 		}
@@ -140,4 +144,22 @@ func parseRule(line string) (string, error) {
 		return kind + "," + prefix.Masked().String() + "," + t + ",no-resolve", nil
 	}
 	return "", fmt.Errorf("rule type %q is not supported: use DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, IP-CIDR, IP-CIDR6 or MATCH", parts[0])
+}
+
+// Check refuses rules that are not exactly what Parse produces, so that rules
+// handed across a privilege boundary cannot carry anything else.
+func Check(rules []string) error {
+	parsed, err := Parse("", strings.Join(rules, "\n"))
+	if err != nil {
+		return err
+	}
+	if len(parsed.Rules) != len(rules) {
+		return fmt.Errorf("the rules are not in canonical form")
+	}
+	for i := range rules {
+		if parsed.Rules[i] != rules[i] {
+			return fmt.Errorf("rule %d is not in canonical form", i+1)
+		}
+	}
+	return nil
 }

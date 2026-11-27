@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -159,4 +160,58 @@ func TestWhatIsNotMappedIsRefused(t *testing.T) {
 	wantError(t, `{"protocol":"vless","tag":"x","settings":{"address":"a.example","port":443,"id":"`+uuid+`"},
 	  "streamSettings":{"network":"raw","security":"tls","tlsSettings":{"fingerprint":"safari","serverName":"a.example"}}}`, `fingerprint "safari"`)
 	wantError(t, "throne://add/%%%", "not base64")
+}
+
+// Whatever the importer writes must pass the check the privileged side runs,
+// also after the trip through JSON that turns numbers and lists into other types.
+func TestCheckAcceptsWhatTheImporterWrites(t *testing.T) {
+	for _, text := range []string{
+		strings.Replace(cdnProfile, "NAMES", "edge.example", 1),
+		`{"type":"tuic","tag":"t","server":"a.example","server_port":2052,"uuid":"` + uuid + `","password":"pw",
+		  "congestion_control":"bbr","udp_relay_mode":"native","tls":{"enabled":true,"server_name":"a.example","alpn":["h3"]}}`,
+		`{"protocol":"vless","tag":"g","settings":{"address":"t.example","port":2053,"id":"` + uuid + `","encryption":"none"},
+		  "streamSettings":{"network":"grpc","security":"reality","grpcSettings":{"serviceName":"svc"},
+		    "realitySettings":{"fingerprint":"firefox","password":"` + key + `","serverName":"t.example","shortId":"ab"}}}`,
+	} {
+		s := mustImport(t, text)
+		if err := Check(s); err != nil {
+			t.Errorf("%s: %v", s.Name, err)
+		}
+		raw, _ := json.Marshal(s)
+		var back Server
+		if err := json.Unmarshal(raw, &back); err != nil {
+			t.Fatal(err)
+		}
+		if err := Check(back); err != nil {
+			t.Errorf("%s after JSON: %v", s.Name, err)
+		}
+	}
+}
+
+func TestCheckRefusesWhatTheImporterNeverWrites(t *testing.T) {
+	base := func() Server {
+		return Server{Name: "s", Proxy: map[string]any{"type": "hysteria2", "server": "a.example", "port": 443}}
+	}
+	for field, value := range map[string]any{
+		"private-key":      "/etc/master.passwd",
+		"dialer-proxy":     "other",
+		"interface-name":   "en0",
+		"skip-cert-verify": true,
+		"reality-opts":     map[string]any{"public-key": "k", "extra": 1},
+		"alpn":             []any{"h3", 1},
+		"server":           map[string]any{"x": 1},
+	} {
+		s := base()
+		s.Proxy[field] = value
+		if err := Check(s); err == nil {
+			t.Errorf("a server with %s = %v must be refused", field, value)
+		}
+	}
+	for _, kind := range []string{"ssh", "direct", "wireguard", ""} {
+		s := base()
+		s.Proxy["type"] = kind
+		if err := Check(s); err == nil {
+			t.Errorf("type %q must be refused", kind)
+		}
+	}
 }

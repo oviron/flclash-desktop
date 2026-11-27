@@ -439,3 +439,75 @@ func (o *object) finish() error {
 	}
 	return errors.New(strings.Join(problems, "; "))
 }
+
+// allowed is every key a server may carry: exactly what this package writes.
+// The privileged side checks a server against it before the core, which runs
+// with the rights to change routes, is given anything.
+var allowed = map[string]any{
+	"type": nil, "server": nil, "port": nil, "uuid": nil, "password": nil,
+	"flow": nil, "encryption": nil, "udp": nil, "packet-encoding": nil,
+	"tls": nil, "servername": nil, "sni": nil, "alpn": nil,
+	"client-fingerprint": nil, "name-cert-verify": nil, "network": nil,
+	"congestion-controller": nil, "udp-relay-mode": nil,
+	"reality-opts": map[string]any{"public-key": nil, "short-id": nil, "support-x25519mlkem768": nil},
+	"grpc-opts":    map[string]any{"grpc-service-name": nil},
+	"xhttp-opts": map[string]any{
+		"path": nil, "host": nil, "mode": nil,
+		"x-padding-bytes": nil, "x-padding-obfs-mode": nil, "x-padding-key": nil,
+		"x-padding-header": nil, "x-padding-placement": nil, "x-padding-method": nil,
+		"uplink-http-method": nil, "uplink-data-placement": nil, "uplink-data-key": nil,
+		"sc-max-each-post-bytes": nil, "sc-min-posts-interval-ms": nil, "no-grpc-header": nil,
+		"reuse-settings": map[string]any{
+			"max-concurrency": nil, "max-connections": nil, "c-max-reuse-times": nil,
+			"h-max-request-times": nil, "h-max-reusable-secs": nil, "h-keep-alive-period": nil,
+		},
+	},
+}
+
+var serverTypes = map[string]bool{"vless": true, "tuic": true, "hysteria2": true}
+
+// Check refuses a server that is not in the shape this package produces.
+func Check(s Server) error {
+	if s.Name == "" {
+		return errors.New("the server has no name")
+	}
+	if t, _ := s.Proxy["type"].(string); !serverTypes[t] {
+		return fmt.Errorf("server type %q is not allowed", s.Proxy["type"])
+	}
+	if host, _ := s.Proxy["server"].(string); host == "" {
+		return errors.New("the server has no address")
+	}
+	return checkKeys("", s.Proxy, allowed)
+}
+
+func checkKeys(path string, got, want map[string]any) error {
+	for key, value := range got {
+		nested, known := want[key]
+		if !known {
+			return fmt.Errorf("server field %q is not allowed", path+key)
+		}
+		switch v := value.(type) {
+		case map[string]any:
+			sub, isObject := nested.(map[string]any)
+			if !isObject {
+				return fmt.Errorf("server field %q must be a plain value", path+key)
+			}
+			if err := checkKeys(path+key+".", v, sub); err != nil {
+				return err
+			}
+		case []any:
+			for _, item := range v {
+				if _, isString := item.(string); !isString {
+					return fmt.Errorf("server field %q must be a list of strings", path+key)
+				}
+			}
+		case []string, string, bool, int, float64:
+			if nested != nil {
+				return fmt.Errorf("server field %q must be an object", path+key)
+			}
+		default:
+			return fmt.Errorf("server field %q has an unexpected value", path+key)
+		}
+	}
+	return nil
+}
