@@ -3,13 +3,13 @@ package ingest
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/oviron/flclash-desktop/internal/say"
 )
 
 // Link writes a server as a share link, the kind Parse reads. A server with
@@ -19,7 +19,7 @@ func Link(s Server) (string, error) {
 	w := &writer{proxy: s.Proxy, used: map[string]bool{"type": true, "server": true, "port": true}, query: url.Values{}}
 	host, port := w.text("server"), w.number("port")
 	if host == "" || port == 0 {
-		return "", errors.New("the server has no address")
+		return "", say.New("the server has no address")
 	}
 	address := net.JoinHostPort(host, strconv.Itoa(port))
 	var link string
@@ -81,12 +81,12 @@ func Link(s Server) (string, error) {
 	case "vmess":
 		link = w.vmess(host, port, s.Name)
 	default:
-		return "", fmt.Errorf("servers of the kind %q have no link form", kind)
+		return "", say.Errorf("servers of the kind %q have no link form", kind)
 	}
 	w.leftover(w, "")
 	if len(w.errs) > 0 {
 		sort.Strings(w.errs)
-		return "", errors.New("a link cannot carry this server's " + strings.Join(w.errs, ", "))
+		return "", say.Errorf("a link cannot carry this server's %s", strings.Join(w.errs, ", "))
 	}
 	return link, nil
 }

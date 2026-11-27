@@ -9,7 +9,6 @@ package helper
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/oviron/flclash-desktop/internal/ingest"
+	"github.com/oviron/flclash-desktop/internal/say"
 )
 
 // SocketPath is where the supervisor listens. The socket file belongs to the
@@ -43,7 +43,7 @@ func LogPath() string { return "/var/log/flclash-helper.log" }
 // Version says which requests the installed helper understands. Raise it
 // whenever the helper or the core it runs has to be reinstalled for the app to
 // work: a new rule type, a new server field, a change of this protocol.
-const Version = 11
+const Version = 12
 
 // Operations of Request.Op.
 const (
@@ -173,6 +173,9 @@ type Request struct {
 	Auth string `json:"auth,omitempty"`
 	// DNS, when not empty, resolves names under the tunnel.
 	DNS string `json:"dns,omitempty"`
+	// Lang is the language the answer's messages are written in: "ru", or
+	// anything else for English.
+	Lang string `json:"lang,omitempty"`
 	// ID names a connection for OpClose.
 	ID string `json:"id,omitempty"`
 	// Protect asks that nothing go past the core, also when the core dies.
@@ -201,6 +204,9 @@ type Status struct {
 	Guard string `json:"guard,omitempty"`
 	// GuardProblem says why the guard that was asked for is not on.
 	GuardProblem string `json:"guard_problem,omitempty"`
+	// guardErr is what GuardProblem is written from, in the language of the
+	// request that asks.
+	guardErr error
 	// Blocked: the core is gone and what Protect asked for holds: the full
 	// guard, so that nothing leaves the host but local traffic, or the system
 	// proxy, so that programs which follow it stay offline. It lasts until
@@ -261,15 +267,16 @@ func Delay(server ingest.Server) (int, error) {
 
 func call(req Request, timeout time.Duration) (Response, error) {
 	var resp Response
+	req.Lang = say.Language()
 	conn, err := net.DialTimeout("unix", SocketPath(), 3*time.Second)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return resp, errors.New("the helper is not installed: sudo flclashctl helper install")
+			return resp, say.New("the helper is not installed: sudo flclashctl helper install")
 		}
 		if errors.Is(err, os.ErrPermission) {
-			return resp, errors.New("the helper was installed for another user")
+			return resp, say.New("the helper was installed for another user")
 		}
-		return resp, fmt.Errorf("the helper does not answer: %w", err)
+		return resp, say.Errorf("the helper does not answer: %w", err)
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(timeout))
@@ -277,7 +284,7 @@ func call(req Request, timeout time.Duration) (Response, error) {
 		return resp, err
 	}
 	if err := json.NewDecoder(io.LimitReader(conn, 1<<20)).Decode(&resp); err != nil {
-		return resp, fmt.Errorf("the helper gave no answer: %w", err)
+		return resp, say.Errorf("the helper gave no answer: %w", err)
 	}
 	if resp.Error != "" {
 		return resp, errors.New(resp.Error)

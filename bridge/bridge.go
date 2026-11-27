@@ -18,6 +18,7 @@ import (
 	"github.com/oviron/flclash-desktop/internal/app"
 	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/policy"
+	"github.com/oviron/flclash-desktop/internal/say"
 	"github.com/oviron/flclash-desktop/internal/store"
 )
 
@@ -37,6 +38,8 @@ type request struct {
 	Agent string `json:"agent"`
 	Every string `json:"every"`
 	Skip  string `json:"skip"`
+	// Lang is the language the app shows; messages are written in it.
+	Lang string `json:"lang"`
 }
 
 type status struct {
@@ -94,8 +97,9 @@ func toStatus(s helper.Status, err error) *status {
 }
 
 func handle(req request) (out reply) {
+	say.SetLanguage(req.Lang)
 	fail := func(err error) reply {
-		out.Error = err.Error()
+		out.Error = say.Text(err)
 		return out
 	}
 	st, err := store.Open()

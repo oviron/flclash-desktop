@@ -182,7 +182,12 @@ enum Engine {
         }
     }
 
+    /// The language the app shows; the engine writes its messages in it.
+    private static let language = Bundle.main.preferredLocalizations.first ?? "en"
+
     private static func callSync(_ request: [String: String]) -> Reply {
+        var request = request
+        request["lang"] = language
         guard let data = try? JSONSerialization.data(withJSONObject: request),
               let text = String(data: data, encoding: .utf8)
         else { return Reply(error: "bad request", view: nil, status: nil, imported: nil) }

@@ -3,7 +3,7 @@
 package policy
 
 import (
-	"fmt"
+	"github.com/oviron/flclash-desktop/internal/say"
 	"net/netip"
 	"regexp"
 	"strings"
@@ -100,20 +100,20 @@ func Parse(name, text string) (Policy, error) {
 			continue
 		}
 		if last != 0 && strings.HasPrefix(p.Rules[len(p.Rules)-1], "MATCH,") {
-			return Policy{}, fmt.Errorf("line %d: a rule after MATCH never applies", i+1)
+			return Policy{}, say.Errorf("line %d: a rule after MATCH never applies", i+1)
 		}
 		rule, err := parseRule(line)
 		if err != nil {
-			return Policy{}, fmt.Errorf("line %d: %w", i+1, err)
+			return Policy{}, say.Errorf("line %d: %w", i+1, err)
 		}
 		p.Rules = append(p.Rules, rule)
 		last = i + 1
 	}
 	if last == 0 {
-		return Policy{}, fmt.Errorf("the policy is empty: it needs at least `MATCH,%s`", Proxy)
+		return Policy{}, say.Errorf("the policy is empty: it needs at least `MATCH,%s`", Proxy)
 	}
 	if !strings.HasPrefix(p.Rules[len(p.Rules)-1], "MATCH,") {
-		return Policy{}, fmt.Errorf("line %d: the last rule must be MATCH, so that every connection has a destination", last)
+		return Policy{}, say.Errorf("line %d: the last rule must be MATCH, so that every connection has a destination", last)
 	}
 	return p, nil
 }
@@ -133,12 +133,12 @@ func parseRule(line string) (string, error) {
 		case Proxy, Direct, Reject:
 			return t, nil
 		}
-		return "", fmt.Errorf("unknown destination %q: use %s, %s or %s", s, Proxy, Direct, Reject)
+		return "", say.Errorf("unknown destination %q: use %s, %s or %s", s, Proxy, Direct, Reject)
 	}
 	switch kind {
 	case "MATCH":
 		if len(parts) != 2 {
-			return "", fmt.Errorf("MATCH takes a destination only")
+			return "", say.Errorf("MATCH takes a destination only")
 		}
 		t, err := target(parts[1])
 		if err != nil {
@@ -147,7 +147,7 @@ func parseRule(line string) (string, error) {
 		return "MATCH," + t, nil
 	case "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD":
 		if len(parts) != 3 || parts[1] == "" {
-			return "", fmt.Errorf("%s takes a name and a destination", kind)
+			return "", say.Errorf("%s takes a name and a destination", kind)
 		}
 		t, err := target(parts[2])
 		if err != nil {
@@ -158,7 +158,7 @@ func parseRule(line string) (string, error) {
 		// A list from the public catalogue of site and country lists; see
 		// compile for where they come from.
 		if len(parts) != 3 || !listName.MatchString(strings.ToLower(parts[1])) {
-			return "", fmt.Errorf("%s takes the name of a list, like category-ru, and a destination", kind)
+			return "", say.Errorf("%s takes the name of a list, like category-ru, and a destination", kind)
 		}
 		t, err := target(parts[2])
 		if err != nil {
@@ -171,14 +171,14 @@ func parseRule(line string) (string, error) {
 			parts = parts[:3]
 		}
 		if len(parts) != 3 {
-			return "", fmt.Errorf("%s takes a network and a destination", kind)
+			return "", say.Errorf("%s takes a network and a destination", kind)
 		}
 		prefix, err := netip.ParsePrefix(parts[1])
 		if err != nil {
-			return "", fmt.Errorf("%q is not a network like 10.0.0.0/8", parts[1])
+			return "", say.Errorf("%q is not a network like 10.0.0.0/8", parts[1])
 		}
 		if prefix.Addr().Is4() != (kind == "IP-CIDR") {
-			return "", fmt.Errorf("%s does not fit %s: use IP-CIDR for IPv4 and IP-CIDR6 for IPv6", parts[1], kind)
+			return "", say.Errorf("%s does not fit %s: use IP-CIDR for IPv4 and IP-CIDR6 for IPv6", parts[1], kind)
 		}
 		t, err := target(parts[2])
 		if err != nil {
@@ -187,7 +187,7 @@ func parseRule(line string) (string, error) {
 		// no-resolve: a rule on an address must not cost a DNS lookup of every name.
 		return kind + "," + prefix.Masked().String() + "," + t + ",no-resolve", nil
 	}
-	return "", fmt.Errorf("rule type %q is not supported: use DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, IP-CIDR, IP-CIDR6, GEOSITE, GEOIP or MATCH", parts[0])
+	return "", say.Errorf("rule type %q is not supported: use DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, IP-CIDR, IP-CIDR6, GEOSITE, GEOIP or MATCH", parts[0])
 }
 
 // Check refuses rules that are not exactly what Parse produces, so that rules
@@ -198,11 +198,11 @@ func Check(rules []string) error {
 		return err
 	}
 	if len(parsed.Rules) != len(rules) {
-		return fmt.Errorf("the rules are not in canonical form")
+		return say.Errorf("the rules are not in canonical form")
 	}
 	for i := range rules {
 		if parsed.Rules[i] != rules[i] {
-			return fmt.Errorf("rule %d is not in canonical form", i+1)
+			return say.Errorf("rule %d is not in canonical form", i+1)
 		}
 	}
 	return nil

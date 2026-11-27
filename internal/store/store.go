@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/oviron/flclash-desktop/internal/ingest"
 	"github.com/oviron/flclash-desktop/internal/policy"
+	"github.com/oviron/flclash-desktop/internal/say"
 )
 
 // Entry is a stored server. The ID stays the same when the server is imported
@@ -126,7 +126,7 @@ func (s *Store) Load() (State, error) {
 		return state, err
 	}
 	if err := json.Unmarshal(raw, &state); err != nil {
-		return state, fmt.Errorf("%s is damaged: %w", s.statePath(), err)
+		return state, say.Errorf("%s is damaged: %w", s.statePath(), err)
 	}
 	return state, nil
 }
@@ -199,7 +199,7 @@ func (state State) Find(ref string) (Entry, error) {
 	}
 	switch len(byName) {
 	case 0:
-		return Entry{}, fmt.Errorf("no server %q", ref)
+		return Entry{}, say.Errorf("no server %q", ref)
 	case 1:
 		return byName[0], nil
 	}
@@ -207,7 +207,7 @@ func (state State) Find(ref string) (Entry, error) {
 	for i, e := range byName {
 		ids[i] = e.ID + " (" + e.Group + ")"
 	}
-	return Entry{}, fmt.Errorf("several servers are named %q, pick one by ID: %s", ref, strings.Join(ids, ", "))
+	return Entry{}, say.Errorf("several servers are named %q, pick one by ID: %s", ref, strings.Join(ids, ", "))
 }
 
 var policyName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -222,10 +222,10 @@ func (s *Store) Builtin(name string) (policy.Policy, bool) { return policy.Built
 // CheckPolicy says whether a document could be stored under a name.
 func (s *Store) CheckPolicy(name, text string) error {
 	if !policyName.MatchString(name) {
-		return fmt.Errorf("policy name %q: use lower-case letters, digits, - and _", name)
+		return say.Errorf("policy name %q: use lower-case letters, digits, - and _", name)
 	}
 	if _, isBuiltin := policy.Builtin(name); isBuiltin {
-		return fmt.Errorf("%q is a built-in policy and cannot be replaced", name)
+		return say.Errorf("%q is a built-in policy and cannot be replaced", name)
 	}
 	_, err := policy.Parse(name, text)
 	return err
@@ -242,14 +242,14 @@ func (s *Store) ImportPolicy(name, text string) error {
 // RemovePolicy deletes an imported policy; the built-in ones stay.
 func (s *Store) RemovePolicy(name string) error {
 	if _, isBuiltin := policy.Builtin(name); isBuiltin {
-		return fmt.Errorf("%q is a built-in policy and cannot be removed", name)
+		return say.Errorf("%q is a built-in policy and cannot be removed", name)
 	}
 	if !policyName.MatchString(name) {
-		return fmt.Errorf("no policy %q", name)
+		return say.Errorf("no policy %q", name)
 	}
 	err := os.Remove(s.policyPath(name))
 	if errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("no policy %q", name)
+		return say.Errorf("no policy %q", name)
 	}
 	return err
 }
@@ -260,11 +260,11 @@ func (s *Store) PolicyText(name string) (string, error) {
 		return text, nil
 	}
 	if !policyName.MatchString(name) {
-		return "", fmt.Errorf("no policy %q", name)
+		return "", say.Errorf("no policy %q", name)
 	}
 	raw, err := os.ReadFile(s.policyPath(name))
 	if errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("no policy %q", name)
+		return "", say.Errorf("no policy %q", name)
 	}
 	return string(raw), err
 }
@@ -275,11 +275,11 @@ func (s *Store) Policy(name string) (policy.Policy, error) {
 		return p, nil
 	}
 	if !policyName.MatchString(name) {
-		return policy.Policy{}, fmt.Errorf("no policy %q", name)
+		return policy.Policy{}, say.Errorf("no policy %q", name)
 	}
 	raw, err := os.ReadFile(s.policyPath(name))
 	if errors.Is(err, os.ErrNotExist) {
-		return policy.Policy{}, fmt.Errorf("no policy %q", name)
+		return policy.Policy{}, say.Errorf("no policy %q", name)
 	}
 	if err != nil {
 		return policy.Policy{}, err

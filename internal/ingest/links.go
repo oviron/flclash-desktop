@@ -3,8 +3,8 @@ package ingest
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"github.com/oviron/flclash-desktop/internal/say"
 	"net"
 	"net/url"
 	"sort"
@@ -36,7 +36,7 @@ func Parse(text string) (Server, error) {
 	case "vmess":
 		return vmessLink(text)
 	}
-	return Server{}, fmt.Errorf("links of the kind %s:// are not supported", scheme)
+	return Server{}, say.Errorf("links of the kind %s:// are not supported", scheme)
 }
 
 // IsSubscriptionBody reports whether text is what a subscription serves: one
@@ -60,7 +60,7 @@ func decodeBase64(text string) (string, error) {
 			return string(raw), nil
 		}
 	}
-	return "", errors.New("not base64")
+	return "", say.New("not base64")
 }
 
 // link is a parsed share link. Like object, it remembers which parameters
@@ -69,7 +69,7 @@ type link struct {
 	url   *url.URL
 	query url.Values
 	read  map[string]bool
-	errs  []string
+	errs  []error
 }
 
 func (l *link) get(key string) string {
@@ -95,7 +95,7 @@ func (l *link) flag(keys ...string) bool {
 	case "1", "true":
 		return true
 	default:
-		l.fail(keys[0], fmt.Sprintf("expected 0 or 1, got %q", v))
+		l.fail(keys[0], say.Errorf("expected 0 or 1, got %q", v))
 		return false
 	}
 }
@@ -108,8 +108,8 @@ func (l *link) list(key string) []string {
 	return strings.Split(value, ",")
 }
 
-func (l *link) fail(key, message string) {
-	l.errs = append(l.errs, key+": "+message)
+func (l *link) fail(key string, message error) {
+	l.errs = append(l.errs, say.Errorf("%s: %w", key, message))
 }
 
 func (l *link) finish() error {
@@ -121,14 +121,11 @@ func (l *link) finish() error {
 		}
 	}
 	sort.Strings(unread)
-	problems := append([]string{}, l.errs...)
+	problems := append([]error{}, l.errs...)
 	if len(unread) > 0 {
-		problems = append(problems, "unsupported parameters: "+strings.Join(unread, ", "))
+		problems = append(problems, say.Errorf("unsupported parameters: %s", strings.Join(unread, ", ")))
 	}
-	if len(problems) == 0 {
-		return nil
-	}
-	return errors.New(strings.Join(problems, "; "))
+	return say.Join(problems)
 }
 
 // endpoint reads the host and the port every link has.
@@ -136,7 +133,7 @@ func (l *link) endpoint(p map[string]any) {
 	host := l.url.Hostname()
 	port, err := strconv.Atoi(l.url.Port())
 	if host == "" || err != nil || port < 1 || port > 65535 {
-		l.fail("address", "the link has no host and port")
+		l.fail("address", say.New("the link has no host and port"))
 	}
 	p["server"], p["port"] = host, port
 }
@@ -144,7 +141,7 @@ func (l *link) endpoint(p map[string]any) {
 func fromURL(text string, build func(*link) map[string]any) (Server, error) {
 	u, err := url.Parse(text)
 	if err != nil {
-		return Server{}, fmt.Errorf("the link does not read: %w", err)
+		return Server{}, say.Errorf("the link does not read: %w", err)
 	}
 	l := &link{url: u, query: u.Query(), read: map[string]bool{}}
 	proxy := build(l)
@@ -177,7 +174,7 @@ func (l *link) fingerprint() string {
 	if linkFingerprints[name] {
 		return name
 	}
-	l.fail("fp", fmt.Sprintf("fingerprint %q has no known counterpart in the core", name))
+	l.fail("fp", say.Errorf("fingerprint %q has no known counterpart in the core", name))
 	return ""
 }
 
@@ -200,7 +197,7 @@ func (l *link) tls(p map[string]any, sniKey string) {
 // transport reads how the stream is carried: plain, WebSocket, gRPC or XHTTP.
 func (l *link) transport(p map[string]any, xhttp bool) {
 	if header := l.get("headerType"); header != "" && header != "none" {
-		l.fail("headerType", fmt.Sprintf("header type %q is not supported", header))
+		l.fail("headerType", say.Errorf("header type %q is not supported", header))
 	}
 	switch network := l.get("type"); network {
 	case "", "tcp", "raw":
@@ -213,7 +210,7 @@ func (l *link) transport(p map[string]any, xhttp bool) {
 		if before, ed, found := strings.Cut(path, "?ed="); found {
 			size, err := strconv.Atoi(ed)
 			if err != nil {
-				l.fail("path", "the early data size after ?ed= is not a number")
+				l.fail("path", say.New("the early data size after ?ed= is not a number"))
 			}
 			path = before
 			opts["max-early-data"] = size
@@ -230,12 +227,12 @@ func (l *link) transport(p map[string]any, xhttp bool) {
 	case "grpc":
 		p["network"] = "grpc"
 		if mode := l.get("mode"); mode != "" && mode != "gun" {
-			l.fail("mode", fmt.Sprintf("gRPC mode %q is not supported", mode))
+			l.fail("mode", say.Errorf("gRPC mode %q is not supported", mode))
 		}
 		p["grpc-opts"] = map[string]any{"grpc-service-name": l.get("serviceName")}
 	case "xhttp":
 		if !xhttp {
-			l.fail("type", "XHTTP is supported for VLESS only")
+			l.fail("type", say.New("XHTTP is supported for VLESS only"))
 			return
 		}
 		p["network"] = "xhttp"
@@ -248,7 +245,7 @@ func (l *link) transport(p map[string]any, xhttp bool) {
 		if extra := l.get("extra"); extra != "" {
 			var parsed map[string]any
 			if err := json.Unmarshal([]byte(extra), &parsed); err != nil {
-				l.fail("extra", "is not a JSON object")
+				l.fail("extra", say.New("is not a JSON object"))
 			} else {
 				fields["extra"] = parsed
 			}
@@ -257,10 +254,10 @@ func (l *link) transport(p map[string]any, xhttp bool) {
 		x := newObject("xhttp", fields)
 		p["xhttp-opts"] = xhttpOpts(x)
 		if err := x.finish(); err != nil {
-			l.errs = append(l.errs, err.Error())
+			l.errs = append(l.errs, err)
 		}
 	default:
-		l.fail("type", fmt.Sprintf("transport %q is not supported", network))
+		l.fail("type", say.Errorf("transport %q is not supported", network))
 	}
 }
 
@@ -268,7 +265,7 @@ func vlessLink(l *link) map[string]any {
 	p := map[string]any{"type": "vless", "udp": true, "packet-encoding": "xudp", "uuid": l.url.User.Username()}
 	l.endpoint(p)
 	if p["uuid"] == "" {
-		l.fail("user", "the link has no UUID")
+		l.fail("user", say.New("the link has no UUID"))
 	}
 	if flow := l.get("flow"); flow != "" {
 		p["flow"] = flow
@@ -283,7 +280,7 @@ func vlessLink(l *link) map[string]any {
 	case "none":
 		delete(p, "packet-encoding")
 	default:
-		l.fail("packetEncoding", fmt.Sprintf("packet encoding %q is not supported", encoding))
+		l.fail("packetEncoding", say.Errorf("packet encoding %q is not supported", encoding))
 	}
 	switch security := l.get("security"); security {
 	case "reality":
@@ -299,7 +296,7 @@ func vlessLink(l *link) map[string]any {
 		p["client-fingerprint"] = fp
 		opts := map[string]any{"public-key": l.get("pbk")}
 		if opts["public-key"] == "" {
-			l.fail("pbk", "a REALITY link needs the public key")
+			l.fail("pbk", say.New("a REALITY link needs the public key"))
 		}
 		if sid := l.get("sid"); sid != "" {
 			opts["short-id"] = sid
@@ -317,7 +314,7 @@ func vlessLink(l *link) map[string]any {
 		l.tls(p, "servername")
 	case "", "none":
 	default:
-		l.fail("security", fmt.Sprintf("security %q is not supported", security))
+		l.fail("security", say.Errorf("security %q is not supported", security))
 	}
 	l.transport(p, true)
 	return p
@@ -327,10 +324,10 @@ func trojanLink(l *link) map[string]any {
 	p := map[string]any{"type": "trojan", "udp": true, "password": l.url.User.Username()}
 	l.endpoint(p)
 	if p["password"] == "" {
-		l.fail("user", "the link has no password")
+		l.fail("user", say.New("the link has no password"))
 	}
 	if security := l.get("security"); security != "" && security != "tls" {
-		l.fail("security", fmt.Sprintf("security %q is not supported for Trojan", security))
+		l.fail("security", say.Errorf("security %q is not supported for Trojan", security))
 	}
 	l.tls(p, "sni")
 	l.transport(p, false)
@@ -346,12 +343,12 @@ func hysteria2Link(l *link) map[string]any {
 	p := map[string]any{"type": "hysteria2", "password": password}
 	l.endpoint(p)
 	if password == "" {
-		l.fail("user", "the link has no password")
+		l.fail("user", say.New("the link has no password"))
 	}
 	l.tls(p, "sni")
 	if obfs := l.get("obfs"); obfs != "" && obfs != "none" {
 		if obfs != "salamander" {
-			l.fail("obfs", fmt.Sprintf("obfuscation %q is not supported", obfs))
+			l.fail("obfs", say.Errorf("obfuscation %q is not supported", obfs))
 		}
 		p["obfs"] = obfs
 		p["obfs-password"] = l.get("obfs-password")
@@ -364,7 +361,7 @@ func tuicLink(l *link) map[string]any {
 	p := map[string]any{"type": "tuic", "uuid": l.url.User.Username(), "password": password}
 	l.endpoint(p)
 	if p["uuid"] == "" {
-		l.fail("user", "the link has no UUID")
+		l.fail("user", say.New("the link has no UUID"))
 	}
 	if cc := l.either("congestion_control", "congestion-control"); cc != "" {
 		p["congestion-controller"] = cc
@@ -390,7 +387,7 @@ func shadowsocksLink(text string) (Server, error) {
 	if query != "" {
 		values, _ := url.ParseQuery(query)
 		if values.Get("plugin") != "" {
-			return Server{}, errors.New("plugin: Shadowsocks plugins are not supported")
+			return Server{}, say.New("plugin: Shadowsocks plugins are not supported")
 		}
 		if len(values) > 0 {
 			keys := make([]string, 0, len(values))
@@ -398,7 +395,7 @@ func shadowsocksLink(text string) (Server, error) {
 				keys = append(keys, key)
 			}
 			sort.Strings(keys)
-			return Server{}, errors.New("unsupported parameters: " + strings.Join(keys, ", "))
+			return Server{}, say.Errorf("unsupported parameters: %s", strings.Join(keys, ", "))
 		}
 	}
 	credentials, address, split := cutLast(body, "@")
@@ -406,11 +403,11 @@ func shadowsocksLink(text string) (Server, error) {
 		// Everything is in base64: method:password@host:port.
 		decoded, err := decodeBase64(body)
 		if err != nil {
-			return Server{}, errors.New("the link is neither SIP002 nor base64")
+			return Server{}, say.New("the link is neither SIP002 nor base64")
 		}
 		credentials, address, split = cutLast(decoded, "@")
 		if !split {
-			return Server{}, errors.New("the link has no address")
+			return Server{}, say.New("the link has no address")
 		}
 	} else if decoded, err := decodeBase64(credentials); err == nil && strings.Contains(decoded, ":") {
 		credentials = decoded
@@ -419,12 +416,12 @@ func shadowsocksLink(text string) (Server, error) {
 	}
 	method, password, ok := strings.Cut(credentials, ":")
 	if !ok || method == "" || password == "" {
-		return Server{}, errors.New("the link has no method and password")
+		return Server{}, say.New("the link has no method and password")
 	}
 	host, portText, err := net.SplitHostPort(strings.TrimSuffix(address, "/"))
 	port, portErr := strconv.Atoi(portText)
 	if err != nil || portErr != nil || host == "" {
-		return Server{}, errors.New("the link has no host and port")
+		return Server{}, say.New("the link has no host and port")
 	}
 	proxy := map[string]any{"type": "ss", "server": host, "port": port, "cipher": method, "password": password, "udp": true}
 	return Server{Name: linkName(name, proxy), Proxy: proxy}, nil
@@ -442,11 +439,11 @@ func cutLast(s, sep string) (string, string, bool) {
 func vmessLink(text string) (Server, error) {
 	decoded, err := decodeBase64(strings.TrimSpace(text[len("vmess://"):]))
 	if err != nil {
-		return Server{}, errors.New("the link payload is not base64")
+		return Server{}, say.New("the link payload is not base64")
 	}
 	var fields map[string]any
 	if err := json.Unmarshal([]byte(decoded), &fields); err != nil {
-		return Server{}, fmt.Errorf("the link payload is not JSON: %w", err)
+		return Server{}, say.Errorf("the link payload is not JSON: %w", err)
 	}
 	o := newObject("", fields)
 	// Panels write numbers as strings and as numbers alike.
@@ -461,7 +458,7 @@ func vmessLink(text string) (Server, error) {
 		case float64:
 			return strconv.FormatFloat(t, 'f', -1, 64)
 		}
-		o.fail(key, "expected a plain value")
+		o.fail(key, say.New("expected a plain value"))
 		return ""
 	}
 	number := func(key string) int {
@@ -471,7 +468,7 @@ func vmessLink(text string) (Server, error) {
 		}
 		n, err := strconv.Atoi(value)
 		if err != nil {
-			o.fail(key, "expected a whole number")
+			o.fail(key, say.New("expected a whole number"))
 		}
 		return n
 	}
@@ -486,7 +483,7 @@ func vmessLink(text string) (Server, error) {
 		"uuid": text2("id"), "alterId": number("aid"), "cipher": cipher,
 	}
 	if header := text2("type"); header != "" && header != "none" {
-		o.fail("type", fmt.Sprintf("header type %q is not supported", header))
+		o.fail("type", say.Errorf("header type %q is not supported", header))
 	}
 	host, path := text2("host"), text2("path")
 	switch network := text2("net"); network {
@@ -506,7 +503,7 @@ func vmessLink(text string) (Server, error) {
 		p["network"] = "grpc"
 		p["grpc-opts"] = map[string]any{"grpc-service-name": path}
 	default:
-		o.fail("net", fmt.Sprintf("transport %q is not supported", network))
+		o.fail("net", say.Errorf("transport %q is not supported", network))
 	}
 	switch security := text2("tls"); security {
 	case "", "none":
@@ -528,19 +525,19 @@ func vmessLink(text string) (Server, error) {
 				mapped, known = fp, true
 			}
 			if !known {
-				o.fail("fp", fmt.Sprintf("fingerprint %q has no known counterpart in the core", fp))
+				o.fail("fp", say.Errorf("fingerprint %q has no known counterpart in the core", fp))
 			}
 			p["client-fingerprint"] = mapped
 		}
 	default:
-		o.fail("tls", fmt.Sprintf("security %q is not supported", security))
+		o.fail("tls", say.Errorf("security %q is not supported", security))
 	}
 	name := text2("ps")
 	if err := o.finish(); err != nil {
 		return Server{}, err
 	}
 	if p["server"] == "" || p["uuid"] == "" {
-		return Server{}, errors.New("the link has no address or no UUID")
+		return Server{}, say.New("the link has no address or no UUID")
 	}
 	return Server{Name: linkName(name, p), Proxy: p}, nil
 }

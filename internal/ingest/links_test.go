@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/oviron/flclash-desktop/internal/say"
 )
 
 func mustParse(t *testing.T, link string) Server {
@@ -149,5 +151,19 @@ proxy-groups: []
 	// Links stay links.
 	if _, _, n := ParseAll("hy2://p@b.example:443#b\n\nvless://u@a.example:443?security=reality&pbk=K#a\n"); n != 2 {
 		t.Fatalf("got %d", n)
+	}
+}
+
+// A refusal reads in the language of the app, field by field.
+func TestRefusalInRussian(t *testing.T) {
+	say.SetLanguage("ru")
+	defer say.SetLanguage("")
+	_, refused, _ := ParseAll("vless://11111111-2222-3333-4444-555555555555@example.com:443?type=quic&foo=1#x")
+	if len(refused) != 1 {
+		t.Fatalf("refused: %v", refused)
+	}
+	reason := refused[0].Reason
+	if !strings.Contains(reason, "транспорт «quic» не поддерживается") || !strings.Contains(reason, "неподдерживаемые параметры: foo") {
+		t.Fatalf("reason: %s", reason)
 	}
 }

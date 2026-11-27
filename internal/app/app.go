@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +18,7 @@ import (
 	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/ingest"
 	"github.com/oviron/flclash-desktop/internal/policy"
+	"github.com/oviron/flclash-desktop/internal/say"
 	"github.com/oviron/flclash-desktop/internal/store"
 )
 
@@ -167,7 +167,7 @@ func Import(st *store.Store, group, text string) (ImportResult, error) {
 		result.Imported = append(result.Imported, Server{ID: e.ID, Name: e.Name, Group: e.Group, Protocol: protocol(e.Proxy)})
 	}
 	if n == 0 {
-		return result, errors.New("there is nothing to import")
+		return result, say.New("there is nothing to import")
 	}
 	return result, st.Save(state)
 }
@@ -219,11 +219,11 @@ func Remove(st *store.Store, id string) error {
 		kept = append(kept, e)
 	}
 	if !found {
-		return errors.New("no such server")
+		return say.New("no such server")
 	}
 	if state.Selected == id {
 		if status, err := Status(); err == nil && status.Running {
-			return errors.New("the tunnel runs through this server: turn it off or pick another first")
+			return say.New("the tunnel runs through this server: turn it off or pick another first")
 		}
 		state.Selected = ""
 	}
@@ -240,7 +240,7 @@ func On(st *store.Store) (helper.Status, error) {
 		return helper.Status{}, err
 	}
 	if state.Selected == "" {
-		return helper.Status{}, errors.New("no server is selected")
+		return helper.Status{}, say.New("no server is selected")
 	}
 	entry, err := state.Find(state.Selected)
 	if err != nil {
@@ -302,7 +302,7 @@ func SetMode(st *store.Store, name string) error {
 			state.Mode = name
 			return nil
 		}
-		return fmt.Errorf("unknown mode %q: tun, system or proxy", name)
+		return say.Errorf("unknown mode %q: tun, system or proxy", name)
 	})
 }
 
@@ -368,7 +368,7 @@ func SetDNS(st *store.Store, address string) error {
 func SetPort(st *store.Store, port int) error {
 	return change(st, func(state *store.State) error {
 		if port < 1024 || port > 65535 {
-			return fmt.Errorf("the local port must be between 1024 and 65535, not %d", port)
+			return say.Errorf("the local port must be between 1024 and 65535, not %d", port)
 		}
 		state.Port = port
 		return nil
@@ -402,7 +402,7 @@ func RemovePolicy(st *store.Store, name string) error {
 		return err
 	}
 	if state.Policy == name {
-		return errors.New("this policy is in use: choose another first")
+		return say.New("this policy is in use: choose another first")
 	}
 	return st.RemovePolicy(name)
 }
@@ -449,11 +449,11 @@ func localDelay(server ingest.Server) (int, error) {
 	cmd.Stdin = bytes.NewReader(request)
 	out, err := cmd.Output()
 	if err != nil {
-		return 0, fmt.Errorf("the core did not run: %w", err)
+		return 0, say.Errorf("the core did not run: %w", err)
 	}
 	var reply helper.CoreReply
 	if err := json.Unmarshal(out, &reply); err != nil {
-		return 0, fmt.Errorf("the core answered nonsense: %w", err)
+		return 0, say.Errorf("the core answered nonsense: %w", err)
 	}
 	if reply.Error != "" {
 		return 0, errors.New(reply.Error)
@@ -464,7 +464,7 @@ func localDelay(server ingest.Server) (int, error) {
 // checkStored says whether a stored server is one the helper would run.
 func checkStored(entry store.Entry) error {
 	if entry.ID == "" {
-		return errors.New("a server has no ID")
+		return say.New("a server has no ID")
 	}
 	return ingest.Check(entry.Server)
 }

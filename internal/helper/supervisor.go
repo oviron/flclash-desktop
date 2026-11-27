@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -25,6 +24,7 @@ import (
 	"github.com/oviron/flclash-desktop/internal/compile"
 	"github.com/oviron/flclash-desktop/internal/ingest"
 	"github.com/oviron/flclash-desktop/internal/policy"
+	"github.com/oviron/flclash-desktop/internal/say"
 )
 
 // tunPrefix is the address range of the tunnel device the core creates.
@@ -164,9 +164,12 @@ func (s *Supervisor) handle(conn net.Conn) {
 		err = s.do(req)
 	}
 	if err != nil {
-		resp.Error = err.Error()
+		resp.Error = say.In(req.Lang, err)
 	}
 	resp.Status = s.Status()
+	if resp.Status.guardErr != nil {
+		resp.Status.GuardProblem = say.In(req.Lang, resp.Status.guardErr)
+	}
 	_ = json.NewEncoder(conn).Encode(resp)
 }
 
@@ -180,7 +183,7 @@ func (s *Supervisor) do(req Request) error {
 	case OpApply:
 		return s.apply(req)
 	}
-	return fmt.Errorf("unknown operation %q", req.Op)
+	return say.Errorf("unknown operation %q", req.Op)
 }
 
 // Status is the current state.
@@ -194,6 +197,9 @@ func (s *Supervisor) Status() Status {
 		st.Captured = st.Running && s.Listening(st.Port)
 	}
 	st.Version = Version
+	if st.guardErr != nil {
+		st.GuardProblem = st.guardErr.Error()
+	}
 	return st
 }
 
@@ -202,23 +208,23 @@ func (s *Supervisor) apply(req Request) error {
 		return err
 	}
 	if err := policy.Check(req.Rules); err != nil {
-		return fmt.Errorf("the routing policy was refused: %w", err)
+		return say.Errorf("the routing policy was refused: %w", err)
 	}
 	// The mode is always said: a request that forgot it must not end up
 	// capturing the whole machine.
 	switch req.Mode {
 	case ModeTUN:
 		if req.Port != 0 && (req.Port < 1024 || req.Port > 65535) {
-			return fmt.Errorf("the local port must be between 1024 and 65535, not %d", req.Port)
+			return say.Errorf("the local port must be between 1024 and 65535, not %d", req.Port)
 		}
 	case ModeSystem, ModeProxy:
 		if req.Port < 1024 || req.Port > 65535 {
-			return fmt.Errorf("the local port must be between 1024 and 65535, not %d", req.Port)
+			return say.Errorf("the local port must be between 1024 and 65535, not %d", req.Port)
 		}
 	case "":
-		return errors.New("the request does not say the mode")
+		return say.New("the request does not say the mode")
 	default:
-		return fmt.Errorf("unknown mode %q", req.Mode)
+		return say.Errorf("unknown mode %q", req.Mode)
 	}
 	if req.Auth != "" {
 		if err := compile.CheckAuth(req.Auth); err != nil {
@@ -240,11 +246,11 @@ func (s *Supervisor) apply(req Request) error {
 // Caller holds mu.
 func (s *Supervisor) run(req Request) error {
 	if s.core != nil && req.Revision < s.status.Revision {
-		return errors.New("a newer choice is already applied")
+		return say.New("a newer choice is already applied")
 	}
 	tunnel := req.Mode == ModeTUN
 	if req.Mode == ModeSystem && s.SystemProxy == nil {
-		return errors.New("setting the system proxy is not supported on this system yet")
+		return say.New("setting the system proxy is not supported on this system yet")
 	}
 	// The tunnel needs a core with root's rights, the proxy modes one without:
 	// neither can become the other, so the running one ends first.
@@ -256,7 +262,7 @@ func (s *Supervisor) run(req Request) error {
 	}
 	fresh := s.core == nil
 	if req.Port != 0 && (fresh || req.Port != s.status.Port) && !s.PortFree(req.Port) {
-		return fmt.Errorf("the local port %d is taken by another program; choose another in the settings", req.Port)
+		return say.Errorf("the local port %d is taken by another program; choose another in the settings", req.Port)
 	}
 	if fresh && s.Resolvers != nil {
 		s.directDNS = s.Resolvers()
@@ -290,9 +296,9 @@ func (s *Supervisor) run(req Request) error {
 
 	// The core reports success before the device or the port exists; wait for
 	// the thing itself, since only it means traffic can go through.
-	ready, missing := s.Captured, "the tunnel device did not appear"
+	ready, missing := s.Captured, say.New("the tunnel device did not appear")
 	if !tunnel {
-		ready, missing = func() bool { return s.Listening(req.Port) }, "the local port did not open"
+		ready, missing = func() bool { return s.Listening(req.Port) }, say.New("the local port did not open")
 	}
 	wait := s.DeviceTimeout
 	if wait == 0 {
@@ -302,7 +308,7 @@ func (s *Supervisor) run(req Request) error {
 	for !ready() {
 		if time.Now().After(deadline) {
 			s.giveUp()
-			return fmt.Errorf("the core started but %s; see the helper log", missing)
+			return say.Errorf("the core started but %w; see the helper log", missing)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -311,7 +317,7 @@ func (s *Supervisor) run(req Request) error {
 	if req.Mode == ModeSystem {
 		if err := s.SystemProxy.Set(req.Port); err != nil {
 			s.giveUp()
-			return fmt.Errorf("the system proxy was not set: %w", err)
+			return say.Errorf("the system proxy was not set: %w", err)
 		}
 		if req.Protect {
 			_ = os.WriteFile(s.keepPath(), nil, 0o600)
@@ -374,7 +380,7 @@ func (s *Supervisor) engage(req Request) {
 	tun := s.TunName()
 	if err := s.Guard.Engage(tun, s.CoreGID, req.Protect); err != nil {
 		log.Printf("guard: %v", err)
-		s.status.GuardProblem = err.Error()
+		s.status.guardErr = err
 		return
 	}
 	s.status.Guard = GuardIPv6
@@ -396,13 +402,13 @@ func (s *Supervisor) engage(req Request) {
 	if _, err := s.measure(req.Server); err != nil {
 		// The server does not answer either way: the guard is not the cause.
 		if err := s.Guard.Engage(tun, s.CoreGID, true); err != nil {
-			s.status.Guard, s.status.GuardProblem = GuardIPv6, err.Error()
+			s.status.Guard, s.status.guardErr = GuardIPv6, err
 		}
 		return
 	}
 	log.Printf("guard: the full rules cut the core off from the server; left IPv6 only")
 	s.status.Guard = GuardIPv6
-	s.status.GuardProblem = "the firewall rules cut the core off from the server, so traffic past the tunnel is not blocked"
+	s.status.guardErr = say.New("the firewall rules cut the core off from the server, so traffic past the tunnel is not blocked")
 }
 
 // release takes the guard off. Caller holds mu.
@@ -463,7 +469,7 @@ func (s *Supervisor) start(tunnel bool) error {
 	verdicts.Close()
 	if err != nil {
 		replies.Close()
-		return fmt.Errorf("the core did not start: %w", err)
+		return say.Errorf("the core did not start: %w", err)
 	}
 	exited := make(chan struct{})
 	go func() {
@@ -548,7 +554,7 @@ func (s *Supervisor) delay(req Request) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.core == nil {
-		return 0, errors.New("the tunnel is off: there is no core to measure from")
+		return 0, say.New("the tunnel is off: there is no core to measure from")
 	}
 	return s.measure(req.Server)
 }
@@ -558,12 +564,12 @@ var connectionID = regexp.MustCompile(`^[0-9a-fA-F-]{8,64}$`)
 // closeConnection closes one open connection of the core.
 func (s *Supervisor) closeConnection(id string) error {
 	if !connectionID.MatchString(id) {
-		return errors.New("that is not the name of a connection")
+		return say.New("that is not the name of a connection")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.core == nil {
-		return errors.New("nothing runs")
+		return say.New("nothing runs")
 	}
 	_, err := s.send(FrameClose, []byte(id))
 	return err
@@ -574,7 +580,7 @@ func (s *Supervisor) exit() (*Exit, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.core == nil {
-		return nil, errors.New("nothing runs")
+		return nil, say.New("nothing runs")
 	}
 	body, err := json.Marshal(CoreDelay{
 		Proxy:     compile.Proxy(s.last.Server),
@@ -589,7 +595,7 @@ func (s *Supervisor) exit() (*Exit, error) {
 		return nil, err
 	}
 	if reply.Exit == nil {
-		return nil, errors.New("the core gave no address")
+		return nil, say.New("the core gave no address")
 	}
 	return reply.Exit, nil
 }
@@ -599,14 +605,14 @@ func (s *Supervisor) stats() (*Stats, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.core == nil {
-		return nil, errors.New("nothing runs")
+		return nil, say.New("nothing runs")
 	}
 	reply, err := s.send(FrameStats, nil)
 	if err != nil {
 		return nil, err
 	}
 	if reply.Stats == nil {
-		return nil, errors.New("the core gave no numbers")
+		return nil, say.New("the core gave no numbers")
 	}
 	return reply.Stats, nil
 }
@@ -632,7 +638,7 @@ func (s *Supervisor) send(kind byte, body []byte) (CoreReply, error) {
 	binary.BigEndian.PutUint32(frame, uint32(len(body)+1))
 	frame[4] = kind
 	if _, err := s.toCore.Write(append(frame, body...)); err != nil {
-		return reply, fmt.Errorf("the core is gone: %w", err)
+		return reply, say.Errorf("the core is gone: %w", err)
 	}
 	type answer struct {
 		line string
@@ -647,17 +653,17 @@ func (s *Supervisor) send(kind byte, body []byte) (CoreReply, error) {
 	select {
 	case v := <-got:
 		if v.err != nil {
-			return reply, fmt.Errorf("the core is gone: %w", v.err)
+			return reply, say.Errorf("the core is gone: %w", v.err)
 		}
 		if err := json.Unmarshal([]byte(v.line), &reply); err != nil {
-			return reply, fmt.Errorf("the core answered nonsense: %w", err)
+			return reply, say.Errorf("the core answered nonsense: %w", err)
 		}
 		if reply.Error != "" {
 			return reply, errors.New(reply.Error)
 		}
 		return reply, nil
 	case <-time.After(60 * time.Second):
-		return reply, errors.New("the core did not answer in a minute")
+		return reply, say.New("the core did not answer in a minute")
 	}
 }
 

@@ -1,9 +1,9 @@
 package ingest
 
 import (
-	"fmt"
 	"strings"
 
+	"github.com/oviron/flclash-desktop/internal/say"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,7 +25,7 @@ func ParseAll(text string) (servers []Server, refused []Refusal, entries int) {
 		for i, proxy := range proxies {
 			server, err := fromClash(proxy)
 			if err != nil {
-				refused = append(refused, Refusal{Entry: i + 1, Reason: err.Error()})
+				refused = append(refused, Refusal{Entry: i + 1, Reason: say.Text(err)})
 				continue
 			}
 			servers = append(servers, server)
@@ -40,7 +40,7 @@ func ParseAll(text string) (servers []Server, refused []Refusal, entries int) {
 		entries++
 		server, err := Parse(line)
 		if err != nil {
-			refused = append(refused, Refusal{Entry: entries, Reason: err.Error()})
+			refused = append(refused, Refusal{Entry: entries, Reason: say.Text(err)})
 			continue
 		}
 		servers = append(servers, server)
@@ -76,7 +76,7 @@ func clashProxies(text string) ([]map[string]any, bool) {
 func fromClash(proxy map[string]any) (Server, error) {
 	name, _ := proxy["name"].(string)
 	if strings.TrimSpace(name) == "" {
-		return Server{}, fmt.Errorf("the proxy has no name")
+		return Server{}, say.Errorf("the proxy has no name")
 	}
 	fields := map[string]any{}
 	for key, value := range proxy {
@@ -86,7 +86,7 @@ func fromClash(proxy map[string]any) (Server, error) {
 	}
 	server := Server{Name: strings.TrimSpace(name), Proxy: fields}
 	if err := Check(server); err != nil {
-		return Server{}, fmt.Errorf("%s: %w", name, err)
+		return Server{}, say.Errorf("%s: %w", name, err)
 	}
 	return server, nil
 }

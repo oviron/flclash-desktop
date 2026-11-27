@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/oviron/flclash-desktop/internal/ingest"
+	"github.com/oviron/flclash-desktop/internal/say"
 	"github.com/oviron/flclash-desktop/internal/store"
 )
 
@@ -66,7 +67,7 @@ func fetch(address, agent string) (fetched, error) {
 	var out fetched
 	req, err := http.NewRequest(http.MethodGet, address, nil)
 	if err != nil {
-		return out, errors.New("the address does not read as one")
+		return out, say.New("the address does not read as one")
 	}
 	req.Header.Set("User-Agent", agent)
 	client := http.Client{Timeout: 20 * time.Second}
@@ -77,15 +78,15 @@ func fetch(address, agent string) (fetched, error) {
 		if errors.As(err, &urlErr) {
 			err = urlErr.Err
 		}
-		return out, fmt.Errorf("the provider did not answer: %w", err)
+		return out, say.Errorf("the provider did not answer: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return out, fmt.Errorf("the provider answered %s", resp.Status)
+		return out, say.Errorf("the provider answered %s", resp.Status)
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
-		return out, fmt.Errorf("the answer broke off: %w", err)
+		return out, say.Errorf("the answer broke off: %w", err)
 	}
 	out.body = string(raw)
 	out.hours, _ = strconv.Atoi(strings.TrimSpace(resp.Header.Get("Profile-Update-Interval")))
@@ -118,19 +119,19 @@ func AddSubscription(st *store.Store, name, address string) (ImportResult, error
 	}
 	u, err := url.Parse(address)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return ImportResult{}, errors.New("a subscription address starts with https://")
+		return ImportResult{}, say.New("a subscription address starts with https://")
 	}
 	if name == "" {
 		name = u.Hostname()
 	}
 	for _, sub := range state.Subscriptions {
 		if sub.Name == name {
-			return ImportResult{}, fmt.Errorf("there is a subscription named %q already", name)
+			return ImportResult{}, say.Errorf("there is a subscription named %q already", name)
 		}
 	}
 	for _, e := range state.Servers {
 		if e.Group == name {
-			return ImportResult{}, fmt.Errorf("the group %q has servers that were added by hand; choose another name", name)
+			return ImportResult{}, say.Errorf("the group %q has servers that were added by hand; choose another name", name)
 		}
 	}
 	state.Subscriptions = append(state.Subscriptions, store.Subscription{Name: name, URL: address})
@@ -154,14 +155,14 @@ func UpdateSubscription(st *store.Store, name string) (ImportResult, error) {
 		}
 		result, err := update(&state, i)
 		if err != nil {
-			state.Subscriptions[i].Problem = err.Error()
+			state.Subscriptions[i].Problem = say.Text(err)
 		}
 		if saveErr := st.Save(state); saveErr != nil {
 			return result, saveErr
 		}
 		return result, err
 	}
-	return ImportResult{}, fmt.Errorf("no subscription %q", name)
+	return ImportResult{}, say.Errorf("no subscription %q", name)
 }
 
 // UpdateDue reads again every subscription whose time has come, and says how
@@ -202,14 +203,14 @@ func EditSubscription(st *store.Store, name, address, agent string, every int, s
 	if address != "" {
 		u, err := url.Parse(address)
 		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-			return ImportResult{}, errors.New("a subscription address starts with https://")
+			return ImportResult{}, say.New("a subscription address starts with https://")
 		}
 	}
 	if every < 0 || every > 24*30 {
-		return ImportResult{}, errors.New("the interval is a number of hours, up to a month")
+		return ImportResult{}, say.New("the interval is a number of hours, up to a month")
 	}
 	if strings.ContainsAny(agent, "\r\n") || len(agent) > 200 {
-		return ImportResult{}, errors.New("the client name is one short line")
+		return ImportResult{}, say.New("the client name is one short line")
 	}
 	for i := range state.Subscriptions {
 		sub := &state.Subscriptions[i]
@@ -222,14 +223,14 @@ func EditSubscription(st *store.Store, name, address, agent string, every int, s
 		sub.Agent, sub.Every, sub.Skip = agent, every, strings.TrimSpace(skip)
 		result, err := update(&state, i)
 		if err != nil {
-			sub.Problem = err.Error()
+			sub.Problem = say.Text(err)
 		}
 		if saveErr := st.Save(state); saveErr != nil {
 			return result, saveErr
 		}
 		return result, err
 	}
-	return ImportResult{}, fmt.Errorf("no subscription %q", name)
+	return ImportResult{}, say.Errorf("no subscription %q", name)
 }
 
 // RemoveSubscription deletes a subscription and its servers.
@@ -248,7 +249,7 @@ func RemoveSubscription(st *store.Store, name string) error {
 		subs = append(subs, sub)
 	}
 	if !found {
-		return fmt.Errorf("no subscription %q", name)
+		return say.Errorf("no subscription %q", name)
 	}
 	kept := state.Servers[:0]
 	for _, e := range state.Servers {
@@ -258,7 +259,7 @@ func RemoveSubscription(st *store.Store, name string) error {
 		}
 		if e.ID == state.Selected {
 			if status, err := Status(); err == nil && status.Running {
-				return errors.New("the tunnel runs through a server of this subscription: turn it off or pick another first")
+				return say.New("the tunnel runs through a server of this subscription: turn it off or pick another first")
 			}
 			state.Selected = ""
 		}
@@ -306,12 +307,12 @@ next:
 	}
 	if len(servers) == 0 {
 		if n == 0 {
-			return result, errors.New("the provider gave an empty list")
+			return result, say.New("the provider gave an empty list")
 		}
 		if len(result.Failed) == 0 {
-			return result, fmt.Errorf("all %d servers were left out by the words to skip", skipped)
+			return result, say.Errorf("all %d servers were left out by the words to skip", skipped)
 		}
-		return result, fmt.Errorf("none of the %d entries could be read; the first: %s", n, result.Failed[0].Reason)
+		return result, say.Errorf("none of the %d entries could be read; the first: %s", n, result.Failed[0].Reason)
 	}
 
 	fresh := map[string]bool{}

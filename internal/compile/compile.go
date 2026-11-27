@@ -2,8 +2,6 @@
 package compile
 
 import (
-	"errors"
-	"fmt"
 	"net/netip"
 	"net/url"
 	"strings"
@@ -12,6 +10,7 @@ import (
 
 	"github.com/oviron/flclash-desktop/internal/ingest"
 	"github.com/oviron/flclash-desktop/internal/policy"
+	"github.com/oviron/flclash-desktop/internal/say"
 )
 
 // Input is everything one running config is made of.
@@ -53,7 +52,7 @@ func CheckDNS(address string) error {
 	u, err := url.Parse(address)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "tls") || u.Hostname() == "" || u.User != nil ||
 		strings.ContainsAny(address, " \t\n\"'#") {
-		return fmt.Errorf("%q is not a resolver: use https://host/dns-query, tls://host or an address", address)
+		return say.Errorf("%q is not a resolver: use https://host/dns-query, tls://host or an address", address)
 	}
 	return nil
 }
@@ -70,7 +69,7 @@ func CheckAuth(auth string) error {
 		return s != "" && len(s) <= 64
 	}
 	if !ok || !plain(user) || !plain(password) || strings.Contains(user, ":") {
-		return errors.New("the login is user:password, in Latin letters, digits and signs, with no spaces")
+		return say.New("the login is user:password, in Latin letters, digits and signs, with no spaces")
 	}
 	return nil
 }
@@ -87,16 +86,16 @@ func Proxy(server ingest.Server) map[string]any {
 // Config returns the YAML for the core.
 func Config(in Input) ([]byte, error) {
 	if in.Server.Name == "" || in.Server.Proxy == nil {
-		return nil, errors.New("no server is selected")
+		return nil, say.New("no server is selected")
 	}
 	if len(in.Policy.Rules) == 0 {
-		return nil, errors.New("no routing policy is selected")
+		return nil, say.New("no routing policy is selected")
 	}
 	// The names a policy may send a connection to are taken; a server called
 	// like one of them would change what the rules mean.
 	switch in.Server.Name {
 	case policy.Proxy, policy.Direct, policy.Reject:
-		return nil, fmt.Errorf("a server cannot be named %q", in.Server.Name)
+		return nil, say.Errorf("a server cannot be named %q", in.Server.Name)
 	}
 	proxy := Proxy(in.Server)
 	cfg := map[string]any{
@@ -135,7 +134,7 @@ func Config(in Input) ([]byte, error) {
 		cfg["rule-providers"] = providers
 	}
 	if in.LocalPort == 0 && !in.TUN {
-		return nil, errors.New("the config captures nothing: neither TUN nor a local port")
+		return nil, say.New("the config captures nothing: neither TUN nor a local port")
 	}
 	if in.LocalPort != 0 {
 		cfg["mixed-port"] = in.LocalPort

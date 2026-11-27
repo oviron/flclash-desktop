@@ -1,7 +1,7 @@
 package policy
 
 import (
-	"fmt"
+	"github.com/oviron/flclash-desktop/internal/say"
 	"net/netip"
 	"strings"
 )
@@ -41,7 +41,7 @@ func entryRule(entry, destination string) (string, error) {
 		}
 		ruleKind, known := entryKinds[kind]
 		if !known {
-			return "", fmt.Errorf("%q: unknown kind %q; use domain:, suffix:, keyword:, ip:, geosite: or geoip:", entry, kind)
+			return "", say.Errorf("%q: unknown kind %q; use domain:, suffix:, keyword:, ip:, geosite: or geoip:", entry, kind)
 		}
 		return parseRule(ruleKind + "," + value + "," + destination)
 	}
@@ -50,7 +50,7 @@ func entryRule(entry, destination string) (string, error) {
 	}
 	name := strings.TrimPrefix(strings.TrimPrefix(entry, "*"), ".")
 	if name == "" || strings.ContainsAny(name, " ,/") {
-		return "", fmt.Errorf("%q is neither a name like example.com nor a network like 10.0.0.0/8", entry)
+		return "", say.Errorf("%q is neither a name like example.com nor a network like 10.0.0.0/8", entry)
 	}
 	return parseRule("DOMAIN-SUFFIX," + name + "," + destination)
 }
@@ -76,7 +76,7 @@ func prefixOf(text string) (netip.Prefix, error) {
 func addressRule(text, destination string) (string, error) {
 	prefix, err := prefixOf(text)
 	if err != nil {
-		return "", fmt.Errorf("%q is not an address or a network like 10.0.0.0/8", text)
+		return "", say.Errorf("%q is not an address or a network like 10.0.0.0/8", text)
 	}
 	kind := "IP-CIDR"
 	if !prefix.Addr().Is4() {
@@ -89,7 +89,7 @@ func addressRule(text, destination string) (string, error) {
 func (l Lists) Text() (string, error) {
 	rest := strings.ToUpper(strings.TrimSpace(l.Rest))
 	if rest != Proxy && rest != Direct {
-		return "", fmt.Errorf("the rest goes through the server or directly, not to %q", l.Rest)
+		return "", say.Errorf("the rest goes through the server or directly, not to %q", l.Rest)
 	}
 	var b strings.Builder
 	for _, part := range []struct {
@@ -111,7 +111,7 @@ func (l Lists) Text() (string, error) {
 			n++
 			rule, err := entryRule(entry, part.destination)
 			if err != nil {
-				return "", fmt.Errorf("%s, entry %d: %w", part.name, n, err)
+				return "", say.Errorf("%s, entry %d: %w", part.name, n, err)
 			}
 			b.WriteString(rule + "\n")
 		}

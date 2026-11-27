@@ -4,8 +4,8 @@ package ingest
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"github.com/oviron/flclash-desktop/internal/say"
 	"sort"
 	"strings"
 )
@@ -33,14 +33,14 @@ func FromThrone(text string) (Server, error) {
 		if err != nil {
 			// Throne also accepts the standard alphabet here.
 			if decoded, err = base64.RawStdEncoding.DecodeString(payload); err != nil {
-				return Server{}, errors.New("the link payload is not base64")
+				return Server{}, say.New("the link payload is not base64")
 			}
 		}
 		raw = decoded
 	}
 	var top map[string]any
 	if err := json.Unmarshal(raw, &top); err != nil {
-		return Server{}, fmt.Errorf("not a Throne profile: %w", err)
+		return Server{}, say.Errorf("not a Throne profile: %w", err)
 	}
 	o := newObject("", top)
 	name := o.str("tag")
@@ -48,7 +48,7 @@ func FromThrone(text string) (Server, error) {
 	switch {
 	case o.has("protocol"):
 		if p := o.str("protocol"); p != "vless" {
-			return Server{}, fmt.Errorf("xray protocol %q is not supported", p)
+			return Server{}, say.Errorf("xray protocol %q is not supported", p)
 		}
 		proxy = xrayVless(o)
 	case o.has("type"):
@@ -58,16 +58,16 @@ func FromThrone(text string) (Server, error) {
 		case "hysteria2":
 			proxy = singHysteria2(o)
 		default:
-			return Server{}, fmt.Errorf("profile type %q is not supported", t)
+			return Server{}, say.Errorf("profile type %q is not supported", t)
 		}
 	default:
-		return Server{}, errors.New("not a Throne profile: neither `protocol` nor `type`")
+		return Server{}, say.New("not a Throne profile: neither `protocol` nor `type`")
 	}
 	if err := o.finish(); err != nil {
 		return Server{}, err
 	}
 	if name == "" {
-		return Server{}, errors.New("the profile has no name (`tag`)")
+		return Server{}, say.New("the profile has no name (`tag`)")
 	}
 	return Server{Name: name, Proxy: proxy}, nil
 }
@@ -104,7 +104,7 @@ func xrayVless(o *object) map[string]any {
 		name := t.str("fingerprint")
 		mapped, ok := fingerprints[name]
 		if !ok {
-			t.fail("fingerprint", fmt.Sprintf("fingerprint %q has no known counterpart in the core", name))
+			t.fail("fingerprint", say.Errorf("fingerprint %q has no known counterpart in the core", name))
 		}
 		return mapped
 	}
@@ -133,12 +133,12 @@ func xrayVless(o *object) map[string]any {
 		}
 		if names := t.str("verifyPeerCertByName"); names != "" {
 			if strings.Contains(names, ",") {
-				t.fail("verifyPeerCertByName", "the core checks the certificate against one name, this profile lists several")
+				t.fail("verifyPeerCertByName", say.New("the core checks the certificate against one name, this profile lists several"))
 			}
 			p["name-cert-verify"] = names
 		}
 	default:
-		st.fail("security", fmt.Sprintf("security %q is not supported", sec))
+		st.fail("security", say.Errorf("security %q is not supported", sec))
 	}
 
 	switch network := st.str("network"); network {
@@ -151,13 +151,13 @@ func xrayVless(o *object) map[string]any {
 	case "raw", "tcp":
 		p["network"] = "tcp"
 	default:
-		st.fail("network", fmt.Sprintf("transport %q is not supported", network))
+		st.fail("network", say.Errorf("transport %q is not supported", network))
 	}
 
 	if o.has("mux") {
 		m := o.obj("mux")
 		if m.boolean("enabled") {
-			m.fail("enabled", "Mux.Cool is not in the compat core")
+			m.fail("enabled", say.New("Mux.Cool is not in the compat core"))
 		}
 		// The other keys of a mux that is off change nothing.
 		for key := range m.fields {
@@ -219,7 +219,7 @@ func xhttpOpts(x *object) map[string]any {
 			}
 			v := e.str(key)
 			if top != "" && v != top {
-				e.fail(key, fmt.Sprintf("extra.%s %q contradicts %q", key, v, top))
+				e.fail(key, say.Errorf("extra.%s %q contradicts %q", key, v, top))
 			}
 			return v
 		}
@@ -256,7 +256,7 @@ func xhttpOpts(x *object) map[string]any {
 func singTLS(o *object, p map[string]any) {
 	t := o.obj("tls")
 	if !t.boolean("enabled") {
-		t.fail("enabled", "the profile has TLS turned off")
+		t.fail("enabled", say.New("the profile has TLS turned off"))
 	}
 	p["sni"] = t.str("server_name")
 	if alpn := t.strs("alpn"); len(alpn) > 0 {
@@ -300,11 +300,11 @@ type object struct {
 	fields   map[string]any
 	read     map[string]bool
 	children []*object
-	errs     *[]string
+	errs     *[]error
 }
 
 func newObject(path string, fields map[string]any) *object {
-	return &object{path: path, fields: fields, read: map[string]bool{}, errs: &[]string{}}
+	return &object{path: path, fields: fields, read: map[string]bool{}, errs: &[]error{}}
 }
 
 func (o *object) at(key string) string {
@@ -314,8 +314,8 @@ func (o *object) at(key string) string {
 	return o.path + "." + key
 }
 
-func (o *object) fail(key, message string) {
-	*o.errs = append(*o.errs, o.at(key)+": "+message)
+func (o *object) fail(key string, message error) {
+	*o.errs = append(*o.errs, say.Errorf("%s: %w", o.at(key), message))
 }
 
 func (o *object) has(key string) bool {
@@ -336,7 +336,7 @@ func (o *object) str(key string) string {
 	}
 	s, isString := v.(string)
 	if !isString {
-		o.fail(key, "expected a string")
+		o.fail(key, say.New("expected a string"))
 	}
 	return s
 }
@@ -348,7 +348,7 @@ func (o *object) num(key string) int {
 	}
 	f, isNumber := v.(float64)
 	if !isNumber || f != float64(int(f)) {
-		o.fail(key, "expected a whole number")
+		o.fail(key, say.New("expected a whole number"))
 	}
 	return int(f)
 }
@@ -360,7 +360,7 @@ func (o *object) boolean(key string) bool {
 	}
 	b, isBool := v.(bool)
 	if !isBool {
-		o.fail(key, "expected true or false")
+		o.fail(key, say.New("expected true or false"))
 	}
 	return b
 }
@@ -377,7 +377,7 @@ func (o *object) scalar(key string) any {
 		}
 		return t
 	}
-	o.fail(key, "expected a plain value")
+	o.fail(key, say.New("expected a plain value"))
 	return nil
 }
 
@@ -388,14 +388,14 @@ func (o *object) strs(key string) []string {
 	}
 	list, isList := v.([]any)
 	if !isList {
-		o.fail(key, "expected a list")
+		o.fail(key, say.New("expected a list"))
 		return nil
 	}
 	out := make([]string, 0, len(list))
 	for _, item := range list {
 		s, isString := item.(string)
 		if !isString {
-			o.fail(key, "expected a list of strings")
+			o.fail(key, say.New("expected a list of strings"))
 			return nil
 		}
 		out = append(out, s)
@@ -407,7 +407,7 @@ func (o *object) obj(key string) *object {
 	v, ok := o.get(key)
 	fields, isObject := v.(map[string]any)
 	if !ok || !isObject {
-		o.fail(key, "is missing")
+		o.fail(key, say.New("is missing"))
 		fields = map[string]any{}
 	}
 	child := &object{path: o.at(key), fields: fields, read: map[string]bool{}, errs: o.errs}
@@ -430,14 +430,11 @@ func (o *object) finish() error {
 	var unread []string
 	o.unread(&unread)
 	sort.Strings(unread)
-	problems := append([]string{}, *o.errs...)
+	problems := append([]error{}, *o.errs...)
 	if len(unread) > 0 {
-		problems = append(problems, "unsupported fields: "+strings.Join(unread, ", "))
+		problems = append(problems, say.Errorf("unsupported fields: %s", strings.Join(unread, ", ")))
 	}
-	if len(problems) == 0 {
-		return nil
-	}
-	return errors.New(strings.Join(problems, "; "))
+	return say.Join(problems)
 }
 
 // allowed is every key a server may carry: exactly what this package writes.
@@ -474,13 +471,13 @@ var serverTypes = map[string]bool{"vless": true, "tuic": true, "hysteria2": true
 // Check refuses a server that is not in the shape this package produces.
 func Check(s Server) error {
 	if s.Name == "" {
-		return errors.New("the server has no name")
+		return say.New("the server has no name")
 	}
 	if t, _ := s.Proxy["type"].(string); !serverTypes[t] {
-		return fmt.Errorf("server type %q is not allowed", s.Proxy["type"])
+		return say.Errorf("server type %q is not allowed", s.Proxy["type"])
 	}
 	if host, _ := s.Proxy["server"].(string); host == "" {
-		return errors.New("the server has no address")
+		return say.New("the server has no address")
 	}
 	return checkKeys("", s.Proxy, allowed)
 }
@@ -489,13 +486,13 @@ func checkKeys(path string, got, want map[string]any) error {
 	for key, value := range got {
 		nested, known := want[key]
 		if !known {
-			return fmt.Errorf("server field %q is not allowed", path+key)
+			return say.Errorf("server field %q is not allowed", path+key)
 		}
 		switch v := value.(type) {
 		case map[string]any:
 			sub, isObject := nested.(map[string]any)
 			if !isObject {
-				return fmt.Errorf("server field %q must be a plain value", path+key)
+				return say.Errorf("server field %q must be a plain value", path+key)
 			}
 			if err := checkKeys(path+key+".", v, sub); err != nil {
 				return err
@@ -503,15 +500,15 @@ func checkKeys(path string, got, want map[string]any) error {
 		case []any:
 			for _, item := range v {
 				if _, isString := item.(string); !isString {
-					return fmt.Errorf("server field %q must be a list of strings", path+key)
+					return say.Errorf("server field %q must be a list of strings", path+key)
 				}
 			}
 		case []string, string, bool, int, float64:
 			if nested != nil {
-				return fmt.Errorf("server field %q must be an object", path+key)
+				return say.Errorf("server field %q must be an object", path+key)
 			}
 		default:
-			return fmt.Errorf("server field %q has an unexpected value", path+key)
+			return say.Errorf("server field %q has an unexpected value", path+key)
 		}
 	}
 	return nil

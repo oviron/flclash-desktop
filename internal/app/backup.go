@@ -2,10 +2,9 @@ package app
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"os"
 
+	"github.com/oviron/flclash-desktop/internal/say"
 	"github.com/oviron/flclash-desktop/internal/store"
 )
 
@@ -51,14 +50,14 @@ func WriteBackup(st *store.Store, path string) error {
 // meanwhile, and a backup that does not read whole changes nothing.
 func ReadBackup(st *store.Store, path string) error {
 	if status, err := Status(); err == nil && (status.Running || status.Blocked) {
-		return errors.New("turn FlClash off first: a restore replaces the server that runs")
+		return say.New("turn FlClash off first: a restore replaces the server that runs")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
 	if info.Size() > 16<<20 {
-		return errors.New("the file is too large to be a backup")
+		return say.New("the file is too large to be a backup")
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -66,20 +65,20 @@ func ReadBackup(st *store.Store, path string) error {
 	}
 	var doc backup
 	if err := json.Unmarshal(raw, &doc); err != nil || doc.Format == 0 {
-		return errors.New("the file is not a FlClash backup")
+		return say.New("the file is not a FlClash backup")
 	}
 	if doc.Format != 1 {
-		return fmt.Errorf("the backup is of format %d, which this version does not read", doc.Format)
+		return say.Errorf("the backup is of format %d, which this version does not read", doc.Format)
 	}
 	// Everything is checked before anything is written.
 	for _, entry := range doc.State.Servers {
 		if err := checkStored(entry); err != nil {
-			return fmt.Errorf("the backup holds a server that cannot be used: %w", err)
+			return say.Errorf("the backup holds a server that cannot be used: %w", err)
 		}
 	}
 	for name, text := range doc.Policies {
 		if err := st.CheckPolicy(name, text); err != nil {
-			return fmt.Errorf("the backup holds a policy that cannot be used: %w", err)
+			return say.Errorf("the backup holds a policy that cannot be used: %w", err)
 		}
 	}
 	current, err := st.PolicyNames()
