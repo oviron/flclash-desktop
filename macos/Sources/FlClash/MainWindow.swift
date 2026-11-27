@@ -111,6 +111,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
             let menu = NSMenu()
             menu.addItem(withTitle: L("Import from Clipboard"), action: #selector(importFromClipboard(_:)), keyEquivalent: "").target = self
             menu.addItem(withTitle: L("Import from File…"), action: #selector(importFromFile(_:)), keyEquivalent: "").target = self
+            menu.addItem(.separator())
+            menu.addItem(withTitle: L("Add a Subscription…"), action: #selector(addSubscription(_:)), keyEquivalent: "").target = self
             item.menu = menu
             item.isHidden = root.page != .servers
             return item
@@ -172,6 +174,15 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     @objc func testLatency(_ sender: Any?) {
         root.show(.servers)
         root.content.servers.measureAll()
+    }
+
+    @objc func addSubscription(_ sender: Any?) {
+        root.show(.servers)
+        root.content.servers.addSubscription()
+    }
+
+    @objc func updateSubscriptions(_ sender: Any?) {
+        Model.shared.updateAllSubscriptions()
     }
 
     @objc func importPolicy(_ sender: Any?) {

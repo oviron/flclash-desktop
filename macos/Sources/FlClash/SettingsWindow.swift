@@ -3,7 +3,7 @@ import ServiceManagement
 
 /// The few things that are set once: protection and starting at login.
 final class SettingsWindowController: NSWindowController {
-    private let protect = NSButton(checkboxWithTitle: L("Block everything that goes past the tunnel"), target: nil, action: nil)
+    private let protect = NSButton(checkboxWithTitle: L("Let nothing go past FlClash"), target: nil, action: nil)
     private let login = NSButton(checkboxWithTitle: L("Launch at Login"), target: nil, action: nil)
     private let port = NSTextField()
     private let autoConnect = NSButton(checkboxWithTitle: L("Connect when FlClash starts"), target: nil, action: nil)
@@ -25,7 +25,7 @@ final class SettingsWindowController: NSWindowController {
         autoConnect.target = self
         autoConnect.action = #selector(autoConnectChanged)
 
-        let about = NSTextField(wrappingLabelWithString: L("While the tunnel is on, nothing leaves this Mac past it, IPv6 included. If the tunnel breaks, the internet stays off until it is back or you turn it off. The local network always works."))
+        let about = NSTextField(wrappingLabelWithString: L("In TUN mode nothing leaves this Mac past the tunnel, IPv6 included. If the connection breaks, the internet stays off until it is back or you turn it off; in System Proxy mode that holds for the apps that follow the system proxy. The local network always works."))
         about.font = .systemFont(ofSize: 11)
         about.textColor = .secondaryLabelColor
         // The note sits under the title of its checkbox, not under the box.

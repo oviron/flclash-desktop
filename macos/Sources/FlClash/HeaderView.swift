@@ -208,9 +208,13 @@ final class HeaderView: NSView {
         let server = status.running ? status.server : (model.selectedServer?.name ?? "")
         let policy = status.running ? status.policy : model.view.policy
         if status.blocked {
-            detail.stringValue = status.server.isEmpty
-                ? L("The tunnel is down")
-                : String(format: L("The tunnel through %@ is down"), status.server)
+            if status.mode == "system" {
+                detail.stringValue = status.server.isEmpty ? L("The core stopped") : String(format: L("The connection through %@ stopped"), status.server)
+            } else {
+                detail.stringValue = status.server.isEmpty
+                    ? L("The tunnel is down")
+                    : String(format: L("The tunnel through %@ is down"), status.server)
+            }
         } else if server.isEmpty {
             detail.stringValue = L("Choose a server to connect")
         } else {
@@ -245,7 +249,9 @@ final class HeaderView: NSView {
             noticeButton.isHidden = false
             noticeRow.isHidden = false
         } else if status.blocked {
-            notice.stringValue = L("Protection lets nothing out past the tunnel, so the internet is off until the tunnel is back. The local network works.")
+            notice.stringValue = status.mode == "system"
+                ? L("The system still points at FlClash, so apps that follow the system proxy are offline until it is back. They do not go out directly.")
+                : L("Protection lets nothing out past the tunnel, so the internet is off until the tunnel is back. The local network works.")
             noticeButton.title = L("Unblock")
             noticeButton.isEnabled = !model.busy
             noticeButton.isHidden = false

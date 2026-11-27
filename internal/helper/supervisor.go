@@ -114,20 +114,31 @@ func (s *Supervisor) init() {
 	if s.HomeDir == "" {
 		s.HomeDir = StateDir()
 	}
-	// A helper that died in the system mode left the system pointing at a
-	// port nobody listens on; put back what was there.
-	s.clearProxy()
-	if s.Guard == nil {
-		return
+	// What is found at start was left by a helper that died while something
+	// ran. What protection held stays held: the person turned it on and
+	// nothing took it off. The rest is put back.
+	if s.Guard != nil {
+		if s.Guard.Holding() {
+			log.Printf("a full guard is in place from before: staying blocked until told otherwise")
+			s.status = Status{Blocked: true, Mode: ModeTUN, Guard: GuardFull}
+		} else if err := s.Guard.Release(); err != nil {
+			log.Printf("guard: %v", err)
+		}
 	}
-	// Rules found at start were left by a helper that died with a tunnel up.
-	// A full guard stays: the person turned it on and nothing took it off.
-	if s.Guard.Holding() {
-		log.Printf("a full guard is in place from before: staying blocked until told otherwise")
-		s.status = Status{Blocked: true, Guard: GuardFull}
-	} else if err := s.Guard.Release(); err != nil {
-		log.Printf("guard: %v", err)
+	if s.SystemProxy != nil {
+		if _, err := os.Stat(s.keepPath()); err == nil && !s.status.Blocked {
+			log.Printf("the system proxy is kept from before: staying blocked until told otherwise")
+			s.status = Status{Blocked: true, Mode: ModeSystem}
+		} else {
+			s.clearProxy()
+		}
 	}
+}
+
+// keepPath is a mark that the system proxy is to stay set when the core is
+// gone. It is a file so that a helper that starts anew knows it too.
+func (s *Supervisor) keepPath() string {
+	return filepath.Join(s.HomeDir, "system-proxy.keep")
 }
 
 func (s *Supervisor) handle(conn net.Conn) {
@@ -283,8 +294,18 @@ func (s *Supervisor) run(req Request) error {
 			s.giveUp()
 			return fmt.Errorf("the system proxy was not set: %w", err)
 		}
+		if req.Protect {
+			_ = os.WriteFile(s.keepPath(), nil, 0o600)
+		} else {
+			_ = os.Remove(s.keepPath())
+		}
 	} else {
 		s.clearProxy()
+	}
+	if !tunnel {
+		// A guard that held the host closed after a tunnel died has no place
+		// in a proxy mode: it would cut this core off as well.
+		s.release()
 	}
 
 	since := s.status.Since
@@ -305,6 +326,7 @@ func (s *Supervisor) clearProxy() {
 	if s.SystemProxy == nil {
 		return
 	}
+	_ = os.Remove(s.keepPath())
 	if err := s.SystemProxy.Clear(); err != nil {
 		log.Printf("system proxy: %v", err)
 	}
@@ -314,11 +336,11 @@ func (s *Supervisor) clearProxy() {
 // stays: a failed try to reconnect must not open what was closed.
 func (s *Supervisor) giveUp() {
 	s.halt()
-	s.clearProxy()
-	if s.status.Blocked {
-		s.status = Status{Blocked: true, Guard: GuardFull, Server: s.status.Server, Policy: s.status.Policy}
+	if was := s.status; was.Blocked {
+		s.status = Status{Blocked: true, Mode: was.Mode, Port: was.Port, Guard: was.Guard, Server: was.Server, Policy: was.Policy}
 		return
 	}
+	s.clearProxy()
 	s.release()
 	s.status = Status{}
 }
@@ -445,20 +467,32 @@ func (s *Supervisor) coreExited(cmd *exec.Cmd) {
 		return
 	}
 	s.core, s.toCore, s.replies = nil, nil, nil
-	if s.Guard == nil || s.status.Guard != GuardFull {
+	was := s.status
+	guarded := s.Guard != nil && was.Guard == GuardFull
+	proxied := s.SystemProxy != nil && was.Mode == ModeSystem && s.last.Protect
+	if !guarded && !proxied {
 		// Nothing was promised: it is off, and so is what came with it.
 		s.release()
 		s.clearProxy()
 		s.status = Status{}
 		return
 	}
-	// The device is gone and its name may go to someone else: keep the rules
-	// without it. Nothing leaves until the core is back or the person says so.
-	if err := s.Guard.Engage("", s.CoreGID, true); err != nil {
-		log.Printf("guard: %v", err)
+	blocked := Status{Blocked: true, Mode: was.Mode, Port: was.Port, Server: s.last.Server.Name, Policy: s.last.Policy}
+	if guarded {
+		// The device is gone and its name may go to someone else: keep the
+		// rules without it. Nothing leaves until the core is back or the
+		// person says so.
+		if err := s.Guard.Engage("", s.CoreGID, true); err != nil {
+			log.Printf("guard: %v", err)
+		}
+		blocked.Guard = GuardFull
+		log.Printf("the core died under a full guard: blocked, trying to bring it back")
+	} else {
+		// The system stays pointed at the port: programs that follow the
+		// setting stop, instead of going out directly without a word.
+		log.Printf("the core died in the system mode: the system proxy stays, trying to bring the core back")
 	}
-	log.Printf("the core died under a full guard: blocked, trying to bring it back")
-	s.status = Status{Blocked: true, Guard: GuardFull, Server: s.last.Server.Name, Policy: s.last.Policy}
+	s.status = blocked
 	go s.recover(s.orders)
 }
 

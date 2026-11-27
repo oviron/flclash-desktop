@@ -39,7 +39,7 @@ func StateDir() string {
 // Version says which requests the installed helper understands. Raise it
 // whenever the helper or the core it runs has to be reinstalled for the app to
 // work: a new rule type, a new server field, a change of this protocol.
-const Version = 7
+const Version = 8
 
 // Operations of Request.Op.
 const (
@@ -143,8 +143,11 @@ type Request struct {
 	// Port is the loopback port for HTTP and SOCKS. The proxy modes need one;
 	// with the tunnel it is an extra door, and zero leaves it shut.
 	Port int `json:"port,omitempty"`
-	// Protect asks for the full guard: nothing leaves past the tunnel, also
-	// when the core dies. Without it only IPv6 is closed while the tunnel is up.
+	// Protect asks that nothing go past the core, also when the core dies.
+	// With the tunnel that is the full guard; without Protect only IPv6 is
+	// closed while the tunnel is up. In the system mode it means the system
+	// proxy stays set when the core dies, so that programs stop rather than
+	// go out directly.
 	Protect bool `json:"protect,omitempty"`
 }
 
@@ -166,8 +169,10 @@ type Status struct {
 	Guard string `json:"guard,omitempty"`
 	// GuardProblem says why the guard that was asked for is not on.
 	GuardProblem string `json:"guard_problem,omitempty"`
-	// Blocked: the core is gone and the full guard holds, so nothing leaves
-	// the host but local traffic, until the tunnel is back or it is turned off.
+	// Blocked: the core is gone and what Protect asked for holds: the full
+	// guard, so that nothing leaves the host but local traffic, or the system
+	// proxy, so that programs which follow it stay offline. It lasts until
+	// the core is back or it is turned off.
 	Blocked bool `json:"blocked,omitempty"`
 	// Version is the Version of the helper that answers; a helper from before
 	// versions existed leaves it zero.

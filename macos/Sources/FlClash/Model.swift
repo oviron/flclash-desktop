@@ -33,7 +33,11 @@ final class Model {
     /// The traffic of the core, while a window watches it and something runs.
     private(set) var stats: Stats?
 
+    /// The subscriptions that are being read right now.
+    private(set) var updating: Set<String> = []
+
     private var timer: Timer?
+    private var dueTimer: Timer?
     private var statsTimer: Timer?
     private var statsPending = false
     /// The first answers came, and what the app does once at start is done.
@@ -51,6 +55,42 @@ final class Model {
         timer.tolerance = 1
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+        // Subscriptions whose time has come are read at start and then hourly.
+        let due = Timer(timeInterval: 3600, repeats: true) { [weak self] _ in self?.updateDueSubscriptions() }
+        due.tolerance = 300
+        RunLoop.main.add(due, forMode: .common)
+        dueTimer = due
+        updateDueSubscriptions()
+    }
+
+    private func updateDueSubscriptions() {
+        Engine.subscription(["op": "subUpdate", "name": ""]) { [weak self] reply in self?.take(reply, quiet: true) }
+    }
+
+    func addSubscription(name: String, address: String, then done: @escaping (ImportResult?, String?) -> Void) {
+        Engine.subscription(["op": "subAdd", "name": name, "text": address]) { [weak self] reply in
+            self?.take(reply, quiet: true)
+            done(reply.imported, reply.error)
+        }
+    }
+
+    func updateSubscription(_ name: String, then done: @escaping (String?) -> Void) {
+        guard !updating.contains(name) else { return }
+        updating.insert(name)
+        changed()
+        Engine.subscription(["op": "subUpdate", "name": name]) { [weak self] reply in
+            self?.updating.remove(name)
+            self?.take(reply, quiet: true)
+            done(reply.error)
+        }
+    }
+
+    func updateAllSubscriptions() {
+        for subscription in view.subscriptions { updateSubscription(subscription.name) { _ in } }
+    }
+
+    func removeSubscription(_ name: String) {
+        Engine.call(["op": "subRemove", "name": name]) { [weak self] reply in self?.take(reply) }
     }
 
     /// A window that shows traffic asks for the counters; without one nobody
@@ -262,7 +302,7 @@ extension TunnelStatus {
     var headline: String {
         if !installed { return L("Helper is not installed") }
         if outdated { return L("Helper needs an update") }
-        if blocked { return L("Internet is blocked") }
+        if blocked { return mode == "system" ? L("The proxy is down") : L("Internet is blocked") }
         if !running { return L("Off") }
         if !captured { return L("Not working") }
         return L("Connected")

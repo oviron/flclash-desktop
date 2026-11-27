@@ -29,6 +29,19 @@ struct EngineView: Decodable, Equatable {
     var mode = "tun"
     var port = 7890
     var autoConnect = false
+    var subscriptions: [Subscription] = []
+}
+
+/// A group of servers that is read from an address. The address itself stays
+/// in the engine: it is a secret.
+struct Subscription: Decodable, Equatable {
+    let name: String
+    let host: String
+    let updated: Int
+    let used: Int
+    let total: Int
+    let expire: Int
+    let problem: String
 }
 
 struct Connection: Decodable, Equatable {
@@ -113,6 +126,16 @@ enum Engine {
     static func measure(server: String, then done: @escaping (Reply) -> Void) {
         measuring.async {
             let reply = callSync(["op": "delay", "server": server])
+            DispatchQueue.main.async { done(reply) }
+        }
+    }
+
+    /// Reading a subscription waits for a provider; it has a line of its own too.
+    private static let fetching = DispatchQueue(label: "flclash.engine.subscriptions", qos: .utility)
+
+    static func subscription(_ request: [String: String], then done: @escaping (Reply) -> Void) {
+        fetching.async {
+            let reply = callSync(request)
             DispatchQueue.main.async { done(reply) }
         }
     }

@@ -479,15 +479,81 @@ func TestTheProxyModesTouchOnlyWhatTheyPromise(t *testing.T) {
 	}
 }
 
-func TestACoreThatDiesInTheSystemModeFreesTheSystem(t *testing.T) {
+func TestACoreThatDiesInTheSystemModeWithoutProtectFreesTheSystem(t *testing.T) {
+	s, _, p := withModes(t)
+	req := inMode(ModeSystem, 7890, 1)
+	req.Protect = false
+	if err := s.do(req); err != nil {
+		t.Fatal(err)
+	}
+	kill(s)
+	waitFor(t, "off", func() bool { return !s.Status().Running })
+	time.Sleep(60 * time.Millisecond) // a recovery, if one was started, would have run
+	if st := s.Status(); st.Blocked || st.Running || p.current() != 0 {
+		t.Fatalf("the system must not be left pointing at a dead port: %+v, %v", st, p.log)
+	}
+}
+
+func TestACoreThatDiesInTheSystemModeUnderProtectKeepsTheSystemProxy(t *testing.T) {
+	s, _, p := withModes(t)
+	s.RecoverAfter = []time.Duration{}
+	if err := s.do(inMode(ModeSystem, 7890, 1)); err != nil {
+		t.Fatal(err)
+	}
+	kill(s)
+	waitFor(t, "blocked", func() bool { return s.Status().Blocked })
+	if st := s.Status(); st.Running || st.Mode != ModeSystem || p.current() != 7890 {
+		t.Fatalf("programs must stop, not go out directly: %+v, %v", st, p.log)
+	}
+
+	// A helper that starts anew finds the mark and stays blocked.
+	again := &Supervisor{CorePath: s.CorePath, Captured: s.Captured, SystemProxy: p, HomeDir: s.HomeDir}
+	again.init()
+	if st := again.Status(); !st.Blocked || st.Mode != ModeSystem || p.current() != 7890 {
+		t.Fatalf("got %+v, %v", st, p.log)
+	}
+
+	s.Stop()
+	if st := s.Status(); st.Blocked || p.current() != 0 {
+		t.Fatalf("turning it off frees the system: %+v, %v", st, p.log)
+	}
+	fresh := &Supervisor{CorePath: s.CorePath, Captured: s.Captured, SystemProxy: p, HomeDir: s.HomeDir}
+	fresh.init()
+	if st := fresh.Status(); st.Blocked {
+		t.Fatalf("nothing is kept after it was turned off: %+v", st)
+	}
+}
+
+func TestACoreThatDiesInTheSystemModeUnderProtectIsBroughtBack(t *testing.T) {
 	s, _, p := withModes(t)
 	if err := s.do(inMode(ModeSystem, 7890, 1)); err != nil {
 		t.Fatal(err)
 	}
 	kill(s)
-	waitFor(t, "off", func() bool { return !s.Status().Running })
-	if st := s.Status(); st.Blocked || p.current() != 0 {
-		t.Fatalf("the system must not be left pointing at a dead port: %+v, %v", st, p.log)
+	waitFor(t, "the core is back", func() bool { st := s.Status(); return st.Running && !st.Blocked })
+	if st := s.Status(); st.Mode != ModeSystem || p.current() != 7890 {
+		t.Fatalf("got %+v, %v", st, p.log)
+	}
+	for _, entry := range p.log {
+		if entry == "clear" {
+			t.Fatalf("the system proxy was cleared on the way: %v", p.log)
+		}
+	}
+}
+
+func TestLeavingABlockedTunnelForAProxyModeTakesTheGuardOff(t *testing.T) {
+	s, g, p := withModes(t)
+	s.RecoverAfter = []time.Duration{}
+	if err := s.do(inMode(ModeTUN, 7890, 1)); err != nil {
+		t.Fatal(err)
+	}
+	kill(s)
+	waitFor(t, "blocked", func() bool { return s.Status().Blocked })
+	if err := s.do(inMode(ModeSystem, 7890, 2)); err != nil {
+		t.Fatal(err)
+	}
+	if st := s.Status(); !st.Running || st.Blocked || st.Guard != "" || g.on || p.current() != 7890 {
+		t.Fatalf("got %+v, %v, %v", st, g.log, p.log)
 	}
 }
 

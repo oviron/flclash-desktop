@@ -88,6 +88,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let fileMenu = NSMenu(title: L("File"))
         fileMenu.addItem(withTitle: L("Import from Clipboard"), action: #selector(MainWindowController.importFromClipboard(_:)), keyEquivalent: "V").keyEquivalentModifierMask = [.command, .shift]
         fileMenu.addItem(withTitle: L("Import from File…"), action: #selector(MainWindowController.importFromFile(_:)), keyEquivalent: "o")
+        fileMenu.addItem(withTitle: L("Add a Subscription…"), action: #selector(MainWindowController.addSubscription(_:)), keyEquivalent: "")
+        fileMenu.addItem(withTitle: L("Update Subscriptions"), action: #selector(MainWindowController.updateSubscriptions(_:)), keyEquivalent: "r")
         fileMenu.addItem(withTitle: L("Import a Policy…"), action: #selector(MainWindowController.importPolicy(_:)), keyEquivalent: "")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: L("Test Latency"), action: #selector(MainWindowController.testLatency(_:)), keyEquivalent: "t")
