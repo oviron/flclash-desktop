@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.UI;
 using Windows.UI.Text;
 
@@ -63,6 +64,28 @@ public static class Ui
             if (Find(m, key) is { } found) return found;
         return null;
     }
+    /// Puts text on the clipboard and says what went wrong, if anything. A
+    /// secret — a link with the keys of a server — stays out of the clipboard
+    /// history and off the person's other devices.
+    public static string? Copy(string text, bool secret)
+    {
+        try
+        {
+            var package = new DataPackage();
+            package.SetText(text);
+            if (secret)
+            {
+                var options = new ClipboardContentOptions { IsAllowedInHistory = false, IsRoamable = false };
+                if (!Clipboard.SetContentWithOptions(package, options)) return L.T("The clipboard is busy with another program. Try again.");
+            }
+            else Clipboard.SetContent(package);
+            // What was copied stays after the window is closed.
+            Clipboard.Flush();
+            return null;
+        }
+        catch (Exception e) { return e.Message; }
+    }
+
     public static Brush Primary => Res("TextFillColorPrimaryBrush");
     public static Brush Secondary => Res("TextFillColorSecondaryBrush");
     public static Brush Tertiary => Res("TextFillColorTertiaryBrush");

@@ -4,6 +4,7 @@ using Microsoft.Win32.SafeHandles;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using Microsoft.UI.Dispatching;
 
 namespace FlClash;
@@ -14,10 +15,13 @@ namespace FlClash;
 public sealed class Agent
 {
     readonly NamedPipeClientStream pipe;
-    readonly StreamWriter writer;
+    // Lines wait here and go out one after another on their own task: the
+    // window's thread never waits for the pipe.
+    readonly Channel<string> outbox = Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true });
     readonly object gate = new();
     readonly Dictionary<int, TaskCompletionSource<Reply>> pending = new();
     int nextId;
+    bool gone;
     DispatcherQueue? queue;
 
     public Snapshot S { get; private set; } = new();
@@ -30,10 +34,19 @@ public sealed class Agent
     /// The agent is gone: the app was quit.
     public event Action? Lost;
 
+    readonly Task writing;
+
     Agent(NamedPipeClientStream pipe)
     {
         this.pipe = pipe;
-        writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = false, NewLine = "\n" };
+        writing = Task.Run(Write);
+    }
+
+    /// Sends what is waiting and stops; for a window that only passes a wish on.
+    public void Finish(int timeoutMs)
+    {
+        outbox.Writer.TryComplete();
+        writing.Wait(timeoutMs);
     }
 
     /// The pipe of the agent of the person signed in: only they may open it.
@@ -112,6 +125,47 @@ public sealed class Agent
         thread.Start();
     }
 
+    async Task Write()
+    {
+        try
+        {
+            await foreach (var line in outbox.Reader.ReadAllAsync())
+            {
+                var bytes = Encoding.UTF8.GetBytes(line + "\n");
+                await pipe.WriteAsync(bytes);
+                await pipe.FlushAsync();
+            }
+        }
+        catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException)
+        {
+            Drop();
+        }
+    }
+
+    /// The pipe is closed or broken: nothing more goes out, and every
+    /// question still waiting is answered with the reason.
+    void Drop()
+    {
+        List<TaskCompletionSource<Reply>> waiting;
+        lock (gate)
+        {
+            if (gone) return;
+            gone = true;
+            waiting = pending.Values.ToList();
+            pending.Clear();
+        }
+        outbox.Writer.TryComplete();
+        var lost = new Reply { Error = L.T("The connection to FlClash was lost.") };
+        foreach (var w in waiting) w.TrySetResult(lost);
+    }
+
+    /// The window is closing: what it still waits for is let go.
+    public void Close()
+    {
+        Drop();
+        try { pipe.Dispose(); } catch (Exception) { }
+    }
+
     void Read()
     {
         using var reader = new StreamReader(pipe, new UTF8Encoding(false));
@@ -129,7 +183,11 @@ public sealed class Agent
         }
         catch (IOException) { }
         catch (ObjectDisposedException) { }
-        queue?.TryEnqueue(() => Lost?.Invoke());
+        catch (InvalidOperationException) { }
+        bool closing;
+        lock (gate) closing = gone;
+        Drop();
+        if (!closing) queue?.TryEnqueue(() => Lost?.Invoke());
     }
 
     void Take(AgentEvent e)
@@ -174,28 +232,15 @@ public sealed class Agent
         return s;
     }
 
-    public void Send(Message m)
-    {
-        var line = JsonSerializer.Serialize(m, Json.Default.Message);
-        lock (gate)
-        {
-            try
-            {
-                writer.Write(line);
-                writer.Write('\n');
-                writer.Flush();
-            }
-            catch (IOException) { }
-            catch (ObjectDisposedException) { }
-        }
-    }
+    public void Send(Message m) => outbox.Writer.TryWrite(JsonSerializer.Serialize(m, Json.Default.Message));
 
-    /// Sends a message and waits for its reply.
+    /// Sends a message and waits for its reply, or for the pipe to go.
     public Task<Reply> Ask(Message m)
     {
         var done = new TaskCompletionSource<Reply>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (gate)
         {
+            if (gone) return Task.FromResult(new Reply { Error = L.T("The connection to FlClash was lost.") });
             m.Id = ++nextId;
             pending[m.Id] = done;
         }

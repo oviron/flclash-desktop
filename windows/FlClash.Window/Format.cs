@@ -23,12 +23,19 @@ public static class Format
 
     public static string Rate(long bytes) => L.F("%@/s", Amount(bytes));
 
-    public static DateTime Local(long unix) => DateTimeOffset.FromUnixTimeSeconds(unix).LocalDateTime;
+    /// A moment from the agent, or nothing for a time no calendar holds:
+    /// a provider may send any number.
+    public static DateTime? Local(long unix)
+    {
+        // A day off the ends, so that the local time stays inside the calendar too.
+        if (unix < -62135596800 + 86400 || unix > 253402300799 - 86400) return null;
+        return DateTimeOffset.FromUnixTimeSeconds(unix).LocalDateTime;
+    }
 
     /// A moment: the time today, a day and a time otherwise.
-    public static string Moment(long unix)
+    public static string? Moment(long unix)
     {
-        var at = Local(unix);
+        if (Local(unix) is not { } at) return null;
         var time = at.ToString(L.Culture.DateTimeFormat.ShortTimePattern, L.Culture);
         if (at.Date == DateTime.Today) return time;
         if (at.Date == DateTime.Today.AddDays(-1)) return L.T("yesterday") + ", " + time;
@@ -36,15 +43,16 @@ public static class Format
     }
 
     /// A day, as "27 Nov 2026".
-    public static string Day(long unix) => Local(unix).ToString("d MMM yyyy", L.Culture);
+    public static string? Day(long unix) => Local(unix)?.ToString("d MMM yyyy", L.Culture);
 
     /// How long ago, as "3 hours ago".
-    public static string Ago(long unix)
+    public static string? Ago(long unix)
     {
-        var span = DateTime.Now - Local(unix);
+        if (Local(unix) is not { } at) return null;
+        var span = DateTime.Now - at;
         if (span.TotalMinutes < 60) return L.N("%d minutes ago", Math.Max(1, (int)span.TotalMinutes));
         if (span.TotalHours < 24) return L.N("%d hours ago", (int)span.TotalHours);
-        return L.N("%d days ago", (int)span.TotalDays);
+        return L.N("%d days ago", (int)Math.Min(span.TotalDays, int.MaxValue));
     }
 
     /// The name of a country in the language shown.

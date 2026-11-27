@@ -28,32 +28,49 @@ public static class QrDialog
 
     public static async Task Show(XamlRoot root, string name, string link)
     {
-        // A code is read against white, whatever the theme.
-        var plate = new Border
+        FrameworkElement picture;
+        try
         {
-            Background = new SolidColorBrush(Colors.White),
-            CornerRadius = new CornerRadius(12),
-            Padding = new Thickness(10),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Child = Code(link, 280),
-        };
+            // A code is read against white, whatever the theme.
+            picture = new Border
+            {
+                Background = new SolidColorBrush(Colors.White),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(10),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Child = Code(link, 280),
+            };
+        }
+        catch (QRCoder.Exceptions.DataTooLongException)
+        {
+            // The link is still there to be copied and passed on another way.
+            picture = Ui.Text(L.T("The link is too long for a QR code. Copy it and pass it on another way."), 14, null, null, wrap: true);
+            picture.MaxWidth = 300;
+        }
         var note = Ui.Text(L.T("The code holds the keys of this server. Show it only to devices you trust."), 12, null, Ui.Secondary, wrap: true);
         note.TextAlignment = TextAlignment.Center;
         note.MaxWidth = 300;
         note.HorizontalAlignment = HorizontalAlignment.Center;
+        var problem = Ui.Text("", 12, null, Ui.Brush(Tint.Red), wrap: true);
+        problem.MaxWidth = 300;
+        problem.HorizontalAlignment = HorizontalAlignment.Center;
+        problem.Visibility = Visibility.Collapsed;
         var dialog = new ContentDialog
         {
             XamlRoot = root,
             Title = name,
-            Content = Ui.Column(14, plate, note),
+            Content = Ui.Column(14, picture, note, problem),
             PrimaryButtonText = L.T("Copy Link"),
             CloseButtonText = L.T("Done"),
             DefaultButton = ContentDialogButton.Close,
         };
         dialog.PrimaryButtonClick += (_, e) =>
         {
-            ServersPage.Copy(link);
+            // The dialog stays: the link is copied beside the code, not instead of it.
             e.Cancel = true;
+            var error = Ui.Copy(link, secret: true);
+            problem.Text = error == null ? "" : L.T("Nothing was copied") + ": " + error;
+            problem.Visibility = error == null ? Visibility.Collapsed : Visibility.Visible;
         };
         await Ui.Show(dialog);
     }

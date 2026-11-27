@@ -162,7 +162,7 @@ public sealed class MainWindow : Window
             // The command line may have changed the lists while the window was aside.
             if (e.WindowActivationState != WindowActivationState.Deactivated) Agent.Refresh();
         };
-        Closed += (_, _) => { SavePrefs(); current.Hidden(); };
+        Closed += (_, _) => { SavePrefs(); current.Hidden(); Agent.Close(); };
         Place();
         Select(startPage ?? "servers");
     }

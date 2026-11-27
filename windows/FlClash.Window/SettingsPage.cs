@@ -3,7 +3,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Windows.Storage.Pickers;
 using Windows.System;
 using Windows.UI.Core;
 
@@ -39,7 +38,8 @@ public sealed class SettingsPage : IPage
         login = Switch();
         autoConnect = Switch();
         lan = Switch();
-        port = new() { Minimum = 1024, Maximum = 65535, Width = 110, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Hidden };
+        // The number is checked here, not clamped: a wrong one is said, not changed.
+        port = new() { Width = 110, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Hidden, ValidationMode = NumberBoxValidationMode.Disabled };
         auth = new() { Width = 190, PlaceholderText = L.T("user:password") };
         dns = new() { Width = 250 };
         hotKey = new() { MinWidth = 150 };
@@ -53,13 +53,23 @@ public sealed class SettingsPage : IPage
             var reply = await A.SetLogin(login.IsOn);
             if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(window.Content.XamlRoot, L.T("The setting was not changed"), reply.Error);
         };
-        port.ValueChanged += (_, e) =>
+        port.ValueChanged += async (_, e) =>
         {
-            if (filling || double.IsNaN(e.NewValue)) return;
-            A.SetPort((int)e.NewValue);
+            if (filling) return;
+            double v = e.NewValue;
+            if (double.IsNaN(v) || v != Math.Floor(v) || v < 1024 || v > 65535)
+            {
+                // The port in use stays, as on macOS.
+                filling = true;
+                port.Value = A.S.View.Port;
+                filling = false;
+                await Ui.Say(window.Content.XamlRoot, L.T("The setting was not changed"), L.T("The local port is a whole number from 1024 to 65535."));
+                return;
+            }
+            A.SetPort((int)v);
         };
-        Commit(auth, () => A.SetAuth(auth.Text.Trim()));
-        Commit(dns, () => A.SetDns(dns.Text.Trim()));
+        Commit(auth, A.SetAuth);
+        Commit(dns, A.SetDns);
         hotKey.Click += (_, _) => { recording = true; hotKey.Content = L.T("Press the keys…"); };
         hotKey.PreviewKeyDown += Record;
         hotKey.LostFocus += (_, _) => { recording = false; ShowHotKey(); };
@@ -67,11 +77,22 @@ public sealed class SettingsPage : IPage
 
     static ToggleSwitch Switch() => new() { OnContent = "", OffContent = "", MinWidth = 0, HorizontalAlignment = HorizontalAlignment.Right };
 
-    /// A field is taken when Enter is pressed or the focus leaves it.
-    static void Commit(TextBox box, Action action)
+    /// A field is taken when Enter is pressed or the focus leaves it: once for
+    /// what was typed, whichever comes first. What the engine then says is put
+    /// in the field again, and the next value typed is taken anew.
+    void Commit(TextBox box, Action<string> action)
     {
-        box.KeyDown += (_, e) => { if (e.Key == VirtualKey.Enter) { action(); e.Handled = true; } };
-        box.LostFocus += (_, _) => action();
+        string? sent = null;
+        void Take()
+        {
+            var value = box.Text.Trim();
+            if (value == sent) return;
+            sent = value;
+            action(value);
+        }
+        box.KeyDown += (_, e) => { if (e.Key == VirtualKey.Enter) { Take(); e.Handled = true; } };
+        box.LostFocus += (_, _) => Take();
+        box.TextChanged += (_, _) => { if (filling) sent = null; };
     }
 
     void Build()
@@ -240,25 +261,17 @@ public sealed class SettingsPage : IPage
 
     async void SaveBackup()
     {
-        var picker = new FileSavePicker { SuggestedFileName = "FlClash backup" };
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, window.Hwnd);
-        picker.FileTypeChoices.Add("JSON", new List<string> { ".json" });
-        var file = await picker.PickSaveFileAsync();
-        if (file == null) return;
-        var reply = await A.Do(new Request { Op = "backupWrite", Name = file.Path }, quiet: true);
+        if (await Files.PickSave(window, "FlClash backup", "JSON", ".json") is not { } path) return;
+        var reply = await A.Do(new Request { Op = "backupWrite", Name = path }, quiet: true);
         if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(window.Content.XamlRoot, L.T("The backup was not saved"), reply.Error);
     }
 
     async void RestoreBackup()
     {
-        var picker = new FileOpenPicker();
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, window.Hwnd);
-        picker.FileTypeFilter.Add(".json");
-        var file = await picker.PickSingleFileAsync();
-        if (file == null) return;
+        if (await Files.PickOpen(window, ".json") is not { } path) return;
         if (!await Ui.Ask(window.Content.XamlRoot, L.T("Restore from a Backup…"),
             L.T("Everything set up now — servers, subscriptions, policies, settings — is replaced by what the backup holds."), L.T("Restore"))) return;
-        var reply = await A.Do(new Request { Op = "backupRead", Name = file.Path }, quiet: true);
+        var reply = await A.Do(new Request { Op = "backupRead", Name = path }, quiet: true);
         if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(window.Content.XamlRoot, L.T("The backup was not restored"), reply.Error);
     }
 }

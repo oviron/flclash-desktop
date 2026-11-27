@@ -3,7 +3,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
-using Windows.Storage.Pickers;
 using Windows.System;
 
 namespace FlClash;
@@ -32,14 +31,8 @@ public sealed class RoutingPage : IPage
         };
         root.Drop += async (_, e) =>
         {
-            string name = "policy";
-            if (e.DataView.Contains(StandardDataFormats.StorageItems))
-            {
-                var files = await e.DataView.GetStorageItemsAsync();
-                if (files.FirstOrDefault() is { } f) name = Path.GetFileNameWithoutExtension(f.Name);
-            }
-            var text = await ServersPage.Dropped(e.DataView);
-            if (text != null) Import(text, name);
+            if (await Files.DroppedFile(e.DataView) is { } path) ImportFile(path);
+            else if (await Files.Text(e.DataView) is { } text) Import(text, "policy");
         };
     }
 
@@ -145,13 +138,14 @@ public sealed class RoutingPage : IPage
 
     public async void ImportPolicy()
     {
-        var picker = new FileOpenPicker();
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, window.Hwnd);
-        foreach (var ext in new[] { ".txt", ".list", ".conf", "*" }) picker.FileTypeFilter.Add(ext);
-        var file = await picker.PickSingleFileAsync();
-        if (file == null) return;
-        var text = await ServersPage.ReadSmall(file);
-        if (text != null) Import(text, Path.GetFileNameWithoutExtension(file.Name));
+        if (await Files.PickOpen(window, ".txt", ".list", ".conf", "*") is { } path) ImportFile(path);
+    }
+
+    async void ImportFile(string path)
+    {
+        var (text, problem) = await Files.Read(path);
+        if (text != null) Import(text, Path.GetFileNameWithoutExtension(path));
+        else await Ui.Say(root.XamlRoot, L.T("The policy was not imported"), problem ?? "");
     }
 
     /// The name a policy is kept under, in the form the engine takes.

@@ -292,7 +292,7 @@ public sealed class Header
         else
         {
             var parts = new List<string> { server };
-            if (st.Running && st.Captured && st.Since > 0) parts.Add(L.F("since %@", Format.Moment(st.Since)));
+            if (st.Running && st.Captured && st.Since > 0 && Format.Moment(st.Since) is { } since) parts.Add(L.F("since %@", since));
             if (st.Running && st.Guard == "full") parts.Add(L.T("protected"));
             detail.Text = string.Join("  ·  ", parts);
         }
@@ -410,9 +410,11 @@ public sealed class Header
     async void CopyAddress()
     {
         if (copied) return;
-        var package = new DataPackage();
-        package.SetText(addressText.Text);
-        Clipboard.SetContent(package);
+        if (Ui.Copy(addressText.Text, secret: false) is { } problem)
+        {
+            await Ui.Say(View.XamlRoot, L.T("Nothing was copied"), problem);
+            return;
+        }
         var shown = addressText.Text;
         copied = true;
         addressText.Text = L.T("Copied");

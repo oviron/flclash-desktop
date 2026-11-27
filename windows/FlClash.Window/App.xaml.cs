@@ -74,6 +74,7 @@ public partial class App : Application
         if (!first)
         {
             agent.Open(page);
+            agent.Finish(2000);
             Exit();
             return;
         }

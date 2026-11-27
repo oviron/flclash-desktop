@@ -5,7 +5,6 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
-using Windows.Storage.Pickers;
 using Windows.System;
 
 namespace FlClash;
@@ -75,8 +74,12 @@ public sealed class ServersPage : IPage
         root.Drop += async (_, e) =>
         {
             dropRing.Visibility = Visibility.Collapsed;
-            var text = await Dropped(e.DataView);
-            if (text != null) ImportText(text);
+            if (await Files.DroppedFile(e.DataView) is { } path)
+            {
+                if (Files.IsPicture(path)) ImportPicture(() => Files.Codes(path));
+                else ImportFile(path);
+            }
+            else if (await Files.Text(e.DataView) is { } text) ImportText(text);
         };
     }
 
@@ -93,34 +96,6 @@ public sealed class ServersPage : IPage
     {
         get => window.Prefs.ServerOrder;
         set { window.Prefs.ServerOrder = value; Update(true); }
-    }
-
-    /// Text or a small file dropped on the page.
-    public static async Task<string?> Dropped(DataPackageView data)
-    {
-        if (data.Contains(StandardDataFormats.StorageItems))
-        {
-            var files = await data.GetStorageItemsAsync();
-            if (files.FirstOrDefault() is StorageFile file) return await ReadSmall(file);
-        }
-        if (data.Contains(StandardDataFormats.Text))
-        {
-            var text = await data.GetTextAsync();
-            if (!string.IsNullOrWhiteSpace(text)) return text;
-        }
-        return null;
-    }
-
-    /// A profile or a rules file is small; anything large is not one.
-    public static async Task<string?> ReadSmall(StorageFile file)
-    {
-        try
-        {
-            var props = await file.GetBasicPropertiesAsync();
-            if (props.Size > 1 << 20) return null;
-            return await FileIO.ReadTextAsync(file);
-        }
-        catch (Exception) { return null; }
     }
 
     List<Server> Shown_ = new();
@@ -377,9 +352,12 @@ public sealed class ServersPage : IPage
         if (sub.Problem.Length > 0) return L.T("The last update failed");
         var parts = new List<string>();
         if (sub.Updated > 0)
-            parts.Add(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - sub.Updated < 60 ? L.T("updated just now") : L.F("updated %@", Format.Ago(sub.Updated)));
+        {
+            if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() - sub.Updated < 60) parts.Add(L.T("updated just now"));
+            else if (Format.Ago(sub.Updated) is { } ago) parts.Add(L.F("updated %@", ago));
+        }
         if (sub.Total > 0) parts.Add(L.F("%@ of %@ used", Format.Amount(sub.Used), Format.Amount(sub.Total)));
-        if (sub.Expire > 0) parts.Add(L.F("until %@", Format.Day(sub.Expire)));
+        if (sub.Expire > 0 && Format.Day(sub.Expire) is { } until) parts.Add(L.F("until %@", until));
         return string.Join("  ·  ", parts);
     }
 
@@ -401,17 +379,15 @@ public sealed class ServersPage : IPage
         menu.Items.Add(MainWindow.Item(L.T("Use This Server"), () => A.SelectServer(rows[0].Id), enabled: rows.Count == 1));
         menu.Items.Add(MainWindow.Item(L.T("Test Latency"), () => A.Measure(rows.Select(v => v.Id)), enabled: rows.Count > 0));
         menu.Items.Add(new MenuFlyoutSeparator());
-        menu.Items.Add(MainWindow.Item(L.T("Copy Link"), () => WithLink(rows, (_, link) => Copy(link)), enabled: rows.Count == 1));
+        menu.Items.Add(MainWindow.Item(L.T("Copy Link"), () => WithLink(rows, (_, link) => CopyLink(link)), enabled: rows.Count == 1));
         menu.Items.Add(MainWindow.Item(L.T("Show QR Code…"), () => WithLink(rows, (v, link) => _ = QrDialog.Show(root.XamlRoot, v.Name, link)), enabled: rows.Count == 1));
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(MainWindow.Item(L.T("Delete"), () => Delete(clicked), "Del", rows.Count > 0));
     }
 
-    public static void Copy(string text)
+    async void CopyLink(string link)
     {
-        var package = new DataPackage();
-        package.SetText(text);
-        Clipboard.SetContent(package);
+        if (Ui.Copy(link, secret: true) is { } problem) await Ui.Say(root.XamlRoot, L.T("Nothing was copied"), problem);
     }
 
     /// The link of the one server an action is about.
@@ -445,10 +421,29 @@ public sealed class ServersPage : IPage
 
     public async void ImportFromClipboard()
     {
-        var content = Clipboard.GetContent();
         string? text = null;
-        if (content.Contains(StandardDataFormats.Text)) text = await content.GetTextAsync();
-        if (string.IsNullOrWhiteSpace(text))
+        try
+        {
+            var content = Clipboard.GetContent();
+            text = await Files.Text(content);
+            // A copied picture of a QR code is a server too: a screenshot, a photo.
+            if (text == null && content.Contains(StandardDataFormats.Bitmap))
+            {
+                var picture = await content.GetBitmapAsync();
+                ImportPicture(async () =>
+                {
+                    using var stream = await picture.OpenReadAsync();
+                    return await Files.Codes(stream);
+                });
+                return;
+            }
+        }
+        catch (Exception e)
+        {
+            await Ui.Say(root.XamlRoot, L.T("The clipboard could not be read"), e.Message);
+            return;
+        }
+        if (text == null)
         {
             await Ui.Say(root.XamlRoot, L.T("The clipboard has no text"), L.T("Copy a server link first: in Throne, right-click a profile and copy it as a link."));
             return;
@@ -458,14 +453,28 @@ public sealed class ServersPage : IPage
 
     public async void ImportFromFile()
     {
-        var picker = new FileOpenPicker();
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, window.Hwnd);
-        foreach (var ext in new[] { ".txt", ".json", ".yaml", ".yml", ".conf", "*" }) picker.FileTypeFilter.Add(ext);
-        var file = await picker.PickSingleFileAsync();
-        if (file == null) return;
-        var text = await ReadSmall(file);
-        if (text == null) { await Ui.Say(root.XamlRoot, L.T("The file could not be read"), file.Name); return; }
-        ImportText(text);
+        if (await Files.PickOpen(window, ".txt", ".json", ".yaml", ".yml", ".conf", "*") is { } path) ImportFile(path);
+    }
+
+    async void ImportFile(string path)
+    {
+        var (text, problem) = await Files.Read(path);
+        if (text != null) ImportText(text);
+        else await Ui.Say(root.XamlRoot, L.T("Nothing was imported"), problem ?? "");
+    }
+
+    /// Reads the QR codes of a picture and imports what they say.
+    async void ImportPicture(Func<Task<List<string>>> read)
+    {
+        List<string> codes;
+        try { codes = await read(); }
+        catch (Exception e)
+        {
+            await Ui.Say(root.XamlRoot, L.T("The picture could not be read"), e.Message);
+            return;
+        }
+        if (codes.Count == 0) await Ui.Say(root.XamlRoot, L.T("No QR code was found in the picture"), "");
+        else ImportText(string.Join("\n", codes));
     }
 
     async void ImportText(string text)
