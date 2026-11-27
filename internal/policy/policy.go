@@ -5,6 +5,7 @@ package policy
 import (
 	"fmt"
 	"net/netip"
+	"regexp"
 	"strings"
 )
 
@@ -38,10 +39,38 @@ IP-CIDR6,fe80::/10,DIRECT
 IP-CIDR6,::1/128,DIRECT
 MATCH,PROXY
 `,
+	// Russian sites go out directly, everything else through the server: the
+	// .ru and .рф zones and the lists of Russian services. No .su: blocked
+	// sites live there too.
+	"ru-direct": `IP-CIDR,10.0.0.0/8,DIRECT
+IP-CIDR,172.16.0.0/12,DIRECT
+IP-CIDR,192.168.0.0/16,DIRECT
+IP-CIDR,169.254.0.0/16,DIRECT
+IP-CIDR,127.0.0.0/8,DIRECT
+IP-CIDR6,fc00::/7,DIRECT
+IP-CIDR6,fe80::/10,DIRECT
+IP-CIDR6,::1/128,DIRECT
+DOMAIN-SUFFIX,ru,DIRECT
+DOMAIN-SUFFIX,xn--p1ai,DIRECT
+GEOSITE,category-bank-ru,DIRECT
+GEOSITE,category-gov-ru,DIRECT
+GEOSITE,category-medicine-ru,DIRECT
+GEOSITE,category-ecommerce-ru,DIRECT
+GEOSITE,category-retail-ru,DIRECT
+GEOSITE,category-media-ru,DIRECT
+GEOSITE,category-entertainment-ru,DIRECT
+GEOSITE,category-travel-ru,DIRECT
+GEOSITE,yandex,DIRECT
+GEOSITE,mailru,DIRECT
+GEOSITE,vk,DIRECT
+GEOSITE,rutube,DIRECT
+GEOSITE,category-ru,DIRECT
+MATCH,PROXY
+`,
 }
 
 // BuiltinNames lists the built-in policies in the order to show them.
-func BuiltinNames() []string { return []string{"all", "lan-direct"} }
+func BuiltinNames() []string { return []string{"all", "lan-direct", "ru-direct"} }
 
 // Builtin returns a built-in policy.
 func Builtin(name string) (Policy, bool) {
@@ -89,6 +118,10 @@ func Parse(name, text string) (Policy, error) {
 	return p, nil
 }
 
+// listName is what a list in the catalogue may be called. It goes into a URL
+// and a file name on the privileged side, so nothing else is let through.
+var listName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+
 func parseRule(line string) (string, error) {
 	parts := strings.Split(line, ",")
 	for i := range parts {
@@ -121,6 +154,17 @@ func parseRule(line string) (string, error) {
 			return "", err
 		}
 		return kind + "," + strings.ToLower(parts[1]) + "," + t, nil
+	case "GEOSITE", "GEOIP":
+		// A list from the public catalogue of site and country lists; see
+		// compile for where they come from.
+		if len(parts) != 3 || !listName.MatchString(strings.ToLower(parts[1])) {
+			return "", fmt.Errorf("%s takes the name of a list, like category-ru, and a destination", kind)
+		}
+		t, err := target(parts[2])
+		if err != nil {
+			return "", err
+		}
+		return kind + "," + strings.ToLower(parts[1]) + "," + t, nil
 	case "IP-CIDR", "IP-CIDR6":
 		// A written no-resolve is accepted, since every address rule gets it anyway.
 		if len(parts) == 4 && strings.EqualFold(parts[3], "no-resolve") {
@@ -143,7 +187,7 @@ func parseRule(line string) (string, error) {
 		// no-resolve: a rule on an address must not cost a DNS lookup of every name.
 		return kind + "," + prefix.Masked().String() + "," + t + ",no-resolve", nil
 	}
-	return "", fmt.Errorf("rule type %q is not supported: use DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, IP-CIDR, IP-CIDR6 or MATCH", parts[0])
+	return "", fmt.Errorf("rule type %q is not supported: use DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, IP-CIDR, IP-CIDR6, GEOSITE, GEOIP or MATCH", parts[0])
 }
 
 // Check refuses rules that are not exactly what Parse produces, so that rules

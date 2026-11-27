@@ -22,6 +22,9 @@ final class Model {
 
     var selectedServer: Server? { view.servers.first { $0.id == view.selected } }
 
+    /// The helper is there and takes this app's requests.
+    var helperReady: Bool { status.installed && !status.outdated }
+
     func start() {
         refresh()
         // The helper does not push changes yet; a slow poll keeps the icon honest.
@@ -101,6 +104,7 @@ extension TunnelStatus {
     /// One line for people: what is true right now.
     var headline: String {
         if !installed { return L("Helper is not installed") }
+        if outdated { return L("Helper needs an update") }
         if !running { return L("Off") }
         if !captured { return L("Not capturing") }
         return L("Connected")

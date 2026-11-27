@@ -73,7 +73,7 @@ func TestPolicyImport(t *testing.T) {
 		t.Fatalf("got %#v, %v", p, err)
 	}
 	names, _ := s.PolicyNames()
-	if strings.Join(names, ",") != "all,lan-direct,work" {
+	if strings.Join(names, ",") != "all,lan-direct,ru-direct,work" {
 		t.Fatalf("got %v", names)
 	}
 	for name, text := range map[string]string{

@@ -92,7 +92,7 @@ final class HeaderView: NSView {
         let status = model.status
 
         let color: NSColor
-        if !status.installed || (status.running && !status.captured) {
+        if !model.helperReady || (status.running && !status.captured) {
             color = .systemOrange
         } else if status.running {
             color = .systemGreen
@@ -113,12 +113,18 @@ final class HeaderView: NSView {
         }
 
         button.title = status.running ? L("Disconnect") : L("Connect")
-        button.isEnabled = status.installed && !model.busy && (status.running || model.selectedServer != nil)
+        button.isEnabled = model.helperReady && !model.busy && (status.running || model.selectedServer != nil)
         if model.busy || installing { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
 
         if !status.installed {
             notice.stringValue = L("To capture the traffic of this Mac, FlClash needs a system helper. Installing it asks for an administrator password once.")
             noticeButton.title = L("Install Helper…")
+            noticeButton.isEnabled = !installing
+            noticeButton.isHidden = false
+            noticeRow.isHidden = false
+        } else if status.outdated {
+            notice.stringValue = L("The system helper is from another version of FlClash and has to be installed again. A tunnel that is on will stop for a moment.")
+            noticeButton.title = L("Update Helper…")
             noticeButton.isEnabled = !installing
             noticeButton.isHidden = false
             noticeRow.isHidden = false
@@ -136,7 +142,7 @@ final class HeaderView: NSView {
     @objc private func toggle() { Model.shared.toggle() }
 
     @objc private func noticeAction() {
-        if Model.shared.status.installed {
+        if Model.shared.helperReady {
             Model.shared.dismissProblem()
             return
         }

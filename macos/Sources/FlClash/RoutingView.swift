@@ -4,7 +4,7 @@ import AppKit
 final class RoutingViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
     private let table = NSTableView()
     private var rows: [String] = []
-    private let builtin: Set<String> = ["all", "lan-direct"]
+    private let builtin: Set<String> = ["all", "lan-direct", "ru-direct"]
 
     override func loadView() {
         let root = NSView()

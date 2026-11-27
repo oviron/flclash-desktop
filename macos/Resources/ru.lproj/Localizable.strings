@@ -57,3 +57,7 @@
 "Use This Policy" = "Использовать эту политику";
 "Use This Server" = "Использовать этот сервер";
 "Window" = "Окно";
+"Helper needs an update" = "Помощник нужно обновить";
+"Russia direct" = "Россия напрямую";
+"The system helper is from another version of FlClash and has to be installed again. A tunnel that is on will stop for a moment." = "Системный помощник установлен от другой версии FlClash, его нужно установить заново. Включённый туннель на мгновение остановится.";
+"Update Helper…" = "Обновить помощник…";

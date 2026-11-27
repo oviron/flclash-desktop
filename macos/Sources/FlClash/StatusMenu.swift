@@ -20,7 +20,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let symbol: String
         if Model.shared.busy {
             symbol = "arrow.triangle.2.circlepath"
-        } else if !status.installed || (status.running && !status.captured) {
+        } else if !Model.shared.helperReady || (status.running && !status.captured) {
             symbol = "exclamationmark.shield"
         } else if status.running {
             symbol = "checkmark.shield.fill"
@@ -46,7 +46,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
         let toggle = NSMenuItem(title: status.running ? L("Disconnect") : L("Connect"), action: #selector(toggle), keyEquivalent: "")
         toggle.target = self
-        toggle.isEnabled = status.installed && !model.busy && (status.running || model.selectedServer != nil)
+        toggle.isEnabled = model.helperReady && !model.busy && (status.running || model.selectedServer != nil)
         menu.addItem(toggle)
         menu.addItem(.separator())
 
@@ -110,6 +110,7 @@ func policyTitle(_ name: String) -> String {
     switch name {
     case "all": return L("Everything through the server")
     case "lan-direct": return L("Local addresses direct")
+    case "ru-direct": return L("Russia direct")
     default: return name
     }
 }

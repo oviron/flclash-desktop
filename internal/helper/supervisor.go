@@ -91,6 +91,7 @@ func (s *Supervisor) Status() Status {
 	s.reap()
 	st := s.status
 	st.Captured = st.Running && s.Captured()
+	st.Version = Version
 	return st
 }
 

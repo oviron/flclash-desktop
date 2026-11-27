@@ -22,6 +22,7 @@ struct EngineView: Decodable, Equatable {
 
 struct TunnelStatus: Decodable, Equatable {
     var installed = true
+    var outdated = false
     var running = false
     var captured = false
     var server = ""

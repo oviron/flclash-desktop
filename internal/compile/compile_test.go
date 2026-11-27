@@ -96,3 +96,33 @@ func TestAConfigMustCaptureSomething(t *testing.T) {
 		t.Fatal("a config with neither TUN nor a local port must be refused")
 	}
 }
+
+func TestListRulesBecomeRuleSets(t *testing.T) {
+	pol, err := policy.Parse("mine", "GEOSITE,category-ru,DIRECT\nGEOIP,ru,DIRECT\nDOMAIN,a.example,REJECT\nMATCH,PROXY\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := Config(Input{Server: server(t), Policy: pol, TUN: true, OS: "darwin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, want := range []string{
+		"RULE-SET,geosite-category-ru,DIRECT",
+		"RULE-SET,geoip-ru,DIRECT,no-resolve",
+		"geo/geosite/category-ru.mrs",
+		"geo/geoip/ru.mrs",
+		"./ruleset/geosite-category-ru.mrs",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the config lacks %q", want)
+		}
+	}
+	parsed, err := config.Parse(raw)
+	if err != nil {
+		t.Fatalf("the core refused the config: %v", err)
+	}
+	if len(parsed.RuleProviders) != 2 || len(parsed.Rules) != 4 {
+		t.Fatalf("got %d providers and %d rules", len(parsed.RuleProviders), len(parsed.Rules))
+	}
+}

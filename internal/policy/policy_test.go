@@ -34,7 +34,9 @@ func TestErrorsNameTheLine(t *testing.T) {
 		"DOMAIN,a.example,PROXY\n":             "line 1: the last rule must be MATCH",
 		"MATCH,PROXY\nDOMAIN,a,DIRECT\n":       "line 2: a rule after MATCH",
 		"\nDOMAIN,a.example,vpn\nMATCH,PROXY":  "line 2: unknown destination",
-		"GEOIP,RU,DIRECT\nMATCH,PROXY":         "line 1: rule type \"GEOIP\" is not supported",
+		"SCRIPT,x,DIRECT\nMATCH,PROXY":         "line 1: rule type \"SCRIPT\" is not supported",
+		"GEOSITE,../etc,DIRECT\nMATCH,PROXY":   "line 1: GEOSITE takes the name of a list",
+		"GEOIP,ru,DIRECT,extra\nMATCH,PROXY":   "line 1: GEOIP takes the name of a list",
 		"IP-CIDR,fc00::/7,DIRECT\nMATCH,PROXY": "line 1: fc00::/7 does not fit IP-CIDR",
 		"IP-CIDR,10.0.0.0,DIRECT\nMATCH,PROXY": "line 1: \"10.0.0.0\" is not a network",
 	} {
@@ -72,5 +74,19 @@ func TestCheckAcceptsOnlyWhatParseProduces(t *testing.T) {
 		if err := Check(rules); err == nil {
 			t.Errorf("%q must be refused", rules)
 		}
+	}
+}
+
+func TestListRules(t *testing.T) {
+	p, err := Parse("mine", "GEOSITE,Category-RU,direct\nGEOIP,ru,DIRECT\nMATCH,PROXY\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"GEOSITE,category-ru,DIRECT", "GEOIP,ru,DIRECT", "MATCH,PROXY"}
+	if !reflect.DeepEqual(p.Rules, want) {
+		t.Fatalf("got %#v", p.Rules)
+	}
+	if err := Check(p.Rules); err != nil {
+		t.Fatal(err)
 	}
 }

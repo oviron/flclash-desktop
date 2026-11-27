@@ -36,6 +36,11 @@ func StateDir() string {
 	return "/var/lib/flclash-desktop"
 }
 
+// Version says which requests the installed helper understands. Raise it
+// whenever the helper or the core it runs has to be reinstalled for the app to
+// work: a new rule type, a new server field, a change of this protocol.
+const Version = 2
+
 // Operations of Request.Op.
 const (
 	OpApply  = "apply"
@@ -65,6 +70,9 @@ type Status struct {
 	Policy   string    `json:"policy,omitempty"`
 	Revision int64     `json:"revision,omitempty"`
 	Since    time.Time `json:"since,omitempty"`
+	// Version is the Version of the helper that answers; a helper from before
+	// versions existed leaves it zero.
+	Version int `json:"version,omitempty"`
 }
 
 // Response answers a request. Status is set also when Error is.

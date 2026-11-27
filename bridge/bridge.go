@@ -29,12 +29,15 @@ type request struct {
 
 type status struct {
 	// Installed is false when there is no helper to ask.
-	Installed bool   `json:"installed"`
-	Running   bool   `json:"running"`
-	Captured  bool   `json:"captured"`
-	Server    string `json:"server"`
-	Policy    string `json:"policy"`
-	Since     int64  `json:"since"` // unix seconds, 0 when off
+	Installed bool `json:"installed"`
+	// Outdated: the installed helper is from another version of the app and
+	// has to be installed again before it will take this app's requests.
+	Outdated bool   `json:"outdated"`
+	Running  bool   `json:"running"`
+	Captured bool   `json:"captured"`
+	Server   string `json:"server"`
+	Policy   string `json:"policy"`
+	Since    int64  `json:"since"` // unix seconds, 0 when off
 }
 
 type reply struct {
@@ -46,6 +49,7 @@ type reply struct {
 
 func toStatus(s helper.Status, err error) *status {
 	out := &status{Installed: true, Running: s.Running, Captured: s.Captured, Server: s.Server, Policy: s.Policy}
+	out.Outdated = err == nil && s.Version != helper.Version
 	if !s.Since.IsZero() {
 		out.Since = s.Since.Unix()
 	}

@@ -4,6 +4,7 @@ package compile
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -58,7 +59,11 @@ func Config(in Input) ([]byte, error) {
 			"type":    "select",
 			"proxies": []string{in.Server.Name},
 		}},
-		"rules": in.Policy.Rules,
+	}
+	rules, providers := lists(in.Policy.Rules)
+	cfg["rules"] = rules
+	if len(providers) > 0 {
+		cfg["rule-providers"] = providers
 	}
 	if in.LocalPort == 0 && !in.TUN {
 		return nil, errors.New("the config captures nothing: neither TUN nor a local port")
@@ -108,4 +113,43 @@ func tun(cfg map[string]any, os string) {
 		"proxy-server-nameserver": []string{"system://", "https://9.9.9.9/dns-query"},
 		"direct-nameserver":       []string{"system://"},
 	}
+}
+
+// catalogue is where site and country lists come from: the lists MetaCubeX
+// builds daily from the community's domain and address data, one small binary
+// file per list.
+const catalogue = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/"
+
+// lists turns the GEOSITE and GEOIP rules of a policy into rule sets the core
+// downloads one by one, a few kilobytes each, instead of the whole databases,
+// which run to megabytes and would have to arrive before the first connection.
+func lists(rules []string) ([]string, map[string]any) {
+	out := make([]string, 0, len(rules))
+	providers := map[string]any{}
+	for _, rule := range rules {
+		parts := strings.Split(rule, ",")
+		if len(parts) != 3 || (parts[0] != "GEOSITE" && parts[0] != "GEOIP") {
+			out = append(out, rule)
+			continue
+		}
+		kind, behavior, suffix := "geosite", "domain", ""
+		if parts[0] == "GEOIP" {
+			// An address rule must not cost a DNS lookup of every name.
+			kind, behavior, suffix = "geoip", "ipcidr", ",no-resolve"
+		}
+		name := kind + "-" + parts[1]
+		providers[name] = map[string]any{
+			"type":     "http",
+			"behavior": behavior,
+			"format":   "mrs",
+			"url":      catalogue + kind + "/" + parts[1] + ".mrs",
+			"path":     "./ruleset/" + name + ".mrs",
+			"interval": 86400,
+			// Fetched through the server: the catalogue's host is not reachable
+			// from every network, and the tunnel is not up yet when this runs.
+			"proxy": policy.Proxy,
+		}
+		out = append(out, "RULE-SET,"+name+","+parts[2]+suffix)
+	}
+	return out, providers
 }
