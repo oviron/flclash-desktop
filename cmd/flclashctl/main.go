@@ -34,6 +34,10 @@ const usage = `usage:
   flclashctl mode tun | system | proxy        capture everything, set the system proxy, or only open the local port
   flclashctl port N                           the loopback port for HTTP and SOCKS
   flclashctl protect on | off                 whether traffic may leave past the tunnel, also when the core dies
+  flclashctl lan on | off                     let other devices on the local network use the port
+  flclashctl auth < FILE                      user:password other devices give (empty line: none)
+  flclashctl dns [ADDRESS]                    the resolver in TUN mode: an IP, https://… or tls://… (none: default)
+  flclashctl connections | close ID           list the open connections, or close one
   flclashctl exit                             ask through the running server what address sites see
   flclashctl delay [SERVER...]                measure servers one by one: a connection and a small request
   flclashctl helper install | uninstall       set up or remove the privileged helper (run with sudo)
@@ -87,6 +91,46 @@ func main() {
 				return errors.New("usage: flclashctl protect on | off")
 			}
 			return app.Protect(st, args[0] == "on")
+		},
+		"lan": func(st *store.Store, args []string) error {
+			if len(args) != 1 || (args[0] != "on" && args[0] != "off") {
+				return errors.New("usage: flclashctl lan on | off")
+			}
+			return app.SetLAN(st, args[0] == "on")
+		},
+		// The password is read from stdin so that it stays out of the
+		// process list and the shell history.
+		"auth": func(st *store.Store, args []string) error {
+			if len(args) != 0 {
+				return errors.New("usage: flclashctl auth < FILE (one line user:password; empty asks for none)")
+			}
+			line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+			if err != nil && !errors.Is(err, io.EOF) {
+				return err
+			}
+			return app.SetAuth(st, line)
+		},
+		"connections": func(*store.Store, []string) error {
+			stats, err := helper.ReadStats()
+			if err != nil {
+				return err
+			}
+			for _, c := range stats.Connections {
+				fmt.Printf("%s\t%s\t%s:%d\t%s\n", c.ID, c.Network, c.Host, c.Port, c.Via)
+			}
+			return nil
+		},
+		"close": func(_ *store.Store, args []string) error {
+			if len(args) != 1 {
+				return errors.New("usage: flclashctl close ID")
+			}
+			return helper.CloseConnection(args[0])
+		},
+		"dns": func(st *store.Store, args []string) error {
+			if len(args) > 1 {
+				return errors.New("usage: flclashctl dns [ADDRESS]")
+			}
+			return app.SetDNS(st, strings.Join(args, ""))
 		},
 	}
 	if os.Args[1] == "helper" {
@@ -297,7 +341,7 @@ func current(st *store.Store, args []string, command string) ([]byte, string, er
 	if err != nil {
 		return nil, "", err
 	}
-	config, err := compile.Config(compile.Input{Server: entry.Server, Policy: pol, LocalPort: *port, TUN: *tun, OS: runtime.GOOS})
+	config, err := compile.Config(compile.Input{Server: entry.Server, Policy: pol, LocalPort: *port, TUN: *tun, OS: runtime.GOOS, RemoteDNS: state.DNS})
 	summary := fmt.Sprintf("server %s, policy %s", entry.Name, pol.Name)
 	if *tun {
 		summary += ", TUN"
