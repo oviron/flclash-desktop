@@ -11,16 +11,11 @@ final class RoutingViewController: NSViewController, NSTableViewDataSource, NSTa
             self?.importPolicy(text: text, suggestedName: url?.deletingPathExtension().lastPathComponent ?? "policy")
         }
 
-        let mark = NSTableColumn(identifier: .init("mark"))
-        mark.width = 22
-        mark.minWidth = 22
-        mark.maxWidth = 22
-        table.addTableColumn(mark)
         table.addTableColumn(NSTableColumn(identifier: .init("name")))
         // A short list of things to choose from, not a sheet of data: no header.
         table.headerView = nil
         table.style = .inset
-        table.rowHeight = 46
+        table.rowHeight = 52
         table.allowsMultipleSelection = false
         table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         table.dataSource = self
@@ -74,11 +69,10 @@ final class RoutingViewController: NSViewController, NSTableViewDataSource, NSTa
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard let column = tableColumn else { return nil }
         let policy = rows[row]
         let chosen = policy.name == Model.shared.view.policy
-        if column.identifier.rawValue == "mark" { return markCell(chosen) }
 
+        let tile = IconTile(symbol: policySymbol(policy), tint: policyTint(policy))
         let title = NSTextField(labelWithString: policyTitle(policy.name))
         title.lineBreakMode = .byTruncatingTail
         if chosen { title.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold) }
@@ -90,14 +84,29 @@ final class RoutingViewController: NSViewController, NSTableViewDataSource, NSTa
         lines.orientation = .vertical
         lines.alignment = .leading
         lines.spacing = 2
-        lines.translatesAutoresizingMaskIntoConstraints = false
+        for label in [title, about] { label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
+
+        let check = NSImageView()
+        if chosen {
+            check.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: L("Selected"))
+            check.symbolConfiguration = .init(pointSize: 16, weight: .medium)
+            check.contentTintColor = .controlAccentColor
+        }
+        check.setContentHuggingPriority(.required, for: .horizontal)
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.init(1), for: .horizontal)
+        let line = NSStackView(views: [tile, lines, spacer, check])
+        line.orientation = .horizontal
+        line.alignment = .centerY
+        line.spacing = 12
+        line.translatesAutoresizingMaskIntoConstraints = false
         let cell = NSTableCellView()
-        cell.addSubview(lines)
+        cell.addSubview(line)
         cell.textField = title
         NSLayoutConstraint.activate([
-            lines.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-            lines.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -2),
-            lines.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            line.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
+            line.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -10),
+            line.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
         ])
         return cell
     }
@@ -174,5 +183,54 @@ func policyAbout(_ policy: Policy) -> String {
     case "lan-direct": return L("The home network and local addresses go directly, the rest through the server.")
     case "ru-direct": return L("Russian sites go directly, the rest through the server.")
     default: return String.localizedStringWithFormat(L("Imported, %d rules"), policy.rules)
+    }
+}
+
+/// The picture of a policy.
+func policySymbol(_ policy: Policy) -> String {
+    switch policy.name {
+    case "all": return "globe"
+    case "lan-direct": return "house.fill"
+    case "ru-direct": return "arrow.triangle.branch"
+    default: return "doc.text.fill"
+    }
+}
+
+func policyTint(_ policy: Policy) -> NSColor {
+    switch policy.name {
+    case "all": return .systemBlue
+    case "lan-direct": return .systemTeal
+    case "ru-direct": return .systemIndigo
+    default: return .systemGray
+    }
+}
+
+/// A symbol on a rounded square of its colour, the way System Settings draws
+/// the things one chooses between.
+final class IconTile: NSView {
+    private let tint: NSColor
+
+    init(symbol: String, tint: NSColor, side: CGFloat = 30) {
+        self.tint = tint
+        super.init(frame: .zero)
+        let image = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) ?? NSImage())
+        image.symbolConfiguration = .init(pointSize: side * 0.47, weight: .semibold)
+        image.contentTintColor = .white
+        image.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(image)
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: side),
+            heightAnchor.constraint(equalToConstant: side),
+            image.centerXAnchor.constraint(equalTo: centerXAnchor),
+            image.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let shape = NSBezierPath(roundedRect: bounds, xRadius: bounds.width * 0.26, yRadius: bounds.width * 0.26)
+        NSGradient(starting: tint.blended(withFraction: 0.18, of: .white) ?? tint, ending: tint)?.draw(in: shape, angle: -90)
     }
 }

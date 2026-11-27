@@ -2,6 +2,7 @@ import AppKit
 
 private extension NSToolbarItem.Identifier {
     static let measure = NSToolbarItem.Identifier("measure")
+    static let order = NSToolbarItem.Identifier("order")
     static let addServers = NSToolbarItem.Identifier("addServers")
     static let addPolicy = NSToolbarItem.Identifier("addPolicy")
     static let search = NSToolbarItem.Identifier("search")
@@ -11,7 +12,7 @@ private extension NSToolbarItem.Identifier {
 ///
 /// What the menus and the toolbar do goes through here, so it works wherever
 /// the keyboard focus is.
-final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearchFieldDelegate {
+final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearchFieldDelegate, NSMenuDelegate {
     private let root = RootSplitViewController()
     private var searchItem: NSSearchToolbarItem?
 
@@ -22,7 +23,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
             backing: .buffered, defer: false
         )
         window.toolbarStyle = .unified
-        window.minSize = NSSize(width: 640, height: 400)
+        window.minSize = NSSize(width: 780, height: 480)
         window.isReleasedWhenClosed = false
         window.contentViewController = root
         super.init(window: window)
@@ -34,7 +35,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
 
         // The size is set last: taking the content and the toolbar resizes the
         // window, and that must not be remembered as the person's choice.
-        window.setContentSize(NSSize(width: 860, height: 540))
+        window.setContentSize(NSSize(width: 920, height: 600))
         window.center()
         window.setFrameAutosaveName("FlClashMainWindow")
 
@@ -73,7 +74,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
         }
         for item in window.toolbar?.items ?? [] {
             switch item.itemIdentifier {
-            case .measure, .addServers: item.isHidden = page != .servers
+            case .measure, .order, .addServers: item.isHidden = page != .servers
             case .search: item.isHidden = page == .routing
             case .addPolicy: item.isHidden = page != .routing
             default: break
@@ -84,7 +85,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     // MARK: Toolbar
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.sidebarTrackingSeparator, .flexibleSpace, .measure, .addServers, .addPolicy, .search]
+        [.sidebarTrackingSeparator, .flexibleSpace, .order, .measure, .addServers, .addPolicy, .search]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -93,6 +94,16 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         switch id {
+        case .order:
+            let item = NSMenuToolbarItem(itemIdentifier: id)
+            item.image = NSImage(systemSymbolName: "arrow.up.arrow.down", accessibilityDescription: L("Order"))
+            item.label = L("Order")
+            item.toolTip = L("Order")
+            let menu = NSMenu()
+            menu.delegate = self
+            item.menu = menu
+            item.isHidden = root.page != .servers
+            return item
         case .measure:
             let item = NSToolbarItem(itemIdentifier: id)
             item.image = NSImage(systemSymbolName: "speedometer", accessibilityDescription: L("Test Latency"))
@@ -169,6 +180,23 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     @objc func importFromFile(_ sender: Any?) {
         root.show(.servers)
         root.content.servers.importFromFile()
+    }
+
+    /// The order menu shows which order is in effect.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        for order in ServersViewController.Order.allCases {
+            let item = menu.addItem(withTitle: order.title, action: #selector(pickOrder(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = order.rawValue
+            item.state = order == root.content.servers.order ? .on : .off
+        }
+    }
+
+    @objc private func pickOrder(_ sender: NSMenuItem) {
+        if let raw = sender.representedObject as? String, let order = ServersViewController.Order(rawValue: raw) {
+            root.content.servers.order = order
+        }
     }
 
     @objc func testLatency(_ sender: Any?) {

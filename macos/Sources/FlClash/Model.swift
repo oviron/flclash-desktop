@@ -32,6 +32,9 @@ final class Model {
 
     /// The traffic of the core, while a window watches it and something runs.
     private(set) var stats: Stats?
+    /// The speeds of the last minute, oldest first, for the graph.
+    private(set) var history: [(down: Int, up: Int)] = []
+    static let historyLength = 60
 
     /// The subscriptions that are being read right now.
     private(set) var updating: Set<String> = []
@@ -100,6 +103,7 @@ final class Model {
         statsTimer = nil
         guard on else {
             stats = nil
+            history = []
             return
         }
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.readStats() }
@@ -113,6 +117,7 @@ final class Model {
         guard status.running else {
             if stats != nil {
                 stats = nil
+                history = []
                 NotificationCenter.default.post(name: .statsChanged, object: self)
             }
             return
@@ -124,6 +129,10 @@ final class Model {
             self.statsPending = false
             guard self.statsTimer != nil else { return }
             self.stats = reply.stats
+            if let stats = reply.stats {
+                self.history.append((stats.down, stats.up))
+                if self.history.count > Model.historyLength { self.history.removeFirst(self.history.count - Model.historyLength) }
+            }
             NotificationCenter.default.post(name: .statsChanged, object: self)
         }
     }

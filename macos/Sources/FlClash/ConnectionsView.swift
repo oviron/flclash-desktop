@@ -97,7 +97,7 @@ final class ConnectionsViewController: NSViewController, NSTableViewDataSource, 
         var numeric = true
         switch column.identifier.rawValue {
         case "via": text = connection.via; numeric = false
-        case "rule": text = connection.rule; numeric = false
+        case "rule": text = ruleTitle(connection.rule); numeric = false
         case "down": text = amount(connection.download)
         case "up": text = amount(connection.upload)
         case "age": text = age(connection.start)
@@ -108,11 +108,40 @@ final class ConnectionsViewController: NSViewController, NSTableViewDataSource, 
             numeric = false
         }
         let cell = textCell(text, secondary: column.identifier.rawValue != "host", strong: false)
+        if column.identifier.rawValue == "via" {
+            // What goes through the server, what goes past it, what is refused.
+            let label = (cell as? NSTableCellView)?.textField
+            switch connection.via {
+            case "DIRECT": label?.stringValue = L("directly")
+            case "REJECT", "REJECT-DROP":
+                label?.stringValue = L("refused")
+                label?.textColor = .systemRed
+            default: label?.textColor = .labelColor
+            }
+        }
         if numeric {
             (cell as? NSTableCellView)?.textField?.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         }
         if column.identifier.rawValue == "host" { cell.toolTip = connection.network.uppercased() + " " + connection.host + ":" + String(connection.port) }
         return cell
+    }
+
+    /// A rule the way a person would say it, not the way the core names it.
+    private func ruleTitle(_ rule: String) -> String {
+        let (kind, payload) = { () -> (String, String) in
+            let parts = rule.split(separator: ",", maxSplits: 1).map(String.init)
+            return (parts.first ?? "", parts.count > 1 ? parts[1] : "")
+        }()
+        switch kind {
+        case "Match": return L("everything else")
+        case "DomainSuffix": return "." + payload
+        case "Domain", "IPCIDR", "IPCIDR6": return payload
+        case "DomainKeyword": return "*" + payload + "*"
+        case "RuleSet":
+            let name = payload.replacingOccurrences(of: "geosite-", with: "").replacingOccurrences(of: "geoip-", with: "")
+            return String(format: L("list “%@”"), name)
+        default: return rule
+        }
     }
 
     private func age(_ start: Int) -> String {

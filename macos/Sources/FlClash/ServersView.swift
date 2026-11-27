@@ -27,26 +27,47 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         didSet { if isViewLoaded, query != oldValue { reload() } }
     }
 
+    /// The order of the servers inside a group.
+    enum Order: String, CaseIterable {
+        case added, name, latency
+
+        var title: String {
+            switch self {
+            case .added: return L("As Added")
+            case .name: return L("By Name")
+            case .latency: return L("By Latency")
+            }
+        }
+    }
+
+    var order = Order(rawValue: UserDefaults.standard.string(forKey: "serverOrder") ?? "") ?? .added {
+        didSet {
+            UserDefaults.standard.set(order.rawValue, forKey: "serverOrder")
+            if isViewLoaded { reload() }
+        }
+    }
+
     override func loadView() {
         let root = DropView()
         root.onDrop = { [weak self] text, _ in self?.importText(text) }
 
-        for (id, title, width) in [("mark", "", 22.0), ("name", L("Name"), 220.0), ("protocol", L("Protocol"), 190.0), ("delay", L("Latency"), 90.0)] {
+        // A list, not a sheet of data: no header, the order is chosen in the toolbar.
+        for (id, width) in [("mark", 26.0), ("name", 260.0), ("protocol", 220.0), ("delay", 96.0)] {
             let column = NSTableColumn(identifier: .init(id))
-            column.title = title
             column.width = width
-            column.minWidth = id == "mark" ? 22 : 60
-            if id == "mark" { column.maxWidth = 22 } else {
-                column.sortDescriptorPrototype = NSSortDescriptor(key: id, ascending: true)
-            }
+            column.minWidth = id == "mark" ? 26 : 60
+            if id == "mark" { column.maxWidth = 26 }
+            if id == "delay" { column.maxWidth = 110 }
             table.addTableColumn(column)
         }
+        table.headerView = nil
         table.style = .inset
-        table.rowSizeStyle = .medium
+        table.rowHeight = 28
+        table.intercellSpacing = NSSize(width: 8, height: 2)
         table.usesAlternatingRowBackgroundColors = false
         table.allowsMultipleSelection = true
-        // Every column gives way together, so none is pushed out of a narrow window.
-        table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+        // The name takes what is left; the rest keep their width.
+        table.columnAutoresizingStyle = .reverseSequentialColumnAutoresizingStyle
         table.dataSource = self
         table.delegate = self
         table.target = self
@@ -103,24 +124,25 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         if !needle.isEmpty {
             list = list.filter { ($0.name + " " + $0.proto + " " + $0.group).lowercased().contains(needle) }
         }
-        if let sort = table.sortDescriptors.first, let key = sort.key {
-            if key == "delay" {
-                // Measured ones by the number; no answer after them; not measured last.
-                let value: (Server) -> Int = {
-                    switch Model.shared.delays[$0.id] {
-                    case .ms(let ms): return ms
-                    case .failed: return Int.max - 1
-                    default: return Int.max
-                    }
-                }
-                list.sort { sort.ascending ? value($0) < value($1) : value($0) > value($1) }
-            } else {
-                let value: (Server) -> String = { key == "protocol" ? $0.proto : $0.name }
-                list.sort { a, b in
-                    let order = value(a).localizedStandardCompare(value(b))
-                    return sort.ascending ? order == .orderedAscending : order == .orderedDescending
+        switch order {
+        case .added:
+            break
+        case .name:
+            list.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        case .latency:
+            // Measured ones by the number; no answer after them; not measured last.
+            let value: (Server) -> Int = {
+                switch Model.shared.delays[$0.id] {
+                case .ms(let ms): return ms
+                case .failed: return Int.max - 1
+                default: return Int.max
                 }
             }
+            // The sort keeps the order of servers that are equal, so the list
+            // does not jump while results arrive.
+            list = list.enumerated().sorted { a, b in
+                value(a.element) != value(b.element) ? value(a.element) < value(b.element) : a.offset < b.offset
+            }.map(\.element)
         }
 
         // Groups get headings once there is more than one, or one is a
@@ -146,7 +168,6 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         table.reloadData()
         table.selectRowIndexes(IndexSet(rows.indices.filter { index in server(at: index).map { chosen.contains($0.id) } ?? false }), byExtendingSelection: false)
 
-        // An empty table would still draw its header line.
         table.enclosingScrollView?.isHidden = rows.isEmpty
         if all.isEmpty {
             empty.show(title: L("No servers yet"),
@@ -167,6 +188,11 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
     }
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { server(at: row) != nil }
+
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        if case .group = rows[row] { return 30 }
+        return 28
+    }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         if case .group(let name) = rows[row] { return groupCell(name) }
@@ -347,8 +373,6 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         }
     }
 
-    func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) { reload() }
-
     /// The rows an action is about: the one under a right-click when it is
     /// outside the selection, else the selection.
     private var actionRows: [Server] {
@@ -459,8 +483,8 @@ func markCell(_ chosen: Bool) -> NSView {
     let cell = NSTableCellView()
     let image = NSImageView()
     if chosen {
-        image.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: L("Selected"))
-        image.symbolConfiguration = .init(pointSize: 12, weight: .semibold)
+        image.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: L("Selected"))
+        image.symbolConfiguration = .init(pointSize: 14, weight: .medium)
         image.contentTintColor = .controlAccentColor
     }
     image.translatesAutoresizingMaskIntoConstraints = false
@@ -473,34 +497,59 @@ func markCell(_ chosen: Bool) -> NSView {
     return cell
 }
 
-/// The cell of the latency column: a number, a spinner while it is on its way,
-/// or the word that there was no answer, with the reason on hover.
+/// The colour of a delay: quick, bearable, slow.
+func delayColor(_ ms: Int) -> NSColor {
+    if ms < 250 { return .systemGreen }
+    if ms < 600 { return .systemYellow }
+    return .systemOrange
+}
+
+/// The cell of the latency column: a coloured dot and a number, a spinner
+/// while it is on its way, or the word that there was no answer, with the
+/// reason on hover.
 func delayCell(_ delay: Model.Delay?) -> NSView {
+    let cell = NSTableCellView()
+    var views: [NSView] = []
     switch delay {
     case .ms(let ms):
-        let cell = textCell(String(format: L("%d ms"), ms), secondary: true, strong: false)
-        (cell as? NSTableCellView)?.textField?.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-        return cell
+        let dot = NSImageView(image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil) ?? NSImage())
+        dot.symbolConfiguration = .init(pointSize: 6, weight: .regular)
+        dot.contentTintColor = delayColor(ms)
+        let label = NSTextField(labelWithString: String(format: L("%d ms"), ms))
+        label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        label.textColor = .secondaryLabelColor
+        cell.textField = label
+        views = [dot, label]
     case .failed(let reason):
-        let cell = textCell(L("No answer"), secondary: true, strong: false)
+        let dot = NSImageView(image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil) ?? NSImage())
+        dot.symbolConfiguration = .init(pointSize: 6, weight: .regular)
+        dot.contentTintColor = .systemRed
+        let label = NSTextField(labelWithString: L("No answer"))
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = .secondaryLabelColor
+        cell.textField = label
         cell.toolTip = reason
-        return cell
+        views = [dot, label]
     case .waiting:
-        let cell = NSTableCellView()
         let spinner = NSProgressIndicator()
         spinner.style = .spinning
         spinner.controlSize = .small
-        spinner.translatesAutoresizingMaskIntoConstraints = false
-        cell.addSubview(spinner)
-        NSLayoutConstraint.activate([
-            spinner.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-            spinner.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        ])
         spinner.startAnimation(nil)
-        return cell
+        views = [spinner]
     case nil:
-        return NSTableCellView()
+        return cell
     }
+    let line = NSStackView(views: views)
+    line.orientation = .horizontal
+    line.alignment = .centerY
+    line.spacing = 6
+    line.translatesAutoresizingMaskIntoConstraints = false
+    cell.addSubview(line)
+    NSLayoutConstraint.activate([
+        line.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+        line.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+    ])
+    return cell
 }
 
 /// A one-line text cell; the table recolours it on a selected row.
