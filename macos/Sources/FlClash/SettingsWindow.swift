@@ -202,7 +202,7 @@ final class SettingsWindowController: NSWindowController {
         auth.isEnabled = Model.shared.view.lan && !Model.shared.busy
         if dns.currentEditor() == nil { dns.stringValue = Model.shared.view.dns }
         dns.isEnabled = !Model.shared.busy
-        removeHelper.isEnabled = Model.shared.status.installed && !Model.shared.status.running && !Model.shared.busy && !removing
+        removeHelper.isEnabled = Model.shared.status.installed && !Model.shared.status.running && !Model.shared.status.blocked && !Model.shared.busy && !removing
         // A value the engine refused is said once, by the window.
         if let problem = Model.shared.problem, let window, window.attachedSheet == nil, window.isKeyWindow {
             Model.shared.dismissProblem()

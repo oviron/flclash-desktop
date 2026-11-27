@@ -386,18 +386,19 @@ func (a *Agent) SetMode(mode string, reply func(bridge.Reply)) {
 	}()
 }
 
-// removeHelper removes the helper once nothing runs: removing it stops a
-// tunnel, and puts back the system proxy the app may have set. Not while the
-// helper is being installed.
-func (a *Agent) removeHelper() error {
+// helperWork installs or removes the helper, one at a time: both change the
+// same service and files. ready, when set, may refuse before the prompt.
+func (a *Agent) helperWork(work func() error, ready func() error) error {
 	a.installMu.Lock()
 	if a.installing {
 		a.installMu.Unlock()
-		return nil
+		return errors.New(say.In(a.Model.Lang, say.New("the helper is being installed or removed; wait for it to finish")))
 	}
-	if a.Model.Snapshot().Status.Running {
-		a.installMu.Unlock()
-		return errors.New(say.In(a.Model.Lang, say.New("turn the connection off before removing the helper")))
+	if ready != nil {
+		if err := ready(); err != nil {
+			a.installMu.Unlock()
+			return err
+		}
 	}
 	a.installing = true
 	a.installMu.Unlock()
@@ -406,12 +407,24 @@ func (a *Agent) removeHelper() error {
 		a.installing = false
 		a.installMu.Unlock()
 	}()
-	err := a.RemoveHelper()
+	err := work()
 	a.Model.Refresh()
 	if errors.Is(err, ErrCancelled) {
 		return nil
 	}
 	return err
+}
+
+// removeHelper removes the helper once nothing runs and no guard holds:
+// removing it stops a tunnel, lifts the guard, and puts back the system
+// proxy the app may have set.
+func (a *Agent) removeHelper() error {
+	return a.helperWork(a.RemoveHelper, func() error {
+		if st := a.Model.Snapshot().Status; st.Running || st.Blocked {
+			return errors.New(say.In(a.Model.Lang, say.New("turn the connection off before removing the helper")))
+		}
+		return nil
+	})
 }
 
 func (a *Agent) handle(c *client, m Message) {
@@ -491,14 +504,7 @@ func (a *Agent) handle(c *client, m Message) {
 		if refused(a.InstallHelper != nil) {
 			return
 		}
-		go func() {
-			err := a.InstallHelper()
-			model.Refresh()
-			if errors.Is(err, ErrCancelled) {
-				err = nil
-			}
-			errReply(err)
-		}()
+		go func() { errReply(a.helperWork(a.InstallHelper, nil)) }()
 	case "removeHelper":
 		if refused(a.RemoveHelper != nil) {
 			return

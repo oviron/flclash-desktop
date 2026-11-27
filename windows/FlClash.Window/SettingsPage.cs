@@ -195,7 +195,7 @@ public sealed class SettingsPage : IPage
         if (auth.FocusState == FocusState.Unfocused) auth.Text = s.View.Auth;
         auth.IsEnabled = s.View.Lan && !s.Busy;
         if (dns.FocusState == FocusState.Unfocused) dns.Text = s.View.Dns;
-        removeHelper.IsEnabled = s.Status.Installed && !s.Status.Running && !s.Busy && !removing;
+        removeHelper.IsEnabled = s.Status.Installed && !s.Status.Running && !s.Status.Blocked && !s.Busy && !removing;
         if (!recording) ShowHotKey();
         version.Text = string.IsNullOrEmpty(A.App.Version) ? "FlClash" : "FlClash " + A.App.Version;
         filling = false;

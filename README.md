@@ -56,7 +56,9 @@ beside it keeps the servers and settings in the `data` folder next to it, so
 the folder can be carried to another computer. That folder holds the keys of
 your servers: keep it where others cannot read it. TUN works as in the
 installed app: the first time it is turned on, on each computer, the system
-asks for an administrator and installs the helper.
+asks for an administrator and installs the helper. One FlClash runs at a
+time: while the installed app runs, a portable copy says so and does not start,
+and the other way round.
 
 The helper stays on the computer when the app is gone. To remove it, open
 Settings, System helper, and click Remove, with the connection off; do this

@@ -65,6 +65,15 @@ func main() {
 			messageBox("FlClash", say.In(language(), say.New("another program holds the address FlClash listens on")))
 			os.Exit(1)
 		}
+		// A copy from another folder, an installed one beside a portable
+		// one, keeps other data: it is not brought up in this one's place.
+		if other, err := processDir(pid); err == nil {
+			if exe, err := os.Executable(); err == nil && !strings.EqualFold(other, filepath.Dir(exe)) {
+				conn.Close()
+				messageBox("FlClash", say.In(language(), say.Errorf("FlClash is already running from %s; quit it first", other)))
+				os.Exit(1)
+			}
+		}
 		// This start has the right to bring a window forward; pass it on.
 		procAllowSetForegroundWindow.Call(uintptr(pid))
 		action := agent.Message{Action: "open", Page: *page}
@@ -310,6 +319,21 @@ func (h *host) elevated(params string, failed error) error {
 		return errors.New(say.In(h.lang, failed))
 	}
 	return nil
+}
+
+// processDir is the folder of the program a process runs.
+func processDir(pid uint32) (string, error) {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+	if err != nil {
+		return "", err
+	}
+	defer windows.CloseHandle(h)
+	buf := make([]uint16, windows.MAX_LONG_PATH)
+	size := uint32(len(buf))
+	if err := windows.QueryFullProcessImageName(h, 0, &buf[0], &size); err != nil {
+		return "", err
+	}
+	return filepath.Dir(windows.UTF16ToString(buf[:size])), nil
 }
 
 // ours says whether the other end of a pipe is a process of this user: the

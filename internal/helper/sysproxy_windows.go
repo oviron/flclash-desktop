@@ -63,9 +63,15 @@ func (w *winINet) Clear() error {
 }
 
 // userSystemProxy is the system proxy as the app itself sets it: the app runs
-// as the user, so it changes the setting directly.
+// as the user, so it changes the setting directly. What it replaced is kept
+// per computer: a portable copy that stopped short on one computer must not
+// put that one's setting on the next.
 func userSystemProxy(home string) SystemProxy {
-	return userINet{saved: filepath.Join(home, "system-proxy.json")}
+	name := "system-proxy.json"
+	if host, err := os.Hostname(); err == nil && host != "" {
+		name = "system-proxy-" + host + ".json"
+	}
+	return userINet{saved: filepath.Join(home, name)}
 }
 
 // userINet keeps what it replaced in the file saved names.

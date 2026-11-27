@@ -154,7 +154,7 @@ func TestSetModeOneInstallAtATime(t *testing.T) {
 // The helper is removed only when nothing runs: removing it would stop what
 // does without saying so.
 func TestRemoveHelper(t *testing.T) {
-	var running atomic.Bool
+	var running, blocked atomic.Bool
 	removed := 0
 	m := model.New("en")
 	m.Call = func(r bridge.Request) bridge.Reply {
@@ -162,7 +162,7 @@ func TestRemoveHelper(t *testing.T) {
 		case "snapshot":
 			return bridge.Reply{View: &app.View{}}
 		case "status":
-			return bridge.Reply{Status: &bridge.Status{Installed: true, Running: running.Load()}}
+			return bridge.Reply{Status: &bridge.Status{Installed: true, Running: running.Load(), Blocked: blocked.Load()}}
 		}
 		return bridge.Reply{}
 	}
@@ -171,7 +171,7 @@ func TestRemoveHelper(t *testing.T) {
 		t.Helper()
 		m.Refresh()
 		deadline := time.Now().Add(5 * time.Second)
-		for !m.Snapshot().Loaded || m.Snapshot().Status.Running != running.Load() {
+		for st := m.Snapshot(); !st.Loaded || st.Status.Running != running.Load() || st.Status.Blocked != blocked.Load(); st = m.Snapshot() {
 			if time.Now().After(deadline) {
 				t.Fatal("the model did not load")
 			}
@@ -184,7 +184,14 @@ func TestRemoveHelper(t *testing.T) {
 	if err := a.removeHelper(); err == nil || removed != 0 {
 		t.Fatalf("removed while running: %v, %d", err, removed)
 	}
+	// The guard holds the computer closed after the core died.
 	running.Store(false)
+	blocked.Store(true)
+	load()
+	if err := a.removeHelper(); err == nil || removed != 0 {
+		t.Fatalf("removed while the guard holds: %v, %d", err, removed)
+	}
+	blocked.Store(false)
 	load()
 	if err := a.removeHelper(); err != nil || removed != 1 {
 		t.Fatalf("not removed when off: %v, %d", err, removed)
