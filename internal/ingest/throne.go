@@ -479,7 +479,24 @@ func Check(s Server) error {
 	if host, _ := s.Proxy["server"].(string); host == "" {
 		return say.New("the server has no address")
 	}
+	if !validPort(s.Proxy["port"]) {
+		return say.Errorf("server port %v is not a port", s.Proxy["port"])
+	}
 	return checkKeys("", s.Proxy, allowed)
+}
+
+// validPort: a whole number from 1 to 65535, as JSON or this package writes it.
+func validPort(v any) bool {
+	var port float64
+	switch p := v.(type) {
+	case int:
+		port = float64(p)
+	case float64:
+		port = p
+	default:
+		return false
+	}
+	return port >= 1 && port <= 65535 && port == float64(int(port))
 }
 
 func checkKeys(path string, got, want map[string]any) error {

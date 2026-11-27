@@ -96,3 +96,8 @@ windows\build.ps1   # everything into dist\windows\FlClash; -SkipGo, -SkipWindow
 installed when the tunnel is first picked, or with `flclashctl helper install`
 as administrator. Look at a window change in the running app on Windows too, and
 keep the two apps saying and doing the same.
+
+CI (`.github/workflows/ci.yml`) runs the Go checks on Linux, macOS and Windows,
+govulncheck for the darwin and windows builds, gitleaks, and builds both apps.
+A `v*` tag runs `release.yml`: the version comes from the tag, the notes from
+the tag's section in `CHANGELOG.md`. Third-party actions are pinned by SHA.

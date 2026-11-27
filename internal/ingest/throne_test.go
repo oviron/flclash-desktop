@@ -216,3 +216,19 @@ func TestCheckRefusesWhatTheImporterNeverWrites(t *testing.T) {
 		}
 	}
 }
+
+// The privileged side refuses a port the core could not use.
+func TestCheckRefusesBadPorts(t *testing.T) {
+	for _, port := range []any{0, 65536, -1, 443.5, "443", nil} {
+		s := Server{Name: "x", Proxy: map[string]any{"type": "vless", "server": "a.example", "port": port}}
+		if Check(s) == nil {
+			t.Errorf("port %v passed", port)
+		}
+	}
+	for _, port := range []any{1, 443, 65535, float64(8443)} {
+		s := Server{Name: "x", Proxy: map[string]any{"type": "vless", "server": "a.example", "port": port}}
+		if err := Check(s); err != nil {
+			t.Errorf("port %v: %v", port, err)
+		}
+	}
+}
