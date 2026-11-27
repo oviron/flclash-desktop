@@ -9,7 +9,7 @@ godebug default=go1.20
 require (
 	github.com/metacubex/mihomo v1.19.34
 	github.com/tailscale/go-winio v0.0.0-20231025203758-c4f33415bf55
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
