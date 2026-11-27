@@ -197,7 +197,7 @@ public sealed class MainWindow : Window
 
     void Tool(Button b, string glyph, string label)
     {
-        b.Style = Ui.Style("Subtle");
+        b.Style = Ui.Style("SubtleButton");
         b.Content = Ui.Glyph(glyph, 16);
         b.Padding = new Thickness(10, 7, 10, 7);
         b.Tag = label;
@@ -319,7 +319,9 @@ public sealed class MainWindow : Window
     /// The keys of the macOS menus, with Ctrl for Command.
     void Accelerators()
     {
-        PreviewKeyDown += (_, e) =>
+        // KeyDown, not PreviewKeyDown: a control that takes the keys itself,
+        // such as the hot key recorder, gets them first.
+        KeyDown += (_, e) =>
         {
             if (Dialogs.Open) return;
             var mods = Keyboard.Modifiers;
@@ -382,7 +384,8 @@ public sealed class MainWindow : Window
     {
         if (prefs.Width <= 0 || prefs.Height <= 0 || prefs.X == int.MinValue) return;
         // The work area of the screen it was on, in pixels.
-        var monitor = MonitorFromPoint(new PointInt { X = prefs.X + 100, Y = prefs.Y + 20 }, 0 /* MONITOR_DEFAULTTONULL */);
+        var saved = new Rect { Left = prefs.X, Top = prefs.Y, Right = prefs.X + prefs.Width, Bottom = prefs.Y + prefs.Height };
+        var monitor = MonitorFromRect(ref saved, 0 /* MONITOR_DEFAULTTONULL */);
         if (monitor == IntPtr.Zero) return;
         var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
         if (!GetMonitorInfo(monitor, ref info)) return;
@@ -404,12 +407,11 @@ public sealed class MainWindow : Window
     }
 
     [StructLayout(LayoutKind.Sequential)] struct Rect { public int Left, Top, Right, Bottom; }
-    [StructLayout(LayoutKind.Sequential)] struct PointInt { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] struct MonitorInfo { public int Size; public Rect Monitor; public Rect Work; public uint Flags; }
 
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);
-    [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(PointInt p, uint flags);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromRect(ref Rect rect, uint flags);
     [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
 }

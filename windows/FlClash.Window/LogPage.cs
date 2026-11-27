@@ -18,8 +18,6 @@ public sealed class LogPage : IPage
     string raw = "";
     string query = "";
     bool read;
-    // The end of a long log is what is read; the rest only slows the page.
-    const int Lines = 2000;
 
     public LogPage(MainWindow window)
     {
@@ -62,7 +60,6 @@ public sealed class LogPage : IPage
         var needle = query.Trim().ToLowerInvariant();
         var lines = raw.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)
             .Where(line => needle.Length == 0 || line.ToLowerInvariant().Contains(needle)).ToList();
-        if (lines.Count > Lines) lines = lines.Skip(lines.Count - Lines).ToList();
         var p = new Paragraph();
         int count = 0;
         foreach (var line in lines)

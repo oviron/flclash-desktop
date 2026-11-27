@@ -49,15 +49,14 @@ public sealed class SettingsPage : IPage
             if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(L.T("The helper was not removed"), reply.Error!);
         };
         version = Ui.Text("", 12, null, Ui.Secondary);
-        protect.Click += (_, _) => { if (!filling) A.SetProtect(protect.IsChecked == true); };
-        autoConnect.Click += (_, _) => { if (!filling) A.SetAutoConnect(autoConnect.IsChecked == true); };
-        lan.Click += (_, _) => { if (!filling) A.SetLan(lan.IsChecked == true); };
-        login.Click += async (_, _) =>
+        Toggled(protect, on => A.SetProtect(on));
+        Toggled(autoConnect, on => A.SetAutoConnect(on));
+        Toggled(lan, on => A.SetLan(on));
+        Toggled(login, async on =>
         {
-            if (filling) return;
-            var reply = await A.SetLogin(login.IsChecked == true);
+            var reply = await A.SetLogin(on);
             if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(L.T("The setting was not changed"), reply.Error!);
-        };
+        });
         Commit(port, async value =>
         {
             if (!int.TryParse(value, out var v) || v < 1024 || v > 65535)
@@ -79,6 +78,14 @@ public sealed class SettingsPage : IPage
     }
 
     static CheckBox Switch() => new() { Style = Ui.Style("Switch"), HorizontalAlignment = HorizontalAlignment.Right };
+
+    /// A switch turned by the person: by a click, the keyboard or Narrator,
+    /// which toggles it without a click.
+    void Toggled(CheckBox box, Action<bool> turned)
+    {
+        box.Checked += (_, _) => { if (!filling) turned(true); };
+        box.Unchecked += (_, _) => { if (!filling) turned(false); };
+    }
 
     /// A field is taken when Enter is pressed or the focus leaves it: once for
     /// what was typed, whichever comes first. What the engine then says is put

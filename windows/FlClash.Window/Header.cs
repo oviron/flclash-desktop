@@ -193,7 +193,10 @@ public sealed class Header
             Ui.SetCorner(b, i == 0 ? new CornerRadius(6, 0, 0, 6) : i == 2 ? new CornerRadius(0, 6, 6, 0) : new CornerRadius(0));
             if (i > 0) b.Margin = new Thickness(-1, 0, 0, 0);
             b.ToolTip = tips[i];
-            b.Click += async (_, _) =>
+            // Checked, not Click: Narrator and other assistive tools toggle the
+            // button without a click.
+            b.Unchecked += (_, _) => { if (!filling) Update(); };
+            b.Checked += async (_, _) =>
             {
                 if (filling) return;
                 Update();
@@ -215,7 +218,7 @@ public sealed class Header
             if (name != A.S.View.Policy) A.SelectPolicy(name);
         };
 
-        address.Style = Ui.Style("Subtle");
+        address.Style = Ui.Style("SubtleButton");
         address.Content = Ui.Row(6, addressText, addressIcon);
         address.Padding = new Thickness(6, 4, 6, 4);
         address.VerticalAlignment = VerticalAlignment.Center;
@@ -350,7 +353,7 @@ public sealed class Header
         button.Content = st.Running ? L.T("Disconnect") : st.Blocked ? L.T("Connect Again") : L.T("Connect");
         button.IsEnabled = s.HelperReady && !s.Busy && (st.Running || s.SelectedServer != null);
         // Turning on is the thing to do here; turning off is not.
-        if (button.IsEnabled && !st.Running) button.Style = Ui.Style("Accent");
+        if (button.IsEnabled && !st.Running) button.Style = Ui.Style("AccentButton");
         else button.ClearValue(FrameworkElement.StyleProperty);
         spinner.IsActive = s.Busy || installing;
 

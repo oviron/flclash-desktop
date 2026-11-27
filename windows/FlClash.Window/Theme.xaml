@@ -21,23 +21,33 @@
 
   <!-- Buttons: one template; the styles say the colours. -->
   <ControlTemplate x:Key="ButtonTemplate" TargetType="ButtonBase">
-    <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-            BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True"
-            CornerRadius="{Binding (f:Ui.Corner), RelativeSource={RelativeSource TemplatedParent}}">
-      <ContentPresenter x:Name="c" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                        VerticalAlignment="{TemplateBinding VerticalContentAlignment}" RecognizesAccessKey="False" />
-    </Border>
+    <!-- The hover and pressed colours lie ready under the frame; the triggers
+         show one in place of the other. -->
+    <Grid SnapsToDevicePixels="True">
+      <Border x:Name="b" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding f:Ui.Corner}" />
+      <Border x:Name="hover" Background="{TemplateBinding f:Ui.Hover}" CornerRadius="{TemplateBinding f:Ui.Corner}" Visibility="Hidden" />
+      <Border x:Name="press" Background="{TemplateBinding f:Ui.Pressed}" CornerRadius="{TemplateBinding f:Ui.Corner}" Visibility="Hidden" />
+      <Border x:Name="frame" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+              CornerRadius="{TemplateBinding f:Ui.Corner}" Padding="{TemplateBinding Padding}">
+        <ContentPresenter x:Name="c" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" RecognizesAccessKey="False" />
+      </Border>
+    </Grid>
     <ControlTemplate.Triggers>
       <Trigger Property="IsMouseOver" Value="True">
-        <Setter TargetName="b" Property="Background" Value="{Binding (f:Ui.Hover), RelativeSource={RelativeSource TemplatedParent}}" />
+        <Setter TargetName="b" Property="Visibility" Value="Hidden" />
+        <Setter TargetName="hover" Property="Visibility" Value="Visible" />
       </Trigger>
       <Trigger Property="IsPressed" Value="True">
-        <Setter TargetName="b" Property="Background" Value="{Binding (f:Ui.Pressed), RelativeSource={RelativeSource TemplatedParent}}" />
+        <Setter TargetName="b" Property="Visibility" Value="Hidden" />
+        <Setter TargetName="hover" Property="Visibility" Value="Hidden" />
+        <Setter TargetName="press" Property="Visibility" Value="Visible" />
         <Setter TargetName="c" Property="Opacity" Value="0.8" />
       </Trigger>
       <Trigger Property="IsEnabled" Value="False">
+        <Setter TargetName="b" Property="Visibility" Value="Visible" />
         <Setter TargetName="b" Property="Background" Value="{DynamicResource FillDisabled}" />
-        <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Stroke}" />
+        <Setter TargetName="frame" Property="BorderBrush" Value="{DynamicResource Stroke}" />
         <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
       </Trigger>
     </ControlTemplate.Triggers>
@@ -59,7 +69,7 @@
     <Setter Property="Template" Value="{StaticResource ButtonTemplate}" />
   </Style>
 
-  <Style x:Key="Accent" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+  <Style x:Key="AccentButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
     <Setter Property="Foreground" Value="{DynamicResource OnAccent}" />
     <Setter Property="Background" Value="{DynamicResource Accent}" />
     <Setter Property="BorderBrush" Value="Transparent" />
@@ -67,7 +77,7 @@
     <Setter Property="f:Ui.Pressed" Value="{DynamicResource AccentPressed}" />
   </Style>
 
-  <Style x:Key="Subtle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+  <Style x:Key="SubtleButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderBrush" Value="Transparent" />
     <Setter Property="f:Ui.Hover" Value="{DynamicResource Subtle}" />
@@ -217,7 +227,7 @@
                             VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                             HorizontalScrollBarVisibility="{TemplateBinding HorizontalScrollBarVisibility}"
                             VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}" />
-              <TextBlock x:Name="ph" Text="{Binding (f:Ui.Placeholder), RelativeSource={RelativeSource TemplatedParent}}"
+              <TextBlock x:Name="ph" Text="{TemplateBinding f:Ui.Placeholder}"
                          Foreground="{DynamicResource Text3}" Margin="{TemplateBinding Padding}" Padding="2,0,0,0"
                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" IsHitTestVisible="False" Visibility="Collapsed"
                          TextTrimming="CharacterEllipsis" />
@@ -341,7 +351,7 @@
   <Style TargetType="ListBoxItem">
     <Setter Property="Foreground" Value="{DynamicResource Text1}" />
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="FocusVisualStyle" Value="{StaticResource Focus}" />
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="ListBoxItem">
@@ -366,7 +376,6 @@
               </MultiTrigger.Conditions>
               <Setter TargetName="b" Property="Background" Value="{DynamicResource SelectedHover}" />
             </MultiTrigger>
-            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Text2}" /></Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>

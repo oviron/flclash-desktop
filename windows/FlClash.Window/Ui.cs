@@ -208,18 +208,15 @@ public static class Ui
             data.SetData("CanIncludeInClipboardHistory", new MemoryStream(new byte[4]));
             data.SetData("CanUploadToCloudClipboard", new MemoryStream(new byte[4]));
         }
-        for (int attempt = 0; ; attempt++)
+        try
         {
-            try
-            {
-                // What was copied stays after the window is closed.
-                Clipboard.SetDataObject(data, true);
-                return null;
-            }
-            catch (COMException) when (attempt < 4) { Thread.Sleep(50); }
-            catch (COMException) { return L.T("The clipboard is busy with another program. Try again."); }
-            catch (Exception e) { return e.Message; }
+            // What was copied stays after the window is closed. WPF itself
+            // tries again while another program holds the clipboard.
+            Clipboard.SetDataObject(data, true);
+            return null;
         }
+        catch (COMException) { return L.T("The clipboard is busy with another program. Try again."); }
+        catch (Exception e) { return e.Message; }
     }
 
     public static TextBlock Text(string text, double size = 14, FontWeight? weight = null, Brush? brush = null, bool wrap = false, bool trim = true)

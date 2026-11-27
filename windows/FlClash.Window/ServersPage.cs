@@ -320,7 +320,7 @@ public sealed class ServersPage : IPage
             if (s.Updating.Contains(name)) action = Spinner.Running(16);
             else
             {
-                var refresh = new Button { Content = Ui.Glyph("", 12), Padding = new Thickness(6), Style = Ui.Style("Subtle") };
+                var refresh = new Button { Content = Ui.Glyph("", 12), Padding = new Thickness(6), Style = Ui.Style("SubtleButton") };
                 refresh.ToolTip = L.T("Update Subscription");
                 refresh.Click += (_, _) => UpdateSubscription(name);
                 action = refresh;
@@ -485,7 +485,13 @@ public sealed class ServersPage : IPage
         if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(L.F("The subscription “%@” was not updated", name), reply.Error!);
     }
 
-    static TextBox Field(string placeholder, string text = "") => Ui.Field(placeholder, text, 380);
+    // The fields take the width of the dialog, as its text does.
+    static TextBox Field(string placeholder, string text = "")
+    {
+        var box = Ui.Field(placeholder, text);
+        box.MinWidth = 380;
+        return box;
+    }
 
     /// Asks for the address of a subscription and adds it.
     public async void AddSubscription()

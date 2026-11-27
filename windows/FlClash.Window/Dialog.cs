@@ -71,7 +71,7 @@ public static class Dialogs
             Ui.Place(buttons, close, 1, 8);
         }
         var accent = primary != null && d.PrimaryIsDefault ? primary : close;
-        accent.Style = Ui.Style("Accent");
+        accent.Style = Ui.Style("AccentButton");
         accent.IsDefault = true;
         var footer = new Border { Padding = new Thickness(24), Child = buttons, CornerRadius = new CornerRadius(0, 0, 8, 8), BorderThickness = new Thickness(0, 1, 0, 0) };
         footer.SetResourceReference(Border.BackgroundProperty, "DialogFooter");
@@ -100,6 +100,8 @@ public static class Dialogs
 
         void Finish(bool result)
         {
+            // A late answer to a dialog already cancelled leaves the next one be.
+            if (done.Task.IsCompleted) return;
             host.Children.Remove(card);
             host.Visibility = Visibility.Collapsed;
             if (before is IInputElement e && e.Focusable) Keyboard.Focus(e);

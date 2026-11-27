@@ -79,8 +79,13 @@ public static class App
             return 0;
         }
 
+        // A window of lists and text draws as fast on the processor, and the
+        // graphics driver would add some 25 MB to the process.
+        System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
         var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
         app.DispatcherUnhandledException += (_, e) => Note(e.Exception);
+        // What the window awaits before the loop runs comes back to this thread too.
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(app.Dispatcher));
         app.Resources = Ui.Styles();
         if (Theme != null) Ui.Dark = Theme != "light";
         Ui.ApplyTheme();
