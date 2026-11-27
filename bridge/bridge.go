@@ -45,6 +45,8 @@ type reply struct {
 	View     *app.View         `json:"view,omitempty"`
 	Status   *status           `json:"status,omitempty"`
 	Imported *app.ImportResult `json:"imported,omitempty"`
+	// Delay answers the delay operation, in milliseconds.
+	Delay int `json:"delay,omitempty"`
 }
 
 func toStatus(s helper.Status, err error) *status {
@@ -77,6 +79,13 @@ func handle(req request) (out reply) {
 		if err != nil && out.Status.Installed {
 			return fail(err)
 		}
+		return out
+	case "delay":
+		ms, err := app.Delay(st, req.Server)
+		if err != nil {
+			return fail(err)
+		}
+		out.Delay = ms
 		return out
 	case "on":
 		s, err := app.On(st)

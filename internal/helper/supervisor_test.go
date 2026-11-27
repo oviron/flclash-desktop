@@ -25,16 +25,19 @@ func TestMain(m *testing.M) {
 		if _, err := io.ReadFull(os.Stdin, size[:]); err != nil {
 			return
 		}
-		config := make([]byte, binary.BigEndian.Uint32(size[:]))
-		if _, err := io.ReadFull(os.Stdin, config); err != nil {
+		frame := make([]byte, binary.BigEndian.Uint32(size[:]))
+		if _, err := io.ReadFull(os.Stdin, frame); err != nil {
 			return
 		}
-		reply := map[string]string{}
-		if bytes.Contains(config, []byte("refuse-me")) {
-			reply["error"] = "the core refused the config"
+		var reply CoreReply
+		if bytes.Contains(frame, []byte("refuse-me")) {
+			reply.Error = "the core refused the config"
 		}
-		if bytes.Contains(config, []byte("die-now")) {
+		if bytes.Contains(frame, []byte("die-now")) {
 			os.Exit(3)
+		}
+		if frame[0] == FrameDelay && reply.Error == "" {
+			reply.Delay = 42
 		}
 		_ = out.Encode(reply)
 	}
@@ -169,5 +172,30 @@ func TestResolversFromResolvConf(t *testing.T) {
 	want := []string{"192.168.1.1"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestDelay(t *testing.T) {
+	s := supervisor(t, true)
+	measure := Request{Op: OpDelay, Server: request("other", 0).Server}
+	if _, err := s.delay(measure); err == nil {
+		t.Fatal("with no core there is nothing to measure from")
+	}
+	if err := s.do(request("first", 10)); err != nil {
+		t.Fatal(err)
+	}
+	ms, err := s.delay(measure)
+	if err != nil || ms != 42 {
+		t.Fatalf("got %d, %v", ms, err)
+	}
+	// Measuring another server leaves the running one as it was.
+	if st := s.Status(); !st.Running || st.Server != "first" {
+		t.Fatalf("got %#v", st)
+	}
+	// A server the helper would not run is not measured either.
+	bad := measure
+	bad.Server.Proxy = map[string]any{"type": "http", "server": "a.example", "port": 80}
+	if _, err := s.delay(bad); err == nil {
+		t.Fatal("a server of a kind that is not allowed must be refused")
 	}
 }

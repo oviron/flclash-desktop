@@ -69,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         fileMenu.addItem(withTitle: L("Import from File…"), action: #selector(MainWindowController.importFromFile(_:)), keyEquivalent: "o")
         fileMenu.addItem(withTitle: L("Import a Policy…"), action: #selector(MainWindowController.importPolicy(_:)), keyEquivalent: "")
         fileMenu.addItem(.separator())
+        fileMenu.addItem(withTitle: L("Test Latency"), action: #selector(MainWindowController.testLatency(_:)), keyEquivalent: "t")
+        fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: L("Close Window"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         fileItem.submenu = fileMenu
         main.addItem(fileItem)

@@ -16,7 +16,7 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         let root = DropView()
         root.onDrop = { [weak self] text, _ in self?.importText(text) }
 
-        for (id, title, width) in [("mark", "", 22.0), ("name", L("Name"), 220.0), ("protocol", L("Protocol"), 190.0), ("group", L("Group"), 100.0)] {
+        for (id, title, width) in [("mark", "", 22.0), ("name", L("Name"), 220.0), ("protocol", L("Protocol"), 190.0), ("delay", L("Latency"), 90.0), ("group", L("Group"), 100.0)] {
             let column = NSTableColumn(identifier: .init(id))
             column.title = title
             column.width = width
@@ -40,6 +40,7 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         table.setAccessibilityLabel(L("Servers"))
         let menu = NSMenu()
         menu.addItem(withTitle: L("Use This Server"), action: #selector(useSelected(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L("Test Latency"), action: #selector(measureSelected(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: L("Delete"), action: #selector(delete(_:)), keyEquivalent: "").target = self
         table.menu = menu
@@ -90,10 +91,22 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
             list = list.filter { ($0.name + " " + $0.proto + " " + $0.group).lowercased().contains(needle) }
         }
         if let sort = table.sortDescriptors.first, let key = sort.key {
-            let value: (Server) -> String = { key == "protocol" ? $0.proto : key == "group" ? $0.group : $0.name }
-            list.sort { a, b in
-                let order = value(a).localizedStandardCompare(value(b))
-                return sort.ascending ? order == .orderedAscending : order == .orderedDescending
+            if key == "delay" {
+                // Measured ones by the number; no answer after them; not measured last.
+                let value: (Server) -> Int = {
+                    switch Model.shared.delays[$0.id] {
+                    case .ms(let ms): return ms
+                    case .failed: return Int.max - 1
+                    default: return Int.max
+                    }
+                }
+                list.sort { sort.ascending ? value($0) < value($1) : value($0) > value($1) }
+            } else {
+                let value: (Server) -> String = { key == "protocol" ? $0.proto : key == "group" ? $0.group : $0.name }
+                list.sort { a, b in
+                    let order = value(a).localizedStandardCompare(value(b))
+                    return sort.ascending ? order == .orderedAscending : order == .orderedDescending
+                }
             }
         }
         rows = list
@@ -127,6 +140,7 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         let server = rows[row]
         let selected = server.id == Model.shared.view.selected
         if column.identifier.rawValue == "mark" { return markCell(selected) }
+        if column.identifier.rawValue == "delay" { return delayCell(Model.shared.delays[server.id]) }
         let text: String
         switch column.identifier.rawValue {
         case "protocol": text = server.proto
@@ -150,7 +164,7 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(useSelected(_:)): return actionRows.count == 1
-        case #selector(delete(_:)): return !actionRows.isEmpty
+        case #selector(delete(_:)), #selector(measureSelected(_:)): return !actionRows.isEmpty
         default: return true
         }
     }
@@ -158,6 +172,15 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
     @objc func useSelected(_ sender: Any?) {
         let servers = actionRows
         if servers.count == 1 { Model.shared.select(server: servers[0].id) }
+    }
+
+    @objc private func measureSelected(_ sender: Any?) {
+        Model.shared.measure(servers: actionRows.map(\.id))
+    }
+
+    /// Measures every server the table shows, in its order.
+    func measureAll() {
+        Model.shared.measure(servers: rows.map(\.id))
     }
 
     /// Edit > Delete and the Delete key.
@@ -245,6 +268,36 @@ func markCell(_ chosen: Bool) -> NSView {
         image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
     ])
     return cell
+}
+
+/// The cell of the latency column: a number, a spinner while it is on its way,
+/// or the word that there was no answer, with the reason on hover.
+func delayCell(_ delay: Model.Delay?) -> NSView {
+    switch delay {
+    case .ms(let ms):
+        let cell = textCell(String(format: L("%d ms"), ms), secondary: true, strong: false)
+        (cell as? NSTableCellView)?.textField?.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        return cell
+    case .failed(let reason):
+        let cell = textCell(L("No answer"), secondary: true, strong: false)
+        cell.toolTip = reason
+        return cell
+    case .waiting:
+        let cell = NSTableCellView()
+        let spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+            spinner.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        spinner.startAnimation(nil)
+        return cell
+    case nil:
+        return NSTableCellView()
+    }
 }
 
 /// A one-line text cell; the table recolours it on a selected row.

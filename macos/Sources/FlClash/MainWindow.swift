@@ -1,6 +1,7 @@
 import AppKit
 
 private extension NSToolbarItem.Identifier {
+    static let measure = NSToolbarItem.Identifier("measure")
     static let addServers = NSToolbarItem.Identifier("addServers")
     static let addPolicy = NSToolbarItem.Identifier("addPolicy")
     static let search = NSToolbarItem.Identifier("search")
@@ -58,7 +59,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
         }
         for item in window.toolbar?.items ?? [] {
             switch item.itemIdentifier {
-            case .addServers, .search: item.isHidden = page != .servers
+            case .measure, .addServers, .search: item.isHidden = page != .servers
             case .addPolicy: item.isHidden = page != .routing
             default: break
             }
@@ -68,7 +69,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     // MARK: Toolbar
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.sidebarTrackingSeparator, .flexibleSpace, .addServers, .addPolicy, .search]
+        [.sidebarTrackingSeparator, .flexibleSpace, .measure, .addServers, .addPolicy, .search]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -77,6 +78,16 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         switch id {
+        case .measure:
+            let item = NSToolbarItem(itemIdentifier: id)
+            item.image = NSImage(systemSymbolName: "speedometer", accessibilityDescription: L("Test Latency"))
+            item.label = L("Test Latency")
+            item.toolTip = L("Test Latency")
+            item.isBordered = true
+            item.target = self
+            item.action = #selector(testLatency(_:))
+            item.isHidden = root.page != .servers
+            return item
         case .addServers:
             let item = NSMenuToolbarItem(itemIdentifier: id)
             item.image = NSImage(systemSymbolName: "plus", accessibilityDescription: L("Add servers"))
@@ -135,6 +146,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     @objc func importFromFile(_ sender: Any?) {
         root.show(.servers)
         root.content.servers.importFromFile()
+    }
+
+    @objc func testLatency(_ sender: Any?) {
+        root.show(.servers)
+        root.content.servers.measureAll()
     }
 
     @objc func importPolicy(_ sender: Any?) {

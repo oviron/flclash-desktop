@@ -39,14 +39,44 @@ func StateDir() string {
 // Version says which requests the installed helper understands. Raise it
 // whenever the helper or the core it runs has to be reinstalled for the app to
 // work: a new rule type, a new server field, a change of this protocol.
-const Version = 3
+const Version = 4
 
 // Operations of Request.Op.
 const (
 	OpApply  = "apply"
 	OpStop   = "stop"
 	OpStatus = "status"
+	// OpDelay measures a server from inside the running core; with the tunnel
+	// off the caller runs the core itself, without privileges.
+	OpDelay = "delay"
 )
+
+// The measurement of a delay is one request for DelayURL through the server,
+// given DelayTimeout to answer. The helper sets both: its caller does not get
+// to send the root core wherever it likes.
+const (
+	DelayURL     = "https://www.gstatic.com/generate_204"
+	DelayTimeout = 5 * time.Second
+)
+
+// Frames the helper writes to the core: a length, a kind, a body.
+const (
+	FrameConfig = 'c' // body: the config
+	FrameDelay  = 'd' // body: a CoreDelay
+)
+
+// CoreDelay asks the core to measure one server.
+type CoreDelay struct {
+	Proxy     map[string]any `json:"proxy"`
+	URL       string         `json:"url"`
+	TimeoutMS int            `json:"timeout_ms"`
+}
+
+// CoreReply is the core's answer to a frame, one JSON line.
+type CoreReply struct {
+	Error string `json:"error,omitempty"`
+	Delay int    `json:"delay,omitempty"`
+}
 
 // Request is one call; a connection carries one request and one response.
 type Request struct {
@@ -79,31 +109,44 @@ type Status struct {
 type Response struct {
 	Error  string `json:"error,omitempty"`
 	Status Status `json:"status"`
+	// Delay answers OpDelay, in milliseconds.
+	Delay int `json:"delay,omitempty"`
 }
 
 // Call sends one request to the supervisor.
 func Call(req Request, timeout time.Duration) (Status, error) {
+	resp, err := call(req, timeout)
+	return resp.Status, err
+}
+
+// Delay measures a server through the running core.
+func Delay(server ingest.Server) (int, error) {
+	resp, err := call(Request{Op: OpDelay, Server: server}, DelayTimeout+10*time.Second)
+	return resp.Delay, err
+}
+
+func call(req Request, timeout time.Duration) (Response, error) {
+	var resp Response
 	conn, err := net.DialTimeout("unix", SocketPath(), 3*time.Second)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Status{}, errors.New("the helper is not installed: sudo flclashctl helper install")
+			return resp, errors.New("the helper is not installed: sudo flclashctl helper install")
 		}
 		if errors.Is(err, os.ErrPermission) {
-			return Status{}, errors.New("the helper was installed for another user")
+			return resp, errors.New("the helper was installed for another user")
 		}
-		return Status{}, fmt.Errorf("the helper does not answer: %w", err)
+		return resp, fmt.Errorf("the helper does not answer: %w", err)
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 	if err := json.NewEncoder(conn).Encode(req); err != nil {
-		return Status{}, err
+		return resp, err
 	}
-	var resp Response
 	if err := json.NewDecoder(io.LimitReader(conn, 1<<20)).Decode(&resp); err != nil {
-		return Status{}, fmt.Errorf("the helper gave no answer: %w", err)
+		return resp, fmt.Errorf("the helper gave no answer: %w", err)
 	}
 	if resp.Error != "" {
-		return resp.Status, errors.New(resp.Error)
+		return resp, errors.New(resp.Error)
 	}
-	return resp.Status, nil
+	return resp, nil
 }

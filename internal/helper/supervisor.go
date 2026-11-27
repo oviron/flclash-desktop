@@ -73,7 +73,13 @@ func (s *Supervisor) handle(conn net.Conn) {
 		return
 	}
 	var resp Response
-	if err := s.do(req); err != nil {
+	var err error
+	if req.Op == OpDelay {
+		resp.Delay, err = s.delay(req)
+	} else {
+		err = s.do(req)
+	}
+	if err != nil {
 		resp.Error = err.Error()
 	}
 	resp.Status = s.Status()
@@ -149,7 +155,7 @@ func (s *Supervisor) apply(req Request) error {
 			return err
 		}
 	}
-	if err := s.send(config); err != nil {
+	if _, err := s.send(FrameConfig, config); err != nil {
 		if fresh {
 			s.stop()
 		}
@@ -211,40 +217,63 @@ func (s *Supervisor) start() error {
 	return nil
 }
 
-// send gives the core a config and waits for its verdict. Caller holds mu.
-func (s *Supervisor) send(config []byte) error {
-	var size [4]byte
-	binary.BigEndian.PutUint32(size[:], uint32(len(config)))
-	if _, err := s.toCore.Write(append(size[:], config...)); err != nil {
-		return fmt.Errorf("the core is gone: %w", err)
+// delay measures a server from inside the running core, where connections
+// leave past the tunnel the way the core's own do.
+func (s *Supervisor) delay(req Request) (int, error) {
+	if err := ingest.Check(req.Server); err != nil {
+		return 0, err
 	}
-	type verdict struct {
+	body, err := json.Marshal(CoreDelay{
+		Proxy:     compile.Proxy(req.Server),
+		URL:       DelayURL,
+		TimeoutMS: int(DelayTimeout / time.Millisecond),
+	})
+	if err != nil {
+		return 0, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reap()
+	if s.core == nil {
+		return 0, errors.New("the tunnel is off: there is no core to measure from")
+	}
+	reply, err := s.send(FrameDelay, body)
+	return reply.Delay, err
+}
+
+// send gives the core a frame and waits for its answer. Caller holds mu.
+func (s *Supervisor) send(kind byte, body []byte) (CoreReply, error) {
+	var reply CoreReply
+	frame := make([]byte, 5, 5+len(body))
+	binary.BigEndian.PutUint32(frame, uint32(len(body)+1))
+	frame[4] = kind
+	if _, err := s.toCore.Write(append(frame, body...)); err != nil {
+		return reply, fmt.Errorf("the core is gone: %w", err)
+	}
+	type answer struct {
 		line string
 		err  error
 	}
-	got := make(chan verdict, 1)
+	got := make(chan answer, 1)
 	replies := s.replies
 	go func() {
 		line, err := replies.ReadString('\n')
-		got <- verdict{line, err}
+		got <- answer{line, err}
 	}()
 	select {
 	case v := <-got:
 		if v.err != nil {
-			return fmt.Errorf("the core is gone: %w", v.err)
-		}
-		var reply struct {
-			Error string `json:"error"`
+			return reply, fmt.Errorf("the core is gone: %w", v.err)
 		}
 		if err := json.Unmarshal([]byte(v.line), &reply); err != nil {
-			return fmt.Errorf("the core answered nonsense: %w", err)
+			return reply, fmt.Errorf("the core answered nonsense: %w", err)
 		}
 		if reply.Error != "" {
-			return errors.New(reply.Error)
+			return reply, errors.New(reply.Error)
 		}
-		return nil
+		return reply, nil
 	case <-time.After(60 * time.Second):
-		return errors.New("the core did not answer in a minute")
+		return reply, errors.New("the core did not answer in a minute")
 	}
 }
 

@@ -1,3 +1,4 @@
+"%d ms" = "%d мс";
 "About FlClash" = "О программе FlClash";
 "Add servers" = "Добавить серверы";
 "All traffic goes through the server." = "Весь трафик идёт через сервер.";
@@ -34,10 +35,12 @@
 "Import from File…" = "Импорт из файла…";
 "Imported %d, not imported %d" = "Импортировано: %d, не импортировано: %d";
 "Install Helper…" = "Установить помощник…";
+"Latency" = "Задержка";
 "Launch at Login" = "Запускать при входе";
 "Local addresses direct" = "Локальные адреса напрямую";
 "Minimize" = "Свернуть";
 "Name" = "Имя";
+"No answer" = "Нет ответа";
 "No servers yet" = "Серверов пока нет";
 "Not capturing" = "Трафик не захватывается";
 "Nothing matches the search" = "Ничего не найдено";
@@ -55,6 +58,7 @@
 "Selected" = "Выбран";
 "Server" = "Сервер";
 "Servers" = "Серверы";
+"Test Latency" = "Замерить задержку";
 "The clipboard has no text" = "В буфере обмена нет текста";
 "The file could not be read" = "Не удалось прочитать файл";
 "The helper was not installed" = "Помощник не установлен";

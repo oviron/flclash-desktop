@@ -27,6 +27,7 @@ const usage = `usage:
   flclashctl policy import NAME FILE          add a routing policy from a rules file
   flclashctl policy remove NAME               delete an imported policy
   flclashctl on | off | status                turn the tunnel on or off, or show what is true right now
+  flclashctl delay [SERVER...]                measure servers one by one: a connection and a small request
   flclashctl helper install | uninstall       set up or remove the privileged helper (run with sudo)
   flclashctl config -tun | -local-port N      print the config the core would run (it contains credentials)
   flclashctl run -local-port N                run the core without privileges on a loopback HTTP/SOCKS port
@@ -47,6 +48,7 @@ func main() {
 		"on":     cmdOn,
 		"off":    cmdOff,
 		"status": cmdStatus,
+		"delay":  cmdDelay,
 	}
 	if os.Args[1] == "helper" {
 		// Runs as root: it must not create the user's store with root as owner.
@@ -161,6 +163,33 @@ func cmdSelect(st *store.Store, args []string) error {
 		return errors.New("name a server, a policy, or both")
 	}
 	return app.Select(st, ref, *policyName)
+}
+
+// cmdDelay measures the named servers, or all of them, one after another.
+func cmdDelay(st *store.Store, args []string) error {
+	if len(args) == 0 {
+		view, err := app.Snapshot(st)
+		if err != nil {
+			return err
+		}
+		for _, e := range view.Servers {
+			args = append(args, e.ID)
+		}
+	}
+	for _, ref := range args {
+		name := ref
+		if state, err := st.Load(); err == nil {
+			if entry, err := state.Find(ref); err == nil {
+				name = entry.Name
+			}
+		}
+		if ms, err := app.Delay(st, ref); err != nil {
+			fmt.Printf("%-22s failed: %v\n", name, err)
+		} else {
+			fmt.Printf("%-22s %d ms\n", name, ms)
+		}
+	}
+	return nil
 }
 
 func cmdPolicy(st *store.Store, args []string) error {

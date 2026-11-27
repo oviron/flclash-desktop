@@ -18,6 +18,15 @@ final class Model {
     /// The last thing that went wrong, for the window to show until it is dismissed.
     private(set) var problem: String?
 
+    /// What measuring a server gave; nothing for a server that was not measured.
+    enum Delay: Equatable {
+        case waiting
+        case ms(Int)
+        case failed(String)
+    }
+
+    private(set) var delays: [String: Delay] = [:]
+
     private var timer: Timer?
 
     var selectedServer: Server? { view.servers.first { $0.id == view.selected } }
@@ -87,6 +96,26 @@ final class Model {
 
     func remove(policy: String) {
         Engine.call(["op": "policyRemove", "name": policy]) { [weak self] reply in self?.take(reply) }
+    }
+
+    /// Measures the servers one after another: a connection and a small
+    /// request each. Results arrive one by one.
+    func measure(servers: [String]) {
+        let fresh = servers.filter { delays[$0] != .waiting }
+        guard !fresh.isEmpty else { return }
+        for id in fresh { delays[id] = .waiting }
+        changed()
+        for id in fresh {
+            Engine.measure(server: id) { [weak self] reply in
+                guard let self else { return }
+                if let ms = reply.delay, ms > 0 {
+                    self.delays[id] = .ms(ms)
+                } else {
+                    self.delays[id] = .failed(reply.error ?? "")
+                }
+                self.changed()
+            }
+        }
     }
 
     func dismissProblem() {

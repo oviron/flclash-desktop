@@ -50,6 +50,7 @@ struct Reply: Decodable {
     let view: EngineView?
     let status: TunnelStatus?
     let imported: ImportResult?
+    var delay: Int? = nil
 }
 
 /// The Go engine. Calls can take as long as a tunnel takes to come up, so they
@@ -60,6 +61,17 @@ enum Engine {
     static func call(_ request: [String: String], then done: @escaping (Reply) -> Void) {
         queue.async {
             let reply = callSync(request)
+            DispatchQueue.main.async { done(reply) }
+        }
+    }
+
+    /// Measurements take seconds each and wait for one another, but must not
+    /// hold up turning the tunnel on or off: they have a line of their own.
+    private static let measuring = DispatchQueue(label: "flclash.engine.delay", qos: .utility)
+
+    static func measure(server: String, then done: @escaping (Reply) -> Void) {
+        measuring.async {
+            let reply = callSync(["op": "delay", "server": server])
             DispatchQueue.main.async { done(reply) }
         }
     }

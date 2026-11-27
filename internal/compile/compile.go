@@ -31,6 +31,15 @@ type Input struct {
 	DirectDNS []string
 }
 
+// Proxy is a server the way the core takes one: its settings under its name.
+func Proxy(server ingest.Server) map[string]any {
+	proxy := map[string]any{"name": server.Name}
+	for key, value := range server.Proxy {
+		proxy[key] = value
+	}
+	return proxy
+}
+
 // Config returns the YAML for the core.
 func Config(in Input) ([]byte, error) {
 	if in.Server.Name == "" || in.Server.Proxy == nil {
@@ -45,10 +54,7 @@ func Config(in Input) ([]byte, error) {
 	case policy.Proxy, policy.Direct, policy.Reject:
 		return nil, fmt.Errorf("a server cannot be named %q", in.Server.Name)
 	}
-	proxy := map[string]any{"name": in.Server.Name}
-	for key, value := range in.Server.Proxy {
-		proxy[key] = value
-	}
+	proxy := Proxy(in.Server)
 	cfg := map[string]any{
 		"mode":            "rule",
 		"log-level":       "info",

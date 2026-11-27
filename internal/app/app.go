@@ -3,9 +3,18 @@
 package app
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/oviron/flclash-desktop/internal/compile"
 
 	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/ingest"
@@ -237,4 +246,58 @@ func RemovePolicy(st *store.Store, name string) error {
 		return errors.New("this policy is in use: choose another first")
 	}
 	return st.RemovePolicy(name)
+}
+
+// Delay measures one server: a new connection through it and one small
+// request, in milliseconds. A running tunnel measures from inside its core;
+// otherwise a core is run for the moment, without privileges.
+func Delay(st *store.Store, ref string) (int, error) {
+	state, err := st.Load()
+	if err != nil {
+		return 0, err
+	}
+	entry, err := state.Find(ref)
+	if err != nil {
+		return 0, err
+	}
+	if err := ingest.Check(entry.Server); err != nil {
+		return 0, err
+	}
+	if status, err := Status(); err == nil && status.Running {
+		return helper.Delay(entry.Server)
+	}
+	return localDelay(entry.Server)
+}
+
+// localDelay runs the core binary that ships next to this program.
+func localDelay(server ingest.Server) (int, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return 0, err
+	}
+	request, err := json.Marshal(helper.CoreDelay{
+		Proxy:     compile.Proxy(server),
+		URL:       helper.DelayURL,
+		TimeoutMS: int(helper.DelayTimeout / time.Millisecond),
+	})
+	if err != nil {
+		return 0, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), helper.DelayTimeout+5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, filepath.Join(filepath.Dir(self), "flclash-core"), "-delay")
+	// The server goes in through stdin: its credentials stay out of the process list.
+	cmd.Stdin = bytes.NewReader(request)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("the core did not run: %w", err)
+	}
+	var reply helper.CoreReply
+	if err := json.Unmarshal(out, &reply); err != nil {
+		return 0, fmt.Errorf("the core answered nonsense: %w", err)
+	}
+	if reply.Error != "" {
+		return 0, errors.New(reply.Error)
+	}
+	return reply.Delay, nil
 }
