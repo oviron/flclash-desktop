@@ -156,45 +156,43 @@ type ImportResult struct {
 // with the name of a server already in the group replaces it and keeps its ID.
 func Import(st *store.Store, group, text string) (ImportResult, error) {
 	result := ImportResult{Imported: []Server{}, Failed: []Failure{}}
-	state, err := st.Load()
-	if err != nil {
-		return result, err
-	}
 	servers, refused, n := ingest.ParseAll(text)
 	for _, r := range refused {
 		result.Failed = append(result.Failed, Failure{Entry: r.Entry, Reason: r.Reason})
 	}
-	for _, server := range servers {
-		e := state.Put(group, server)
-		result.Imported = append(result.Imported, Server{ID: e.ID, Name: e.Name, Group: e.Group, Protocol: protocol(e.Proxy)})
-	}
 	if n == 0 {
 		return result, say.New("there is nothing to import")
 	}
-	return result, st.Save(state)
+	err := st.Update(func(state *store.State) error {
+		for _, server := range servers {
+			e := state.Put(group, server)
+			result.Imported = append(result.Imported, Server{ID: e.ID, Name: e.Name, Group: e.Group, Protocol: protocol(e.Proxy)})
+		}
+		return nil
+	})
+	return result, err
 }
 
 // Select saves a new choice of server, policy or both; an empty one stays as
 // it is. A tunnel that is up moves to the choice.
 func Select(st *store.Store, serverRef, policyName string) error {
-	state, err := st.Load()
+	err := st.Update(func(state *store.State) error {
+		if serverRef != "" {
+			entry, err := state.Find(serverRef)
+			if err != nil {
+				return err
+			}
+			state.Selected = entry.ID
+		}
+		if policyName != "" {
+			if _, err := st.Policy(policyName); err != nil {
+				return err
+			}
+			state.Policy = policyName
+		}
+		return nil
+	})
 	if err != nil {
-		return err
-	}
-	if serverRef != "" {
-		entry, err := state.Find(serverRef)
-		if err != nil {
-			return err
-		}
-		state.Selected = entry.ID
-	}
-	if policyName != "" {
-		if _, err := st.Policy(policyName); err != nil {
-			return err
-		}
-		state.Policy = policyName
-	}
-	if err := st.Save(state); err != nil {
 		return err
 	}
 	if status, err := Status(); err == nil && status.Running {
@@ -207,10 +205,10 @@ func Select(st *store.Store, serverRef, policyName string) error {
 // Remove deletes a server. The selected one cannot be removed while the
 // tunnel runs through it.
 func Remove(st *store.Store, id string) error {
-	state, err := st.Load()
-	if err != nil {
-		return err
-	}
+	return st.Update(func(state *store.State) error { return remove(state, id) })
+}
+
+func remove(state *store.State, id string) error {
 	kept := state.Servers[:0]
 	found := false
 	for _, e := range state.Servers {
@@ -230,7 +228,7 @@ func Remove(st *store.Store, id string) error {
 		state.Selected = ""
 	}
 	state.Servers = kept
-	return st.Save(state)
+	return nil
 }
 
 // On turns the tunnel on with the current choice, or moves a running tunnel
@@ -279,14 +277,7 @@ func mode(state store.State) string {
 
 // change saves an edit of the settings; what runs takes it at once.
 func change(st *store.Store, edit func(*store.State) error) error {
-	state, err := st.Load()
-	if err != nil {
-		return err
-	}
-	if err := edit(&state); err != nil {
-		return err
-	}
-	if err := st.Save(state); err != nil {
+	if err := st.Update(edit); err != nil {
 		return err
 	}
 	if status, err := Status(); err == nil && status.Running {
@@ -311,12 +302,10 @@ func SetMode(st *store.Store, name string) error {
 // SetAutoConnect saves whether the app connects when it starts. Nothing that
 // runs changes.
 func SetAutoConnect(st *store.Store, on bool) error {
-	state, err := st.Load()
-	if err != nil {
-		return err
-	}
-	state.AutoConnect = on
-	return st.Save(state)
+	return st.Update(func(state *store.State) error {
+		state.AutoConnect = on
+		return nil
+	})
 }
 
 func dns(state store.State) string {
@@ -468,21 +457,22 @@ func askCountry(st *store.Store, entry store.Entry, running bool) {
 // RememberCountry keeps the country a server was found to let traffic out
 // in; a failed ask only says when it was made.
 func RememberCountry(st *store.Store, id, country string, answered bool) {
-	state, err := st.Load()
-	if err != nil {
-		return
-	}
-	for i := range state.Servers {
-		if state.Servers[i].ID == id {
-			state.Servers[i].Asked = time.Now().Unix()
-			if answered && country != "" {
-				state.Servers[i].Country = country
+	_ = st.Update(func(state *store.State) error {
+		for i := range state.Servers {
+			if state.Servers[i].ID == id {
+				state.Servers[i].Asked = time.Now().Unix()
+				if answered && country != "" {
+					state.Servers[i].Country = country
+				}
+				return nil
 			}
-			_ = st.Save(state)
-			return
 		}
-	}
+		return errNotFound
+	})
 }
+
+// errNotFound leaves the state as it was.
+var errNotFound = say.New("no such server")
 
 // runCore measures the delay of a server with the core binary that ships
 // next to this program.

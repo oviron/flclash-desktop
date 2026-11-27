@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/oviron/flclash-desktop/internal/ingest"
@@ -143,6 +144,26 @@ func (s *Store) Load() (State, error) {
 }
 
 // Save replaces the state in one step: a crash leaves the old file or the new.
+// writing keeps changes of the state one at a time in this process: each
+// reads the state as the one before left it.
+var writing sync.Mutex
+
+// Update reads the state, lets edit change it, and saves it, with no other
+// change in between. An error from edit saves nothing. Nothing slow belongs
+// in edit: a fetch or a call to the helper waits outside.
+func (s *Store) Update(edit func(*State) error) error {
+	writing.Lock()
+	defer writing.Unlock()
+	state, err := s.Load()
+	if err != nil {
+		return err
+	}
+	if err := edit(&state); err != nil {
+		return err
+	}
+	return s.Save(state)
+}
+
 func (s *Store) Save(state State) error {
 	raw, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {

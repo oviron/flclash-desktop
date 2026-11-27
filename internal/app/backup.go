@@ -43,7 +43,8 @@ func WriteBackup(st *store.Store, path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, raw, 0o600)
+	// It holds the keys of the servers and the addresses of subscriptions.
+	return writePrivate(path, raw)
 }
 
 // ReadBackup puts a saved setup in place of the current one. Nothing may run
@@ -100,5 +101,8 @@ func ReadBackup(st *store.Store, path string) error {
 	if _, err := st.Policy(doc.State.Policy); err != nil {
 		doc.State.Policy = "all"
 	}
-	return st.Save(doc.State)
+	return st.Update(func(state *store.State) error {
+		*state = doc.State
+		return nil
+	})
 }

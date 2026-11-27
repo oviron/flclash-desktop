@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/oviron/flclash-desktop/internal/policy"
 	"github.com/oviron/flclash-desktop/internal/store"
@@ -222,5 +223,44 @@ func TestBackup(t *testing.T) {
 		if names(t, other, "default") != "one,two" {
 			t.Fatal("a refused restore changed the servers")
 		}
+	}
+}
+
+// A change saved while a provider is being read stays: what the provider
+// gave goes into the state as it is when the answer comes.
+func TestSubscriptionReadKeepsChangesMadeMeanwhile(t *testing.T) {
+	release := make(chan struct{})
+	first := true
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !first {
+			<-release
+		}
+		first = false
+		_, _ = w.Write([]byte("hy2://p@b.example:443#two\n"))
+	}))
+	defer provider.Close()
+	st := open(t)
+	if _, err := AddSubscription(st, "work", provider.URL); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error)
+	go func() {
+		_, err := UpdateSubscription(st, "work")
+		done <- err
+	}()
+	time.Sleep(100 * time.Millisecond)
+	if err := SetAutoConnect(st, true); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	state, _ := st.Load()
+	if !state.AutoConnect {
+		t.Fatal("the change made meanwhile was lost")
+	}
+	if got := names(t, st, "work"); got != "two" {
+		t.Fatalf("got %q", got)
 	}
 }

@@ -569,7 +569,12 @@ func (s *Supervisor) closeConnection(id string) error {
 	if s.core == nil {
 		return say.New("nothing runs")
 	}
-	_, err := s.send(FrameClose, []byte(id))
+	reply, err := s.send(FrameClose, []byte(id))
+	// The core says only that it has no such connection; the helper says it
+	// in the language of the request, which the frame does not carry.
+	if err != nil && reply.Error != "" {
+		return say.New("the connection is gone already")
+	}
 	return err
 }
 
