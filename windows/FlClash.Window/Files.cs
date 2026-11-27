@@ -1,9 +1,7 @@
-using Microsoft.UI.Xaml;
-using Microsoft.Windows.Storage.Pickers;
-using Windows.ApplicationModel.DataTransfer;
-using Windows.Graphics.Imaging;
-using Windows.Storage;
-using Windows.Storage.Streams;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using Microsoft.Win32;
 using ZXing;
 using ZXing.Common;
 using ZXing.Multi.QrCode;
@@ -16,51 +14,36 @@ public static class Files
     /// A profile or a rules file is small; anything larger is not one.
     public const long Limit = 1 << 20;
 
-    static readonly string[] pictures = [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff"];
+    static readonly string[] pictures = { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff" };
 
     public static bool IsPicture(string path) => pictures.Contains(Path.GetExtension(path).ToLowerInvariant());
 
-    /// Asks for a file to open; null when none was chosen or the dialog failed,
-    /// which is said.
-    public static async Task<string?> PickOpen(MainWindow window, params string[] types)
+    /// Asks for a file to open; null when none was chosen. "*" in the types
+    /// offers every file too.
+    public static string? PickOpen(Window owner, params string[] types)
     {
-        try
-        {
-            var picker = new FileOpenPicker(window.AppWindow.Id);
-            foreach (var t in types) picker.FileTypeFilter.Add(t);
-            return (await picker.PickSingleFileAsync())?.Path;
-        }
-        catch (Exception e)
-        {
-            await Ui.Say(window.Content.XamlRoot, L.T("The file dialog did not open"), e.Message);
-            return null;
-        }
+        var named = types.Where(t => t != "*").Select(t => "*" + t).ToList();
+        var filter = string.Join(";", named) + "|" + string.Join(";", named);
+        if (types.Contains("*")) filter += "|" + L.T("All Files") + "|*.*";
+        var dialog = new OpenFileDialog { Filter = filter, CheckFileExists = true };
+        return dialog.ShowDialog(owner) == true ? dialog.FileName : null;
     }
 
-    /// Asks where to save a file; null when nowhere was chosen or the dialog failed.
-    public static async Task<string?> PickSave(MainWindow window, string name, string kind, string type)
+    /// Asks where to save a file; null when nowhere was chosen.
+    public static string? PickSave(Window owner, string name, string kind, string type)
     {
-        try
-        {
-            var picker = new FileSavePicker(window.AppWindow.Id) { SuggestedFileName = name, DefaultFileExtension = type };
-            picker.FileTypeChoices.Add(kind, new List<string> { type });
-            return (await picker.PickSaveFileAsync())?.Path;
-        }
-        catch (Exception e)
-        {
-            await Ui.Say(window.Content.XamlRoot, L.T("The file dialog did not open"), e.Message);
-            return null;
-        }
+        var dialog = new SaveFileDialog { FileName = name, DefaultExt = type, Filter = kind + "|*" + type, AddExtension = true, OverwritePrompt = true };
+        return dialog.ShowDialog(owner) == true ? dialog.FileName : null;
     }
 
     /// The text of a small file, or what is wrong with it.
-    public static async Task<(string? Text, string? Problem)> Read(string path)
+    public static (string? Text, string? Problem) Read(string path)
     {
         try
         {
             if (new FileInfo(path).Length > Limit)
                 return (null, L.F("“%@” is larger than 1 MB: a list of servers or a rules file is smaller.", Path.GetFileName(path)));
-            return (await File.ReadAllTextAsync(path), null);
+            return (File.ReadAllText(path), null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
@@ -69,54 +52,42 @@ public static class Files
     }
 
     /// The path of the first file dropped, if files were dropped.
-    public static async Task<string?> DroppedFile(DataPackageView data)
-    {
-        if (!data.Contains(StandardDataFormats.StorageItems)) return null;
-        var items = await data.GetStorageItemsAsync();
-        return items.FirstOrDefault() is StorageFile { Path.Length: > 0 } file ? file.Path : null;
-    }
+    public static string? DroppedFile(IDataObject data) =>
+        data.GetDataPresent(DataFormats.FileDrop) && data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } files ? files[0] : null;
 
     /// The text dropped or pasted, if it is not empty.
-    public static async Task<string?> Text(DataPackageView data)
+    public static string? Text(IDataObject data)
     {
-        if (!data.Contains(StandardDataFormats.Text)) return null;
-        var text = await data.GetTextAsync();
+        if (!data.GetDataPresent(DataFormats.UnicodeText)) return null;
+        var text = data.GetData(DataFormats.UnicodeText) as string;
         return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
     /// Reads the QR codes in a picture: a screenshot, a photo, a saved code.
-    public static async Task<List<string>> Codes(IRandomAccessStream stream)
+    public static List<string> Codes(BitmapSource picture)
     {
-        var decoder = await BitmapDecoder.CreateAsync(stream);
-        uint w = decoder.PixelWidth, h = decoder.PixelHeight;
-        var transform = new BitmapTransform();
         // A large photo is made smaller; a code needs far fewer pixels.
-        double scale = Math.Min(1, 4000.0 / Math.Max(w, h));
-        if (scale < 1)
-        {
-            w = (uint)(w * scale);
-            h = (uint)(h * scale);
-            transform.ScaledWidth = w;
-            transform.ScaledHeight = h;
-            transform.InterpolationMode = BitmapInterpolationMode.Fant;
-        }
-        var data = await decoder.GetPixelDataAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore, transform,
-            ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage);
-        var source = new RGBLuminanceSource(data.DetachPixelData(), (int)w, (int)h, RGBLuminanceSource.BitmapFormat.BGRA32);
+        double scale = Math.Min(1, 4000.0 / Math.Max(picture.PixelWidth, picture.PixelHeight));
+        BitmapSource source = scale < 1 ? new TransformedBitmap(picture, new ScaleTransform(scale, scale)) : picture;
+        var bgra = new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
+        int w = bgra.PixelWidth, h = bgra.PixelHeight;
+        var pixels = new byte[w * h * 4];
+        bgra.CopyPixels(pixels, w * 4, 0);
+        var luminance = new RGBLuminanceSource(pixels, w, h, RGBLuminanceSource.BitmapFormat.BGRA32);
         var hints = new Dictionary<DecodeHintType, object>
         {
             [DecodeHintType.TRY_HARDER] = true,
             [DecodeHintType.POSSIBLE_FORMATS] = new List<BarcodeFormat> { BarcodeFormat.QR_CODE },
         };
-        var found = new QRCodeMultiReader().decodeMultiple(new BinaryBitmap(new HybridBinarizer(source)), hints);
-        return found?.Select(r => r.Text).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct().ToList() ?? [];
+        var found = new QRCodeMultiReader().decodeMultiple(new BinaryBitmap(new HybridBinarizer(luminance)), hints);
+        return found?.Select(r => r.Text).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct().ToList() ?? new List<string>();
     }
 
     /// The QR codes in a picture file.
-    public static async Task<List<string>> Codes(string path)
+    public static List<string> Codes(string path)
     {
-        var file = await StorageFile.GetFileFromPathAsync(path);
-        using var stream = await file.OpenReadAsync();
-        return await Codes(stream);
+        using var stream = File.OpenRead(path);
+        var frame = BitmapDecoder.Create(stream, BitmapCreateOptions.IgnoreColorProfile, BitmapCacheOption.OnLoad).Frames[0];
+        return Codes(frame);
     }
 }

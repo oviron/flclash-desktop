@@ -2,7 +2,7 @@
 
 A native desktop proxy client for macOS and Windows, built around the
 [mihomo](https://github.com/MetaCubeX/mihomo) core. Each system gets its own
-native app: AppKit on macOS, WinUI 3 on Windows. The two look and behave the
+native app: AppKit on macOS, WPF on Windows. The two look and behave the
 same and share one Go engine underneath.
 
 This is an independent project. It is not a build of
@@ -104,7 +104,8 @@ checks produce, and builds the core's config itself.
 
 On macOS the window and the menu bar item are one process that links the engine
 as a library. On Windows `FlClash.exe` holds the engine and the tray icon, and
-the window is a separate process that exists only while it is open.
+the window is a separate process that exists only while it is open. It runs on
+the .NET Framework that Windows carries, so it brings no runtime of its own.
 
 ## Building
 
@@ -117,7 +118,7 @@ make app     # dist/FlClash.app, ad hoc signed
 
 The version comes from the last `v*` git tag.
 
-Windows, with Go and the .NET 10 SDK:
+Windows, with Go and the .NET SDK:
 
 ```powershell
 windows\build.ps1   # everything into dist\windows\FlClash

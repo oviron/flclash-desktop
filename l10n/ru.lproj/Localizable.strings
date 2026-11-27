@@ -11,6 +11,7 @@
 "Add servers" = "Добавить серверы";
 "Add" = "Добавить";
 "Added by Hand" = "Добавлены вручную";
+"All Files" = "Все файлы";
 "All Servers" = "Все серверы";
 "All traffic goes through the server." = "Весь трафик идёт через сервер.";
 "Another program answered in place of FlClash. Nothing was sent to it." = "Вместо FlClash ответила другая программа. Ей ничего не отправлено.";
@@ -178,7 +179,6 @@
 "The connection to FlClash was lost." = "Связь с FlClash прервалась.";
 "The core stopped" = "Соединение оборвалось";
 "The file could not be read" = "Не удалось прочитать файл";
-"The file dialog did not open" = "Окно выбора файла не открылось";
 "The helper was not installed" = "Помощник не установлен";
 "The core writes here once something runs." = "Ядро пишет сюда, когда что-то запущено.";
 "The helper was not removed" = "Помощник не удалён";

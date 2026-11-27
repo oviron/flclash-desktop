@@ -1,5 +1,4 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using System.Web.Script.Serialization;
 
 namespace FlClash;
 
@@ -243,11 +242,19 @@ public sealed class WindowPrefs
     public string ServerOrder { get; set; } = "added";
 }
 
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault)]
-[JsonSerializable(typeof(Message))]
-[JsonSerializable(typeof(AgentEvent))]
-[JsonSerializable(typeof(WindowPrefs))]
-internal partial class Json : JsonSerializerContext
+/// JSON as the framework reads and writes it, with no library to carry. It
+/// writes the names as they are here and reads them in any case; the agent
+/// reads them in any case too.
+public static class Json
 {
+    static JavaScriptSerializer Serializer() => new() { MaxJsonLength = int.MaxValue, RecursionLimit = 64 };
+
+    /// Null for text that is not JSON of that shape.
+    public static T? Parse<T>(string text) where T : class
+    {
+        try { return Serializer().Deserialize<T>(text); }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or FormatException or OverflowException) { return null; }
+    }
+
+    public static string Write(object value) => Serializer().Serialize(value);
 }

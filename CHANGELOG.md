@@ -12,6 +12,10 @@ workflow takes the notes of a release from its section here.
   gVisor stack, none of which the app uses: it is 39 MB instead of 64 on macOS
   and starts with about 6 MB less memory.
 
+- The Windows window is WPF on the .NET Framework that Windows carries, in
+  place of WinUI 3 with its own .NET and Windows App SDK: it is about 1 MB
+  instead of 85, and one build serves x64 and Arm64.
+
 ### Removed
 
 - `flclashctl run`: the app runs the local port itself. The command line no

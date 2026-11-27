@@ -1,11 +1,10 @@
+using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
-using Microsoft.Win32.SafeHandles;
 using System.Security.Principal;
 using System.Text;
-using System.Text.Json;
-using System.Threading.Channels;
-using Microsoft.UI.Dispatching;
+using System.Windows.Threading;
+using Microsoft.Win32.SafeHandles;
 
 namespace FlClash;
 
@@ -15,14 +14,14 @@ namespace FlClash;
 public sealed class Agent
 {
     readonly NamedPipeClientStream pipe;
-    // Lines wait here and go out one after another on their own task: the
+    // Lines wait here and go out one after another on their own thread: the
     // window's thread never waits for the pipe.
-    readonly Channel<string> outbox = Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true });
+    readonly BlockingCollection<string> outbox = new();
     readonly object gate = new();
     readonly Dictionary<int, TaskCompletionSource<Reply>> pending = new();
     int nextId;
     bool gone;
-    DispatcherQueue? queue;
+    Dispatcher? queue;
 
     public Snapshot S { get; private set; } = new();
     public AppInfo App { get; private set; } = new();
@@ -34,19 +33,20 @@ public sealed class Agent
     /// The agent is gone: the app was quit.
     public event Action? Lost;
 
-    readonly Task writing;
+    readonly Thread writing;
 
     Agent(NamedPipeClientStream pipe)
     {
         this.pipe = pipe;
-        writing = Task.Run(Write);
+        writing = new Thread(Write) { IsBackground = true, Name = "agent out" };
+        writing.Start();
     }
 
     /// Sends what is waiting and stops; for a window that only passes a wish on.
     public void Finish(int timeoutMs)
     {
-        outbox.Writer.TryComplete();
-        writing.Wait(timeoutMs);
+        outbox.CompleteAdding();
+        writing.Join(timeoutMs);
     }
 
     /// The pipe of the agent of the person signed in: only they may open it.
@@ -63,7 +63,8 @@ public sealed class Agent
     {
         foreign = false;
         const string prefix = @"\\.\pipe\";
-        if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) name = name[prefix.Length..];
+        if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) name = name.Substring(prefix.Length);
+        // Asynchronous: a read that waits must not hold up a write on the same pipe.
         var pipe = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
         try
         {
@@ -118,22 +119,28 @@ public sealed class Agent
     [DllImport("advapi32.dll", SetLastError = true)] static extern bool GetTokenInformation(IntPtr token, int cls, IntPtr info, int size, out int needed);
 
     /// Reads what the agent sends until it goes away.
-    public void Start(DispatcherQueue queue)
+    public void Start(Dispatcher queue)
     {
         this.queue = queue;
-        var thread = new Thread(Read) { IsBackground = true, Name = "agent" };
+        var thread = new Thread(Read) { IsBackground = true, Name = "agent in" };
         thread.Start();
     }
 
-    async Task Write()
+    void Post(Action action)
+    {
+        var q = queue;
+        if (q != null && !q.HasShutdownStarted) q.BeginInvoke(action);
+    }
+
+    void Write()
     {
         try
         {
-            await foreach (var line in outbox.Reader.ReadAllAsync())
+            foreach (var line in outbox.GetConsumingEnumerable())
             {
                 var bytes = Encoding.UTF8.GetBytes(line + "\n");
-                await pipe.WriteAsync(bytes);
-                await pipe.FlushAsync();
+                pipe.Write(bytes, 0, bytes.Length);
+                pipe.Flush();
             }
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException)
@@ -154,7 +161,7 @@ public sealed class Agent
             waiting = pending.Values.ToList();
             pending.Clear();
         }
-        outbox.Writer.TryComplete();
+        outbox.CompleteAdding();
         var lost = new Reply { Error = L.T("The connection to FlClash was lost.") };
         foreach (var w in waiting) w.TrySetResult(lost);
     }
@@ -168,17 +175,15 @@ public sealed class Agent
 
     void Read()
     {
-        using var reader = new StreamReader(pipe, new UTF8Encoding(false));
         try
         {
+            using var reader = new StreamReader(pipe, new UTF8Encoding(false));
             string? line;
             while ((line = reader.ReadLine()) != null)
             {
-                AgentEvent? e;
-                try { e = JsonSerializer.Deserialize(line, Json.Default.AgentEvent); }
-                catch (JsonException) { continue; }
+                var e = Json.Parse<AgentEvent>(line);
                 if (e == null) continue;
-                queue?.TryEnqueue(() => Take(e));
+                Post(() => Take(e));
             }
         }
         catch (IOException) { }
@@ -187,7 +192,7 @@ public sealed class Agent
         bool closing;
         lock (gate) closing = gone;
         Drop();
-        if (!closing) queue?.TryEnqueue(() => Lost?.Invoke());
+        if (!closing) Post(() => Lost?.Invoke());
     }
 
     void Take(AgentEvent e)
@@ -199,6 +204,7 @@ public sealed class Agent
                 if (e.App != null)
                 {
                     App = e.App;
+                    App.HotKey ??= new();
                     L.Use(App.Lang);
                 }
                 Changed?.Invoke();
@@ -207,7 +213,7 @@ public sealed class Agent
                 TaskCompletionSource<Reply>? done;
                 lock (gate)
                 {
-                    pending.Remove(e.Id, out done);
+                    if (pending.TryGetValue(e.Id, out done)) pending.Remove(e.Id);
                 }
                 done?.TrySetResult(e.Reply ?? new Reply());
                 break;
@@ -217,7 +223,7 @@ public sealed class Agent
         }
     }
 
-    /// A list the agent left out is an empty one.
+    /// A list the agent left out is an empty one, and so is a word.
     static Snapshot Whole(Snapshot s)
     {
         s.View ??= new();
@@ -225,16 +231,39 @@ public sealed class Agent
         s.View.Servers ??= new();
         s.View.Policies ??= new();
         s.View.Subscriptions ??= new();
+        s.View.Selected ??= "";
+        s.View.Policy ??= "";
+        s.View.Mode ??= "proxy";
+        s.View.Auth ??= "";
+        s.View.Dns ??= "";
+        s.Status.Server ??= "";
+        s.Status.Policy ??= "";
+        s.Status.Mode ??= "";
+        s.Status.Guard ??= "";
+        s.Status.GuardProblem ??= "";
         s.Delays ??= new();
         s.History ??= new();
         s.Updating ??= new();
         if (s.Stats != null) s.Stats.Connections ??= new();
+        foreach (var sub in s.View.Subscriptions)
+        {
+            sub.Problem ??= "";
+            sub.Host ??= "";
+            sub.Agent ??= "";
+            sub.Skip ??= "";
+        }
         return s;
     }
 
-    public void Send(Message m) => outbox.Writer.TryWrite(JsonSerializer.Serialize(m, Json.Default.Message));
+    public void Send(Message m)
+    {
+        var line = Json.Write(m);
+        try { outbox.TryAdd(line); }
+        catch (InvalidOperationException) { }
+    }
 
-    /// Sends a message and waits for its reply, or for the pipe to go.
+    /// Sends a message and waits for its reply, or for the pipe to go. The
+    /// one who waits is the window: it goes on on its own thread.
     public Task<Reply> Ask(Message m)
     {
         var done = new TaskCompletionSource<Reply>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -245,16 +274,7 @@ public sealed class Agent
             pending[m.Id] = done;
         }
         Send(m);
-        return ContinueOnWindow(done.Task);
-    }
-
-    /// Replies come on the reading thread; the window takes them on its own.
-    async Task<Reply> ContinueOnWindow(Task<Reply> task)
-    {
-        var reply = await task.ConfigureAwait(false);
-        var back = new TaskCompletionSource<Reply>();
-        if (queue == null || !queue.TryEnqueue(() => back.SetResult(reply))) back.SetResult(reply);
-        return await back.Task;
+        return done.Task;
     }
 
     // An engine request on one of the agent's lines: "change" for what alters

@@ -48,7 +48,7 @@ public static class L
         if (plurals.TryGetValue(key, out var forms))
         {
             var form = lang == "ru" ? RussianForm(n) : (n == 1 ? "one" : "other");
-            if (forms.TryGetValue(form, out var s) || forms.TryGetValue("other", out s)) return Format(s, [n]);
+            if (forms.TryGetValue(form, out var s) || forms.TryGetValue("other", out s)) return Format(s, new object[] { n });
         }
         return F(key, n);
     }
@@ -99,7 +99,7 @@ public static class L
         foreach (var raw in text.Split('\n'))
         {
             var line = raw.Trim();
-            if (!line.StartsWith('"')) continue;
+            if (!line.StartsWith("\"")) continue;
             int at = 0;
             var key = Quoted(line, ref at);
             if (key == null) continue;

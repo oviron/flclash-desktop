@@ -1,10 +1,6 @@
-using Microsoft.UI.Input;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Windows.System;
-using Windows.UI.Core;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace FlClash;
 
@@ -15,12 +11,11 @@ public sealed class SettingsPage : IPage
 {
     readonly MainWindow window;
     Agent A => window.Agent;
-    readonly ScrollViewer scroll = new();
-    readonly StackPanel column = new() { Spacing = 14, Padding = new Thickness(24, 4, 24, 24), MaxWidth = 760, HorizontalAlignment = HorizontalAlignment.Stretch };
+    readonly ScrollViewer scroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    readonly StackPanel column = new() { Margin = new Thickness(24, 4, 24, 24), MaxWidth = 760, HorizontalAlignment = HorizontalAlignment.Stretch };
     // Made anew with the rows: a control is not moved from one row to another.
-    ToggleSwitch protect = null!, login = null!, autoConnect = null!, lan = null!;
-    NumberBox port = null!;
-    TextBox auth = null!, dns = null!;
+    CheckBox protect = null!, login = null!, autoConnect = null!, lan = null!;
+    TextBox port = null!, auth = null!, dns = null!;
     Button hotKey = null!, removeHelper = null!;
     TextBlock version = null!;
     bool filling, recording, built, saying, removing;
@@ -39,9 +34,9 @@ public sealed class SettingsPage : IPage
         autoConnect = Switch();
         lan = Switch();
         // The number is checked here, not clamped: a wrong one is said, not changed.
-        port = new() { Width = 110, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Hidden, ValidationMode = NumberBoxValidationMode.Disabled };
-        auth = new() { Width = 190, PlaceholderText = L.T("user:password") };
-        dns = new() { Width = 250 };
+        port = Ui.Field("", "", 110);
+        auth = Ui.Field(L.T("user:password"), "", 190);
+        dns = Ui.Field("", "", 250);
         hotKey = new() { MinWidth = 150 };
         removeHelper = new() { Content = L.T("Remove") };
         removeHelper.Click += async (_, _) =>
@@ -51,41 +46,39 @@ public sealed class SettingsPage : IPage
             var reply = await A.RemoveHelper();
             removing = false;
             Update(false);
-            if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(window.Content.XamlRoot, L.T("The helper was not removed"), reply.Error);
+            if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(L.T("The helper was not removed"), reply.Error!);
         };
         version = Ui.Text("", 12, null, Ui.Secondary);
-        protect.Toggled += (_, _) => { if (!filling) A.SetProtect(protect.IsOn); };
-        autoConnect.Toggled += (_, _) => { if (!filling) A.SetAutoConnect(autoConnect.IsOn); };
-        lan.Toggled += (_, _) => { if (!filling) A.SetLan(lan.IsOn); };
-        login.Toggled += async (_, _) =>
+        protect.Click += (_, _) => { if (!filling) A.SetProtect(protect.IsChecked == true); };
+        autoConnect.Click += (_, _) => { if (!filling) A.SetAutoConnect(autoConnect.IsChecked == true); };
+        lan.Click += (_, _) => { if (!filling) A.SetLan(lan.IsChecked == true); };
+        login.Click += async (_, _) =>
         {
             if (filling) return;
-            var reply = await A.SetLogin(login.IsOn);
-            if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(window.Content.XamlRoot, L.T("The setting was not changed"), reply.Error);
+            var reply = await A.SetLogin(login.IsChecked == true);
+            if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(L.T("The setting was not changed"), reply.Error!);
         };
-        port.ValueChanged += async (_, e) =>
+        Commit(port, async value =>
         {
-            if (filling) return;
-            double v = e.NewValue;
-            if (double.IsNaN(v) || v != Math.Floor(v) || v < 1024 || v > 65535)
+            if (!int.TryParse(value, out var v) || v < 1024 || v > 65535)
             {
                 // The port in use stays, as on macOS.
                 filling = true;
-                port.Value = A.S.View.Port;
+                port.Text = A.S.View.Port.ToString();
                 filling = false;
-                await Ui.Say(window.Content.XamlRoot, L.T("The setting was not changed"), L.T("The local port is a whole number from 1024 to 65535."));
+                await Ui.Say(L.T("The setting was not changed"), L.T("The local port is a whole number from 1024 to 65535."));
                 return;
             }
-            A.SetPort((int)v);
-        };
+            A.SetPort(v);
+        });
         Commit(auth, A.SetAuth);
         Commit(dns, A.SetDns);
         hotKey.Click += (_, _) => { recording = true; hotKey.Content = L.T("Press the keys…"); };
         hotKey.PreviewKeyDown += Record;
-        hotKey.LostFocus += (_, _) => { recording = false; ShowHotKey(); };
+        hotKey.LostKeyboardFocus += (_, _) => { recording = false; ShowHotKey(); };
     }
 
-    static ToggleSwitch Switch() => new() { OnContent = "", OffContent = "", MinWidth = 0, HorizontalAlignment = HorizontalAlignment.Right };
+    static CheckBox Switch() => new() { Style = Ui.Style("Switch"), HorizontalAlignment = HorizontalAlignment.Right };
 
     /// A field is taken when Enter is pressed or the focus leaves it: once for
     /// what was typed, whichever comes first. What the engine then says is put
@@ -100,8 +93,8 @@ public sealed class SettingsPage : IPage
             sent = value;
             action(value);
         }
-        box.KeyDown += (_, e) => { if (e.Key == VirtualKey.Enter) { Take(); e.Handled = true; } };
-        box.LostFocus += (_, _) => Take();
+        box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Take(); e.Handled = true; } };
+        box.LostKeyboardFocus += (_, _) => Take();
         box.TextChanged += (_, _) => { if (filling) sent = null; };
     }
 
@@ -110,30 +103,31 @@ public sealed class SettingsPage : IPage
         column.Children.Clear();
         recording = false;
         Make();
-        column.Children.Add(Group(
+        void Add(UIElement e) => Ui.Add(column, e, 14);
+        Add(Group(
             Row(L.T("Let nothing go past FlClash"),
                 L.T("In TUN mode nothing leaves this computer past the tunnel, IPv6 included. If the connection breaks, the internet stays off until it is back or you turn it off; in System Proxy mode that holds for the apps that follow the system proxy. The local network always works."),
                 protect)));
-        column.Children.Add(Group(
+        Add(Group(
             Row(L.T("Local port"), L.T("HTTP and SOCKS on 127.0.0.1"), port),
             Row(L.T("Let the local network use it"), L.T("Other devices at home can point at this computer's address and the port."), lan),
             Row(L.T("Login for other devices"), L.T("Empty asks for none. This computer is never asked."), auth)));
-        column.Children.Add(Group(Row(L.T("DNS in TUN mode"), L.T("Resolves names for what goes through the tunnel."), dns)));
-        column.Children.Add(Group(Row(L.T("Shortcut to connect"), L.T("Works from any app."), hotKey)));
-        column.Children.Add(Group(
+        Add(Group(Row(L.T("DNS in TUN mode"), L.T("Resolves names for what goes through the tunnel."), dns)));
+        Add(Group(Row(L.T("Shortcut to connect"), L.T("Works from any app."), hotKey)));
+        Add(Group(
             Row(L.T("Launch at Login"), null, login),
             Row(L.T("Connect when FlClash starts"), null, autoConnect)));
         var saveBackup = new Button { Content = L.T("Save a Backup…") };
         var restoreBackup = new Button { Content = L.T("Restore from a Backup…") };
         saveBackup.Click += (_, _) => SaveBackup();
         restoreBackup.Click += (_, _) => RestoreBackup();
-        column.Children.Add(Group(Row(L.T("Backup"),
+        Add(Group(Row(L.T("Backup"),
             L.T("The backup holds the keys of your servers and the addresses of your subscriptions. Keep it where others cannot read it."),
             Ui.Row(8, saveBackup, restoreBackup))));
-        column.Children.Add(Group(Row(L.T("System helper"),
+        Add(Group(Row(L.T("System helper"),
             L.T("Runs TUN with administrator rights and stays on the computer when FlClash is gone. Remove it from a computer you leave: turning TUN on installs it again."),
             removeHelper)));
-        column.Children.Add(version);
+        Add(version);
         built = true;
     }
 
@@ -141,16 +135,14 @@ public sealed class SettingsPage : IPage
     static FrameworkElement Row(string title, string? note, FrameworkElement control)
     {
         var words = Ui.Column(3, Ui.Text(title, 14, null, null, wrap: true));
-        if (note != null) words.Children.Add(Ui.Text(note, 12, null, Ui.Secondary, wrap: true));
+        if (note != null) Ui.Add(words, Ui.Text(note, 12, null, Ui.Secondary, wrap: true), 3);
         words.VerticalAlignment = VerticalAlignment.Center;
-        var line = new Grid { ColumnSpacing = 16, Padding = new Thickness(16, 12, 16, 12), MinHeight = 64 };
-        line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var line = Ui.Columns(-1, Ui.Auto);
+        line.MinHeight = 40;
         line.Children.Add(words);
         control.VerticalAlignment = VerticalAlignment.Center;
-        Grid.SetColumn(control, 1);
-        line.Children.Add(control);
-        return line;
+        Ui.Place(line, control, 1, 16);
+        return new Border { Padding = new Thickness(16, 12, 16, 12), MinHeight = 64, Child = line };
     }
 
     /// Rows that belong together, on one rounded panel with lines between them.
@@ -159,15 +151,15 @@ public sealed class SettingsPage : IPage
         var stack = new StackPanel();
         for (int i = 0; i < rows.Length; i++)
         {
-            if (i > 0) stack.Children.Add(new Border { Height = 1, Background = Ui.Res("DividerStrokeColorDefaultBrush"), Margin = new Thickness(16, 0, 16, 0) });
+            if (i > 0) stack.Children.Add(new Border { Height = 1, Background = Ui.B("Divider"), Margin = new Thickness(16, 0, 16, 0) });
             stack.Children.Add(rows[i]);
         }
         return new Border
         {
             CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(1),
-            BorderBrush = Ui.Res("CardStrokeColorDefaultBrush"),
-            Background = Ui.Res("CardBackgroundFillColorDefaultBrush"),
+            BorderBrush = Ui.B("CardStroke"),
+            Background = Ui.B("Card"),
             Child = stack,
         };
     }
@@ -184,108 +176,108 @@ public sealed class SettingsPage : IPage
         if (!built || shownLang != L.Lang) { shownLang = L.Lang; Build(); }
         var s = A.S;
         filling = true;
-        protect.IsOn = s.View.Protect;
+        protect.IsChecked = s.View.Protect;
         protect.IsEnabled = !s.Busy;
-        login.IsOn = A.App.Login;
-        autoConnect.IsOn = s.View.AutoConnect;
+        login.IsChecked = A.App.Login;
+        autoConnect.IsChecked = s.View.AutoConnect;
         // Not while the field is being typed in.
-        if (port.FocusState == FocusState.Unfocused) port.Value = s.View.Port;
+        if (!port.IsKeyboardFocusWithin) port.Text = s.View.Port.ToString();
         port.IsEnabled = lan.IsEnabled = dns.IsEnabled = !s.Busy;
-        lan.IsOn = s.View.Lan;
-        if (auth.FocusState == FocusState.Unfocused) auth.Text = s.View.Auth;
+        lan.IsChecked = s.View.Lan;
+        if (!auth.IsKeyboardFocusWithin) auth.Text = s.View.Auth;
         auth.IsEnabled = s.View.Lan && !s.Busy;
-        if (dns.FocusState == FocusState.Unfocused) dns.Text = s.View.Dns;
+        if (!dns.IsKeyboardFocusWithin) dns.Text = s.View.Dns;
         removeHelper.IsEnabled = s.Status.Installed && !s.Status.Running && !s.Status.Blocked && !s.Busy && !removing;
         if (!recording) ShowHotKey();
         version.Text = string.IsNullOrEmpty(A.App.Version) ? "FlClash" : "FlClash " + A.App.Version;
         filling = false;
         // A value the engine refused is said once, by the window.
-        if (!string.IsNullOrEmpty(s.Problem) && !saying && window.Content.XamlRoot != null) Problem(s.Problem);
+        if (!string.IsNullOrEmpty(s.Problem) && !saying) Problem(s.Problem!);
     }
 
     async void Problem(string text)
     {
         saying = true;
         A.Dismiss();
-        await Ui.Say(window.Content.XamlRoot, L.T("The setting was not changed"), text);
+        await Ui.Say(L.T("The setting was not changed"), text);
         saying = false;
     }
 
-    void ShowHotKey() => hotKey.Content = A.App.HotKey.Title.Length > 0 ? A.App.HotKey.Title : L.T("Record Shortcut");
-
-    static bool Down(VirtualKey key) => InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(CoreVirtualKeyStates.Down);
+    void ShowHotKey() => hotKey.Content = !string.IsNullOrEmpty(A.App.HotKey.Title) ? A.App.HotKey.Title : L.T("Record Shortcut");
 
     /// Escape leaves the shortcut as it was, Delete clears it, a key with
     /// Ctrl, Alt or Win (or a function key alone) becomes it.
-    async void Record(object sender, KeyRoutedEventArgs e)
+    async void Record(object sender, KeyEventArgs e)
     {
         if (!recording) return;
-        var key = e.Key;
+        var key = (uint)KeyInterop.VirtualKeyFromKey(e.Key == Key.System ? e.SystemKey : e.Key);
         e.Handled = true;
-        if (key is VirtualKey.Control or VirtualKey.Menu or VirtualKey.Shift or VirtualKey.LeftWindows or VirtualKey.RightWindows
-            or VirtualKey.LeftControl or VirtualKey.RightControl or VirtualKey.LeftMenu or VirtualKey.RightMenu or VirtualKey.LeftShift or VirtualKey.RightShift) return;
+        // Ctrl, Shift, Alt and Win on their own wait for the key they go with.
+        if (key is 0x10 or 0x11 or 0x12 or 0x5B or 0x5C or >= 0xA0 and <= 0xA5) return;
         HotKey? combo = null;
-        if (key == VirtualKey.Escape) { }
-        else if (key is VirtualKey.Delete or VirtualKey.Back) combo = new HotKey();
+        if (key == 0x1B) { }
+        else if (key is 0x2E or 0x08) combo = new HotKey();
         else
         {
             uint mods = 0;
             var parts = new List<string>();
-            if (Down(VirtualKey.Control)) { mods |= 2; parts.Add("Ctrl"); }
-            if (Down(VirtualKey.Menu)) { mods |= 1; parts.Add("Alt"); }
-            if (Down(VirtualKey.Shift)) { mods |= 4; parts.Add("Shift"); }
-            if (Down(VirtualKey.LeftWindows) || Down(VirtualKey.RightWindows)) { mods |= 8; parts.Add("Win"); }
-            bool function = key >= VirtualKey.F1 && key <= VirtualKey.F24;
+            var held = Keyboard.Modifiers;
+            if (held.HasFlag(ModifierKeys.Control)) { mods |= 2; parts.Add("Ctrl"); }
+            if (held.HasFlag(ModifierKeys.Alt)) { mods |= 1; parts.Add("Alt"); }
+            if (held.HasFlag(ModifierKeys.Shift)) { mods |= 4; parts.Add("Shift"); }
+            if (Keyboard.IsKeyDown(Key.LWin) || Keyboard.IsKeyDown(Key.RWin)) { mods |= 8; parts.Add("Win"); }
+            bool function = key >= 0x70 && key <= 0x87;
             var name = KeyName(key);
             if (name == null || ((mods & ~4u) == 0 && !function)) return;
             parts.Add(name);
-            combo = new HotKey { Key = (uint)key, Modifiers = mods, Title = string.Join("+", parts) };
+            combo = new HotKey { Key = key, Modifiers = mods, Title = string.Join("+", parts) };
         }
         recording = false;
         if (combo != null)
         {
             var reply = await A.SetHotKey(combo);
-            if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(window.Content.XamlRoot, L.T("The setting was not changed"), reply.Error);
+            if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(L.T("The setting was not changed"), reply.Error!);
         }
         ShowHotKey();
     }
 
-    static string? KeyName(VirtualKey key)
+    /// The name of a key as the shortcut is written, by its virtual-key code.
+    static string? KeyName(uint key)
     {
-        if (key >= VirtualKey.A && key <= VirtualKey.Z) return ((char)key).ToString();
-        if (key >= VirtualKey.Number0 && key <= VirtualKey.Number9) return ((char)key).ToString();
-        if (key >= VirtualKey.F1 && key <= VirtualKey.F24) return "F" + (key - VirtualKey.F1 + 1);
+        if (key >= 0x41 && key <= 0x5A) return ((char)key).ToString();
+        if (key >= 0x30 && key <= 0x39) return ((char)key).ToString();
+        if (key >= 0x70 && key <= 0x87) return "F" + (key - 0x70 + 1);
         return key switch
         {
-            VirtualKey.Space => "Space",
-            VirtualKey.Enter => "Enter",
-            VirtualKey.Tab => "Tab",
-            VirtualKey.Home => "Home",
-            VirtualKey.End => "End",
-            VirtualKey.Insert => "Insert",
-            VirtualKey.PageUp => "PageUp",
-            VirtualKey.PageDown => "PageDown",
-            VirtualKey.Up => "↑",
-            VirtualKey.Down => "↓",
-            VirtualKey.Left => "←",
-            VirtualKey.Right => "→",
+            0x20 => "Space",
+            0x0D => "Enter",
+            0x09 => "Tab",
+            0x24 => "Home",
+            0x23 => "End",
+            0x2D => "Insert",
+            0x21 => "PageUp",
+            0x22 => "PageDown",
+            0x26 => "↑",
+            0x28 => "↓",
+            0x25 => "←",
+            0x27 => "→",
             _ => null,
         };
     }
 
     async void SaveBackup()
     {
-        if (await Files.PickSave(window, "FlClash backup", "JSON", ".json") is not { } path) return;
+        if (Files.PickSave(window, "FlClash backup", "JSON", ".json") is not { } path) return;
         var reply = await A.Do(new Request { Op = "backupWrite", Name = path }, quiet: true);
-        if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(window.Content.XamlRoot, L.T("The backup was not saved"), reply.Error);
+        if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(L.T("The backup was not saved"), reply.Error!);
     }
 
     async void RestoreBackup()
     {
-        if (await Files.PickOpen(window, ".json") is not { } path) return;
-        if (!await Ui.Ask(window.Content.XamlRoot, L.T("Restore from a Backup…"),
+        if (Files.PickOpen(window, ".json") is not { } path) return;
+        if (!await Ui.Ask(L.T("Restore from a Backup…"),
             L.T("Everything set up now — servers, subscriptions, policies, settings — is replaced by what the backup holds."), L.T("Restore"))) return;
         var reply = await A.Do(new Request { Op = "backupRead", Name = path }, quiet: true);
-        if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(window.Content.XamlRoot, L.T("The backup was not restored"), reply.Error);
+        if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(L.T("The backup was not restored"), reply.Error!);
     }
 }

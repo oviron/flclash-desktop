@@ -1,9 +1,8 @@
-using Microsoft.UI;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Shapes;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using QRCoder;
+using Shapes = System.Windows.Shapes;
 
 namespace FlClash;
 
@@ -22,11 +21,12 @@ public static class QrDialog
         for (int y = 0; y < n; y++)
             for (int x = 0; x < n; x++)
                 if (matrix[y][x])
-                    group.Children.Add(new RectangleGeometry { Rect = new Windows.Foundation.Rect(x * cell, y * cell, cell + 0.3, cell + 0.3) });
-        return new Microsoft.UI.Xaml.Shapes.Path { Data = group, Fill = new SolidColorBrush(Colors.Black), Width = side, Height = side };
+                    group.Children.Add(new RectangleGeometry(new Rect(x * cell, y * cell, cell + 0.3, cell + 0.3)));
+        group.Freeze();
+        return new Shapes.Path { Data = group, Fill = Brushes.Black, Width = side, Height = side };
     }
 
-    public static async Task Show(XamlRoot root, string name, string link)
+    public static async Task Show(string name, string link)
     {
         FrameworkElement picture;
         try
@@ -34,7 +34,7 @@ public static class QrDialog
             // A code is read against white, whatever the theme.
             picture = new Border
             {
-                Background = new SolidColorBrush(Colors.White),
+                Background = Brushes.White,
                 CornerRadius = new CornerRadius(12),
                 Padding = new Thickness(10),
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -55,23 +55,21 @@ public static class QrDialog
         problem.MaxWidth = 300;
         problem.HorizontalAlignment = HorizontalAlignment.Center;
         problem.Visibility = Visibility.Collapsed;
-        var dialog = new ContentDialog
+        await Dialogs.Show(new Dialog
         {
-            XamlRoot = root,
             Title = name,
             Content = Ui.Column(14, picture, note, problem),
-            PrimaryButtonText = L.T("Copy Link"),
-            CloseButtonText = L.T("Done"),
-            DefaultButton = ContentDialogButton.Close,
-        };
-        dialog.PrimaryButtonClick += (_, e) =>
-        {
+            Primary = L.T("Copy Link"),
+            Close = L.T("Done"),
+            PrimaryIsDefault = false,
             // The dialog stays: the link is copied beside the code, not instead of it.
-            e.Cancel = true;
-            var error = Ui.Copy(link, secret: true);
-            problem.Text = error == null ? "" : L.T("Nothing was copied") + ": " + error;
-            problem.Visibility = error == null ? Visibility.Collapsed : Visibility.Visible;
-        };
-        await Ui.Show(dialog);
+            OnPrimary = _ =>
+            {
+                var error = Ui.Copy(link, secret: true);
+                problem.Text = error == null ? "" : L.T("Nothing was copied") + ": " + error;
+                problem.Visibility = error == null ? Visibility.Collapsed : Visibility.Visible;
+                return Task.FromResult(false);
+            },
+        });
     }
 }

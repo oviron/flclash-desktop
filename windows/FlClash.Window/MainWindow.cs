@@ -1,13 +1,10 @@
 using System.Runtime.InteropServices;
-using System.Text.Json;
-using Microsoft.UI;
-using Microsoft.UI.Windowing;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Imaging;
-using Windows.System;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace FlClash;
 
@@ -38,100 +35,93 @@ public sealed class MainWindow : Window
     public SettingsPage Settings = null!;
 
     readonly Grid root = new();
-    readonly NavigationView nav = new();
     readonly Grid body = new();
     readonly Border pageHost = new();
     readonly TextBlock pageTitle = Ui.Text("", 20, Ui.Semibold);
     readonly TextBlock pageSubtitle = Ui.Text("", 12, null, Ui.Secondary);
-    readonly TextBlock appTitle = Ui.Text("FlClash", 12);
-    readonly TextBlock testTitle = Ui.Text("", 12);
-    readonly Dictionary<string, NavigationViewItem> items = new();
-    readonly DropDownButton order = new();
+    readonly Dictionary<string, RadioButton> items = new();
+    readonly Button order = new();
     readonly Button measure = new();
-    readonly DropDownButton addServers = new();
-    readonly DropDownButton addPolicy = new();
+    readonly Button addServers = new();
+    readonly Button addPolicy = new();
     readonly Button pause = new();
-    readonly AutoSuggestBox search = new() { Width = 220, VerticalAlignment = VerticalAlignment.Center };
-    readonly MenuFlyout orderMenu = new();
+    readonly TextBox search = Ui.Field("", "", 220);
+    readonly Grid dialogs = new();
     IPage current;
     string page = "servers";
     string shownLang = "";
+    bool shownDark;
     WindowPrefs prefs = new();
     static readonly string prefsPath = Path.Combine(App.DataDir, "window.json");
 
     public bool ShowsSettings => page == "settings";
     public WindowPrefs Prefs => prefs;
-    public IntPtr Hwnd { get; }
+    public IntPtr Hwnd => new WindowInteropHelper(this).Handle;
 
     public MainWindow(Agent agent, string? startPage)
     {
         Agent = agent;
         ReadPrefs();
-        Hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         Title = "FlClash";
-        SystemBackdrop = new MicaBackdrop();
-        ExtendsContentIntoTitleBar = true;
+        FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI");
+        FontSize = 14;
+        UseLayoutRounding = true;
+        SetResourceReference(ForegroundProperty, "Text1");
+        SetResourceReference(BackgroundProperty, "Solid");
+        MinWidth = 800;
+        MinHeight = 520;
+        Width = 980;
+        Height = 660;
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        try
+        {
+            using var icon = typeof(MainWindow).Assembly.GetManifestResourceStream("FlClash.ico");
+            if (icon != null) Icon = BitmapFrame.Create(icon, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+        }
+        catch (Exception) { }
+        shownDark = Ui.Dark;
 
         MakePages();
         current = Servers;
 
-        // The title bar: the app's icon and name, as the system draws others.
-        var titleBar = new Grid { Height = 48, Padding = new Thickness(16, 0, 140, 0) };
-        var icon = new Image { Width = 16, Height = 16, Source = new BitmapImage(new Uri(Path.Combine(AppContext.BaseDirectory, "FlClash.ico"))) };
-        testTitle.Foreground = Ui.Brush(Tint.Orange);
-        titleBar.Children.Add(Ui.Row(10, icon, appTitle, testTitle));
-        ((StackPanel)titleBar.Children[0]).VerticalAlignment = VerticalAlignment.Center;
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.Children.Add(titleBar);
-        Grid.SetRow(nav, 1);
-        root.Children.Add(nav);
-
-        nav.PaneDisplayMode = NavigationViewPaneDisplayMode.Left;
-        nav.IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed;
-        nav.IsPaneToggleButtonVisible = false;
-        nav.IsSettingsVisible = true;
-        nav.OpenPaneLength = 210;
-        foreach (var (tag, glyph) in new[] { ("servers", ""), ("routing", ""), ("connections", ""), ("log", "") })
+        // The sidebar: the pages, and the settings at the foot.
+        var nav = new Grid { Width = 210, Margin = new Thickness(4, 6, 4, 6) };
+        nav.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        nav.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var pages = new StackPanel();
+        foreach (var (tag, glyph) in new[] { ("servers", ""), ("routing", ""), ("connections", ""), ("log", ""), ("settings", "") })
         {
-            var item = new NavigationViewItem { Tag = tag, Icon = new FontIcon { Glyph = glyph } };
+            var item = new RadioButton { Style = Ui.Style("Nav"), Tag = glyph, GroupName = "nav" };
+            item.Checked += (_, _) => Show(tag);
             items[tag] = item;
-            nav.MenuItems.Add(item);
+            if (tag == "settings") { Grid.SetRow(item, 1); nav.Children.Add(item); }
+            else pages.Children.Add(item);
         }
-        nav.SelectionChanged += (_, e) =>
-        {
-            var tag = e.IsSettingsSelected ? "settings" : (e.SelectedItem as NavigationViewItem)?.Tag as string ?? "servers";
-            Show(tag);
-        };
-        nav.Loaded += (_, _) =>
-        {
-            if (nav.SettingsItem is NavigationViewItem s) s.Content = L.T("Settings");
-            Mark();
-        };
+        nav.Children.Add(pages);
 
         // The toolbar of the page, beside its title.
         Tool(order, "", "Order");
-        order.Flyout = orderMenu;
-        orderMenu.Opening += (_, _) => FillOrder();
+        Ui.DropDown(order, OrderMenu);
         Tool(measure, "", "Test Latency");
         measure.Click += (_, _) => { Show("servers"); Servers.MeasureAll(); };
         Tool(addServers, "", "Add servers");
+        Ui.DropDown(addServers, AddMenu);
         Tool(addPolicy, "", "Add a policy");
+        Ui.DropDown(addPolicy, PolicyMenu);
         Tool(pause, "", "Pause");
         pause.Click += (_, _) => { Connections.Paused = !Connections.Paused; UpdateToolbar(); };
-        search.QueryIcon = new SymbolIcon(Symbol.Find);
+        search.VerticalAlignment = VerticalAlignment.Center;
         search.TextChanged += (_, _) => current.Query = search.Text;
         var tools = Ui.Row(6, order, measure, addServers, addPolicy, pause, search);
         tools.VerticalAlignment = VerticalAlignment.Center;
 
         var titles = Ui.Column(0, pageTitle, pageSubtitle);
         titles.VerticalAlignment = VerticalAlignment.Center;
-        var toolbar = new Grid { Margin = new Thickness(20, 6, 16, 6), MinHeight = 48 };
-        toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var toolbar = Ui.Columns(-1, Ui.Auto);
+        toolbar.Margin = new Thickness(20, 8, 16, 6);
+        toolbar.MinHeight = 48;
         toolbar.Children.Add(titles);
-        Grid.SetColumn(tools, 1);
-        toolbar.Children.Add(tools);
+        Ui.Place(toolbar, tools, 1, 12);
 
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -141,29 +131,35 @@ public sealed class MainWindow : Window
         body.Children.Add(Header.View);
         Grid.SetRow(pageHost, 2);
         body.Children.Add(pageHost);
-        nav.Content = body;
+
+        // The page lies on a layer of its own, as the system's apps draw it.
+        var content = new Border { Child = body, CornerRadius = new CornerRadius(8, 0, 0, 0), BorderThickness = new Thickness(1, 1, 0, 0) };
+        content.SetResourceReference(Border.BackgroundProperty, "Card");
+        content.SetResourceReference(Border.BorderBrushProperty, "CardStroke");
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        root.Children.Add(nav);
+        Grid.SetColumn(content, 1);
+        root.Children.Add(content);
+        Grid.SetColumnSpan(dialogs, 2);
+        root.Children.Add(dialogs);
+        Dialogs.Attach(dialogs);
+        Content = root;
 
         Accelerators();
-        // --theme light|dark draws the window in a theme other than the system's, to look at it.
-        var argv = Environment.GetCommandLineArgs();
-        int at = Array.IndexOf(argv, "--theme");
-        if (at >= 0 && at + 1 < argv.Length) root.RequestedTheme = argv[at + 1] == "light" ? ElementTheme.Light : ElementTheme.Dark;
-        Content = root;
-        SetTitleBar(titleBar);
-
-        root.ActualThemeChanged += (_, _) => Themed();
-        root.Loaded += (_, _) => Themed();
+        SourceInitialized += (_, _) =>
+        {
+            Ui.Backdrop(this);
+            Place();
+        };
         Agent.Changed += () => Redraw(false);
-        Agent.Activate += p => { if (!string.IsNullOrEmpty(p)) Show(p); Front(); };
+        Agent.Activate += p => { if (!string.IsNullOrEmpty(p)) Show(p!); Front(); };
         Agent.Lost += Close;
 
-        Activated += (_, e) =>
-        {
-            // The command line may have changed the lists while the window was aside.
-            if (e.WindowActivationState != WindowActivationState.Deactivated) Agent.Refresh();
-        };
-        Closed += (_, _) => { SavePrefs(); current.Hidden(); Agent.Close(); };
-        Place();
+        // The command line may have changed the lists while the window was aside.
+        Activated += (_, _) => Agent.Refresh();
+        Closing += (_, _) => SavePrefs();
+        Closed += (_, _) => { current.Hidden(); Agent.Close(); };
         Select(startPage ?? "servers");
     }
 
@@ -179,18 +175,19 @@ public sealed class MainWindow : Window
 
     /// The brushes of a theme are taken when things are made: in another
     /// theme the header and the pages are made again.
-    void Themed()
+    public void Themed()
     {
-        bool dark = root.ActualTheme == ElementTheme.Dark;
-        if (dark == Ui.Dark && pageHost.Child != null) { Redraw(true); return; }
-        Ui.Dark = dark;
+        if (App.Theme == null) Ui.Dark = Ui.SystemDark();
+        Ui.ApplyTheme();
+        Ui.Backdrop(this);
+        if (Ui.Dark == shownDark && pageHost.Child != null) { Redraw(true); return; }
+        shownDark = Ui.Dark;
         current.Hidden();
         body.Children.Remove(Header.View);
         MakePages();
         Grid.SetRow(Header.View, 1);
         body.Children.Add(Header.View);
         pageSubtitle.Foreground = Ui.Secondary;
-        testTitle.Foreground = Ui.Brush(Tint.Orange);
         pageHost.Child = null;
         current = Servers;
         var tag = page;
@@ -200,7 +197,8 @@ public sealed class MainWindow : Window
 
     void Tool(Button b, string glyph, string label)
     {
-        b.Content = new FontIcon { Glyph = glyph, FontSize = 16 };
+        b.Style = Ui.Style("Subtle");
+        b.Content = Ui.Glyph(glyph, 16);
         b.Padding = new Thickness(10, 7, 10, 7);
         b.Tag = label;
         b.VerticalAlignment = VerticalAlignment.Center;
@@ -213,55 +211,50 @@ public sealed class MainWindow : Window
         items["routing"].Content = L.T("Routing");
         items["connections"].Content = L.T("Connections");
         items["log"].Content = L.T("Log");
-        if (nav.SettingsItem is NavigationViewItem s) s.Content = L.T("Settings");
-        foreach (var b in new Button[] { order, measure, addServers, addPolicy })
+        items["settings"].Content = L.T("Settings");
+        foreach (var b in new[] { order, measure, addServers, addPolicy })
         {
             var text = L.T((string)b.Tag);
-            ToolTipService.SetToolTip(b, text);
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(b, text);
+            b.ToolTip = text;
+            AutomationName(b, text);
         }
-        search.PlaceholderText = L.T("Search");
-        var addMenu = new MenuFlyout();
-        addMenu.Items.Add(Item(L.T("Import from Clipboard"), () => { Show("servers"); Servers.ImportFromClipboard(); }, "Ctrl+Shift+V"));
-        addMenu.Items.Add(Item(L.T("Import from File…"), () => { Show("servers"); Servers.ImportFromFile(); }, "Ctrl+O"));
-        addMenu.Items.Add(new MenuFlyoutSeparator());
-        addMenu.Items.Add(Item(L.T("Add a Subscription…"), () => { Show("servers"); Servers.AddSubscription(); }));
-        addMenu.Items.Add(Item(L.T("Update Subscriptions"), () => Agent.UpdateAll(), "Ctrl+R"));
-        addServers.Flyout = addMenu;
-        var policyMenu = new MenuFlyout();
-        policyMenu.Items.Add(Item(L.T("New Policy…"), () => { Show("routing"); Routing.NewPolicy(); }, "Ctrl+N"));
-        policyMenu.Items.Add(Item(L.T("Import from File…"), () => { Show("routing"); Routing.ImportPolicy(); }));
-        addPolicy.Flyout = policyMenu;
+        Ui.SetPlaceholder(search, L.T("Search"));
     }
 
-    public static MenuFlyoutItem Item(string text, Action action, string? keys = null, bool enabled = true)
+    static void AutomationName(UIElement e, string text) => System.Windows.Automation.AutomationProperties.SetName(e, text);
+
+    ContextMenu AddMenu()
     {
-        var item = new MenuFlyoutItem { Text = text, IsEnabled = enabled };
-        if (keys != null) item.KeyboardAcceleratorTextOverride = keys;
-        item.Click += (_, _) => action();
-        return item;
+        var m = new ContextMenu();
+        m.Items.Add(Ui.Item(L.T("Import from Clipboard"), () => { Show("servers"); Servers.ImportFromClipboard(); }, "Ctrl+Shift+V"));
+        m.Items.Add(Ui.Item(L.T("Import from File…"), () => { Show("servers"); Servers.ImportFromFile(); }, "Ctrl+O"));
+        m.Items.Add(new Separator());
+        m.Items.Add(Ui.Item(L.T("Add a Subscription…"), () => { Show("servers"); Servers.AddSubscription(); }));
+        m.Items.Add(Ui.Item(L.T("Update Subscriptions"), () => Agent.UpdateAll(), "Ctrl+R"));
+        return m;
     }
 
-    void FillOrder()
+    ContextMenu PolicyMenu()
     {
-        orderMenu.Items.Clear();
+        var m = new ContextMenu();
+        m.Items.Add(Ui.Item(L.T("New Policy…"), () => { Show("routing"); Routing.NewPolicy(); }, "Ctrl+N"));
+        m.Items.Add(Ui.Item(L.T("Import from File…"), () => { Show("routing"); Routing.ImportPolicy(); }));
+        return m;
+    }
+
+    ContextMenu OrderMenu()
+    {
+        var m = new ContextMenu();
         foreach (var (name, title) in ServersPage.Orders)
         {
-            var item = new RadioMenuFlyoutItem { Text = L.T(title), GroupName = "order", IsChecked = Servers.Order == name };
+            var item = new MenuItem { Header = L.T(title), IsChecked = Servers.Order == name };
             item.Click += (_, _) => Servers.Order = name;
-            orderMenu.Items.Add(item);
+            m.Items.Add(item);
         }
+        return m;
     }
 
     public void Select(string tag) => Show(tag);
-
-    /// The sidebar marks the page in front, once it is there to mark.
-    void Mark()
-    {
-        if (!nav.IsLoaded) return;
-        object? want = page == "settings" ? nav.SettingsItem : items.GetValueOrDefault(page);
-        if (want != null && nav.SelectedItem != want) nav.SelectedItem = want;
-    }
 
     /// Brings a page to the front.
     public void Show(string tag)
@@ -275,13 +268,13 @@ public sealed class MainWindow : Window
             _ => Servers,
         };
         if (tag is not ("routing" or "connections" or "log" or "settings")) tag = "servers";
+        if (items.TryGetValue(tag, out var item) && item.IsChecked != true) item.IsChecked = true;
         if (next == current && pageHost.Child != null) return;
         current.Hidden();
         // A pause holds the list for a look; leaving the page lets it go.
         if (tag != "connections") Connections.Paused = false;
         page = tag;
         current = next;
-        Mark();
         pageHost.Child = next.View;
         // The field keeps its text; the page that comes to the front takes it.
         next.Query = search.Text;
@@ -299,13 +292,10 @@ public sealed class MainWindow : Window
             Relabel();
         }
         var test = Agent.S.Test;
-        testTitle.Text = test ? "— " + L.T("Test environment") : "";
         Title = test ? "FlClash — " + L.T("Test environment") : "FlClash";
         if (page != "settings") Header.Update();
         current.Update(force);
         pageTitle.Text = current.Title;
-        pageSubtitle.Text = current.Subtitle;
-        pageSubtitle.Visibility = current.Subtitle.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         UpdateToolbar();
     }
 
@@ -317,10 +307,10 @@ public sealed class MainWindow : Window
         pause.Visibility = On(page == "connections");
         search.Visibility = On(page is "servers" or "connections" or "log");
         var paused = Connections.Paused;
-        ((FontIcon)pause.Content).Glyph = paused ? "" : "";
+        ((TextBlock)pause.Content).Text = paused ? "" : "";
         var label = paused ? L.T("Resume") : L.T("Pause");
-        ToolTipService.SetToolTip(pause, label);
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(pause, label);
+        pause.ToolTip = label;
+        AutomationName(pause, label);
         pause.IsEnabled = Agent.S.Status.Running;
         pageSubtitle.Text = current.Subtitle;
         pageSubtitle.Visibility = current.Subtitle.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -329,84 +319,97 @@ public sealed class MainWindow : Window
     /// The keys of the macOS menus, with Ctrl for Command.
     void Accelerators()
     {
-        void Key(VirtualKey key, VirtualKeyModifiers mods, Action action)
+        PreviewKeyDown += (_, e) =>
         {
-            var a = new KeyboardAccelerator { Key = key, Modifiers = mods };
-            a.Invoked += (_, e) => { e.Handled = true; action(); };
-            root.KeyboardAccelerators.Add(a);
-        }
-        var ctrl = VirtualKeyModifiers.Control;
-        Key(VirtualKey.Number1, ctrl, () => Select("servers"));
-        Key(VirtualKey.Number2, ctrl, () => Select("routing"));
-        Key(VirtualKey.Number3, ctrl, () => Select("connections"));
-        Key(VirtualKey.Number4, ctrl, () => Select("log"));
-        Key(VirtualKey.F, ctrl, () => { if (page is "routing" or "settings") Select("servers"); search.Focus(FocusState.Keyboard); });
-        Key(VirtualKey.V, ctrl | VirtualKeyModifiers.Shift, () => { Select("servers"); Servers.ImportFromClipboard(); });
-        Key(VirtualKey.O, ctrl, () => { Select("servers"); Servers.ImportFromFile(); });
-        Key(VirtualKey.R, ctrl, () => Agent.UpdateAll());
-        Key(VirtualKey.N, ctrl, () => { Select("routing"); Routing.NewPolicy(); });
-        Key(VirtualKey.T, ctrl, () => { Select("servers"); Servers.MeasureAll(); });
-        Key(VirtualKey.W, ctrl, Close);
+            if (Dialogs.Open) return;
+            var mods = Keyboard.Modifiers;
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+            Action? action = null;
+            if (mods == ModifierKeys.Control)
+                action = key switch
+                {
+                    Key.D1 => () => Select("servers"),
+                    Key.D2 => () => Select("routing"),
+                    Key.D3 => () => Select("connections"),
+                    Key.D4 => () => Select("log"),
+                    Key.F => () => { if (page is "routing" or "settings") Select("servers"); search.Focus(); search.SelectAll(); },
+                    Key.O => () => { Select("servers"); Servers.ImportFromFile(); },
+                    Key.R => () => Agent.UpdateAll(),
+                    Key.N => () => { Select("routing"); Routing.NewPolicy(); },
+                    Key.T => () => { Select("servers"); Servers.MeasureAll(); },
+                    Key.W => Close,
+                    _ => null,
+                };
+            else if (mods == (ModifierKeys.Control | ModifierKeys.Shift) && key == Key.V)
+                action = () => { Select("servers"); Servers.ImportFromClipboard(); };
+            if (action == null) return;
+            e.Handled = true;
+            action();
+        };
     }
 
-    // The window comes back where it was, at the size it was.
+    // The window comes back where it was, at the size it was, in the pixels
+    // of the screen.
     void ReadPrefs()
     {
         try
         {
-            if (File.Exists(prefsPath)) prefs = JsonSerializer.Deserialize(File.ReadAllText(prefsPath), Json.Default.WindowPrefs) ?? new();
+            if (File.Exists(prefsPath)) prefs = Json.Parse<WindowPrefs>(File.ReadAllText(prefsPath)) ?? new();
         }
         catch (Exception) { prefs = new(); }
+        prefs.ServerTab ??= "";
+        prefs.ServerOrder ??= "added";
     }
 
     public void SavePrefs()
     {
         try
         {
-            if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Restored })
+            if (WindowState == WindowState.Normal && GetWindowRect(Hwnd, out var r))
             {
-                prefs.X = AppWindow.Position.X;
-                prefs.Y = AppWindow.Position.Y;
-                prefs.Width = AppWindow.Size.Width;
-                prefs.Height = AppWindow.Size.Height;
+                prefs.X = r.Left;
+                prefs.Y = r.Top;
+                prefs.Width = r.Right - r.Left;
+                prefs.Height = r.Bottom - r.Top;
             }
             Directory.CreateDirectory(Path.GetDirectoryName(prefsPath)!);
-            File.WriteAllText(prefsPath, JsonSerializer.Serialize(prefs, Json.Default.WindowPrefs));
+            File.WriteAllText(prefsPath, Json.Write(prefs));
         }
         catch (Exception) { }
     }
 
     void Place()
     {
-        double scale = GetDpiForWindow(Hwnd) / 96.0;
-        if (AppWindow.Presenter is OverlappedPresenter p)
+        if (prefs.Width <= 0 || prefs.Height <= 0 || prefs.X == int.MinValue) return;
+        // The work area of the screen it was on, in pixels.
+        var monitor = MonitorFromPoint(new PointInt { X = prefs.X + 100, Y = prefs.Y + 20 }, 0 /* MONITOR_DEFAULTTONULL */);
+        if (monitor == IntPtr.Zero) return;
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref info)) return;
+        var w = info.Work;
+        if (prefs.X < w.Right - 100 && prefs.Y < w.Bottom - 100 && prefs.X + prefs.Width > w.Left + 100 && prefs.Y >= w.Top - 20)
         {
-            p.PreferredMinimumWidth = (int)(800 * scale);
-            p.PreferredMinimumHeight = (int)(520 * scale);
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            SetWindowPos(Hwnd, IntPtr.Zero, prefs.X, prefs.Y, prefs.Width, prefs.Height, 0x0014 /* SWP_NOZORDER | SWP_NOACTIVATE */);
         }
-        try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "FlClash.ico")); } catch (Exception) { }
-        var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        if (prefs.Width > 0 && prefs.Height > 0 && prefs.X != int.MinValue
-            && prefs.X < area.X + area.Width - 100 && prefs.Y < area.Y + area.Height - 100 && prefs.X + prefs.Width > area.X + 100 && prefs.Y >= area.Y - 20)
-        {
-            AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(prefs.X, prefs.Y, prefs.Width, prefs.Height));
-            return;
-        }
-        int w = (int)(980 * scale), h = (int)(660 * scale);
-        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(area.X + (area.Width - w) / 2, area.Y + (area.Height - h) / 2, w, h));
     }
 
     /// Comes to the front: the agent let this process take the focus.
     public void Front()
     {
-        if (IsIconic(Hwnd)) ShowWindow(Hwnd, 9);
-        AppWindow.Show();
-        SetForegroundWindow(Hwnd);
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Show();
         Activate();
+        SetForegroundWindow(Hwnd);
     }
 
-    [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr hwnd);
+    [StructLayout(LayoutKind.Sequential)] struct Rect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] struct PointInt { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] struct MonitorInfo { public int Size; public Rect Monitor; public Rect Work; public uint Flags; }
+
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
-    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hwnd);
-    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hwnd, int cmd);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(PointInt p, uint flags);
+    [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
 }

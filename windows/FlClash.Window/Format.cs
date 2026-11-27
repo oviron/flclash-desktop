@@ -97,7 +97,7 @@ public static class Format
     /// How long a connection has been open.
     public static string Age(long start)
     {
-        var seconds = Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - start);
+        var seconds = Math.Max(0L, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - start);
         if (seconds < 60) return L.F("%d s", seconds);
         if (seconds < 3600) return L.F("%d min", seconds / 60);
         return L.F("%d h", seconds / 3600);

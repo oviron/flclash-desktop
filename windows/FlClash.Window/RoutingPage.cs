@@ -1,9 +1,8 @@
 using System.Text;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
-using Windows.ApplicationModel.DataTransfer;
-using Windows.System;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 
 namespace FlClash;
 
@@ -12,8 +11,8 @@ public sealed class RoutingPage : IPage
 {
     readonly MainWindow window;
     Agent A => window.Agent;
-    readonly Grid root = new() { AllowDrop = true, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
-    readonly ListView list = new() { SelectionMode = ListViewSelectionMode.Single, Padding = new Thickness(8, 0, 8, 8) };
+    readonly Grid root = new() { AllowDrop = true, Background = Brushes.Transparent };
+    readonly ListBox list = new() { SelectionMode = SelectionMode.Single, Padding = new Thickness(8, 0, 8, 8) };
     string key = "";
 
     public RoutingPage(MainWindow window)
@@ -22,17 +21,18 @@ public sealed class RoutingPage : IPage
         root.Children.Add(list);
         list.KeyDown += (_, e) =>
         {
-            if (e.Key == VirtualKey.Delete && list.SelectedItem is ListViewItem { Tag: Policy p }) { Delete(p); e.Handled = true; }
-            else if (e.Key == VirtualKey.Enter && list.SelectedItem is ListViewItem { Tag: Policy q }) { A.SelectPolicy(q.Name); e.Handled = true; }
+            if (e.Key == Key.Delete && list.SelectedItem is ListBoxItem { Tag: Policy p }) { Delete(p); e.Handled = true; }
+            else if (e.Key == Key.Enter && list.SelectedItem is ListBoxItem { Tag: Policy q }) { A.SelectPolicy(q.Name); e.Handled = true; }
         };
         root.DragOver += (_, e) =>
         {
-            if (e.DataView.Contains(StandardDataFormats.StorageItems) || e.DataView.Contains(StandardDataFormats.Text)) e.AcceptedOperation = DataPackageOperation.Copy;
+            e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(DataFormats.UnicodeText) ? DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
         };
-        root.Drop += async (_, e) =>
+        root.Drop += (_, e) =>
         {
-            if (await Files.DroppedFile(e.DataView) is { } path) ImportFile(path);
-            else if (await Files.Text(e.DataView) is { } text) Import(text, "policy");
+            if (Files.DroppedFile(e.Data) is { } path) ImportFile(path);
+            else if (Files.Text(e.Data) is { } text) Import(text, "policy");
         };
     }
 
@@ -50,7 +50,7 @@ public sealed class RoutingPage : IPage
         foreach (var p in s.View.Policies) sb.Append(p.Name).Append(p.Builtin).Append(p.Rules).Append(';');
         if (!force && sb.ToString() == key) return;
         key = sb.ToString();
-        var chosen = (list.SelectedItem as ListViewItem)?.Tag is Policy c ? c.Name : null;
+        var chosen = (list.SelectedItem as ListBoxItem)?.Tag is Policy c ? c.Name : null;
         list.Items.Clear();
         foreach (var p in s.View.Policies)
         {
@@ -68,36 +68,32 @@ public sealed class RoutingPage : IPage
         _ => ("", Tint.Gray),
     };
 
-    ListViewItem Row(Policy p)
+    ListBoxItem Row(Policy p)
     {
         bool chosen = p.Name == A.S.View.Policy;
         var (glyph, tint) = Picture(p);
-        var grid = new Grid { ColumnSpacing = 12, Height = 52 };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var grid = Ui.Columns(Ui.Auto, -1, Ui.Auto);
+        grid.Height = 52;
         grid.Children.Add(Ui.Tile(glyph, tint));
         var lines = Ui.Column(2, Ui.Text(Format.PolicyTitle(p.Name), 14, chosen ? Ui.Semibold : null), Ui.Text(Format.PolicyAbout(p), 12, null, Ui.Secondary));
         lines.VerticalAlignment = VerticalAlignment.Center;
-        Grid.SetColumn(lines, 1);
-        grid.Children.Add(lines);
+        Ui.Place(grid, lines, 1, 12);
         if (chosen)
         {
-            var check = Ui.Glyph("", 18, Ui.Res("AccentTextFillColorPrimaryBrush"));
-            ToolTipService.SetToolTip(check, L.T("Selected"));
-            Grid.SetColumn(check, 2);
-            grid.Children.Add(check);
+            var check = Ui.Glyph("", 18, Ui.B("AccentText"));
+            check.ToolTip = L.T("Selected");
+            Ui.Place(grid, check, 2, 12);
         }
-        var item = new ListViewItem { HorizontalContentAlignment = HorizontalAlignment.Stretch, Content = grid, Tag = p, Padding = new Thickness(10, 2, 14, 2) };
-        item.DoubleTapped += (_, _) => A.SelectPolicy(p.Name);
-        var menu = new MenuFlyout();
-        menu.Items.Add(MainWindow.Item(L.T("Use This Policy"), () => A.SelectPolicy(p.Name)));
-        menu.Items.Add(new MenuFlyoutSeparator());
-        menu.Items.Add(MainWindow.Item(L.T("Edit…"), () => Edit(p), enabled: !p.Builtin));
-        menu.Items.Add(MainWindow.Item(L.T("Duplicate…"), () => Duplicate(p)));
-        menu.Items.Add(new MenuFlyoutSeparator());
-        menu.Items.Add(MainWindow.Item(L.T("Delete"), () => Delete(p), "Del", Removable(p)));
-        item.ContextFlyout = menu;
+        var item = new ListBoxItem { Content = grid, Tag = p, Padding = new Thickness(10, 2, 14, 2) };
+        item.MouseDoubleClick += (_, _) => A.SelectPolicy(p.Name);
+        var menu = new ContextMenu();
+        menu.Items.Add(Ui.Item(L.T("Use This Policy"), () => A.SelectPolicy(p.Name)));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Ui.Item(L.T("Edit…"), () => Edit(p), enabled: !p.Builtin));
+        menu.Items.Add(Ui.Item(L.T("Duplicate…"), () => Duplicate(p)));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Ui.Item(L.T("Delete"), () => Delete(p), "Del", Removable(p)));
+        item.ContextMenu = menu;
         return item;
     }
 
@@ -107,7 +103,7 @@ public sealed class RoutingPage : IPage
     async void Delete(Policy p)
     {
         if (!Removable(p)) return;
-        if (!await Ui.Ask(root.XamlRoot, L.F("Delete the policy “%@”?", p.Name), L.T("To get it back, you will have to import it again."), L.T("Delete"), destructive: true)) return;
+        if (!await Ui.Ask(L.F("Delete the policy “%@”?", p.Name), L.T("To get it back, you will have to import it again."), L.T("Delete"), destructive: true)) return;
         _ = A.Do(new Request { Op = "policyRemove", Name = p.Name });
     }
 
@@ -121,7 +117,7 @@ public sealed class RoutingPage : IPage
         if (p.Builtin) return;
         var reply = await A.Do(new Request { Op = "policyRead", Name = p.Name }, quiet: true);
         if (reply.Document != null) await PolicyEditor.Open(window, reply.Document, p.Name);
-        else await Ui.Say(root.XamlRoot, L.T("The policy could not be opened"), reply.Error ?? "");
+        else await Ui.Say(L.T("The policy could not be opened"), reply.Error ?? "");
     }
 
     async void Duplicate(Policy p)
@@ -129,23 +125,23 @@ public sealed class RoutingPage : IPage
         var reply = await A.Do(new Request { Op = "policyRead", Name = p.Name }, quiet: true);
         if (reply.Document is not { } doc)
         {
-            await Ui.Say(root.XamlRoot, L.T("The policy could not be opened"), reply.Error ?? "");
+            await Ui.Say(L.T("The policy could not be opened"), reply.Error ?? "");
             return;
         }
         doc.Name = p.Name + "-copy";
         await PolicyEditor.Open(window, doc, null);
     }
 
-    public async void ImportPolicy()
+    public void ImportPolicy()
     {
-        if (await Files.PickOpen(window, ".txt", ".list", ".conf", "*") is { } path) ImportFile(path);
+        if (Files.PickOpen(window, ".txt", ".list", ".conf", "*") is { } path) ImportFile(path);
     }
 
     async void ImportFile(string path)
     {
-        var (text, problem) = await Files.Read(path);
+        var (text, problem) = Files.Read(path);
         if (text != null) Import(text, Path.GetFileNameWithoutExtension(path));
-        else await Ui.Say(root.XamlRoot, L.T("The policy was not imported"), problem ?? "");
+        else await Ui.Say(L.T("The policy was not imported"), problem ?? "");
     }
 
     /// The name a policy is kept under, in the form the engine takes.
@@ -155,6 +151,6 @@ public sealed class RoutingPage : IPage
     async void Import(string text, string suggested)
     {
         var reply = await A.Do(new Request { Op = "policyImport", Name = Slug(suggested), Text = text }, quiet: true);
-        if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(root.XamlRoot, L.T("The policy was not imported"), reply.Error);
+        if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(L.T("The policy was not imported"), reply.Error!);
     }
 }

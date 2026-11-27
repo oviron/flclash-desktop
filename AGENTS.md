@@ -7,7 +7,7 @@ with a native window per system on top. GPL-3.0. The Android app lives in
 What exists now: import of servers, routing policies, the config compiler, a
 privileged helper that runs the core for the tunnel (a launchd daemon on macOS,
 a service on Windows), the command line, the macOS app (a menu bar item and a window), and
-the Windows app (an icon in the notification area and a WinUI window). Linux has
+the Windows app (an icon in the notification area and a WPF window). Linux has
 neither helper nor window yet.
 
 Each system gets its own native app, and they look and behave alike. What can
@@ -25,8 +25,11 @@ on Windows the model the window draws, which is the Go twin of `Model.swift`.
 - A server keeps its ID across re-import and rename; selections refer to IDs.
 - Entries and compiled configs hold credentials. Files are written `0600`,
   nothing prints an imported line, test fixtures use made-up hosts and keys.
-- The windows are native — AppKit on macOS, WinUI 3 on Windows — and stay
-  light: no web view, no cross-platform toolkit. Closing the window releases
+- The windows are native — AppKit on macOS, WPF on Windows — and stay
+  light: no web view, no cross-platform toolkit, no runtime of their own. The
+  Windows window runs on the .NET Framework 4.8 every supported Windows
+  carries; its styles are XAML read at start (`Theme.xaml`), the rest is built
+  in code. Closing the window releases
   it; the app stays in the menu bar or the notification area. On Windows the
   window is a process of its own and exits when closed.
 - Three modes: `proxy` (a local HTTP/SOCKS port only, the default), `system`
@@ -70,7 +73,8 @@ on Windows the model the window draws, which is the Go twin of `Model.swift`.
 - `cmd/flclash-windows` — `FlClash.exe`: the icon in the notification area,
   the engine and the model; it runs the proxy modes, starts the window and
   installs the helper.
-- `windows` — the WinUI 3 window, a C# project.
+- `windows` — the WPF window, a C# project; it builds with the .NET SDK on any
+  system (`dotnet build windows/FlClash.Window -c Release`).
 - `macos` — the AppKit app, a Swift package that links the bridge.
 - `l10n` — the strings of every app, keyed by their English text, in the
   macOS formats; `ru.lproj` holds the Russian. The Windows parts read the same
@@ -87,7 +91,7 @@ make app          # tools, bridge, Swift build, dist/FlClash.app (ad hoc signed)
 The app needs only the Command Line Tools to build. Look at a change to the
 window in the running app before calling it done: `open dist/FlClash.app`.
 
-On Windows, with Go and the .NET 10 SDK:
+On Windows, with Go and the .NET SDK:
 
 ```powershell
 windows\build.ps1   # everything into dist\windows\FlClash; -SkipGo, -SkipWindow
