@@ -157,7 +157,7 @@ func (s *Supervisor) handle(conn net.Conn) {
 	case OpStats:
 		resp.Stats, err = s.stats()
 	case OpExit:
-		resp.Exit, err = s.exit()
+		resp.Exit, err = s.exit(req)
 	case OpClose:
 		err = s.closeConnection(req.ID)
 	default:
@@ -576,14 +576,25 @@ func (s *Supervisor) closeConnection(id string) error {
 }
 
 // exit asks, through the server that runs, what address sites see.
-func (s *Supervisor) exit() (*Exit, error) {
+func (s *Supervisor) exit(req Request) (*Exit, error) {
+	// A server in the request is asked about instead of the one that runs:
+	// the list shows the country of every server it has measured.
+	if req.Server.Name != "" {
+		if err := ingest.Check(req.Server); err != nil {
+			return nil, err
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.core == nil {
 		return nil, say.New("nothing runs")
 	}
+	server := s.last.Server
+	if req.Server.Name != "" {
+		server = req.Server
+	}
 	body, err := json.Marshal(CoreDelay{
-		Proxy:     compile.Proxy(s.last.Server),
+		Proxy:     compile.Proxy(server),
 		URL:       ExitURL,
 		TimeoutMS: int(DelayTimeout / time.Millisecond),
 	})

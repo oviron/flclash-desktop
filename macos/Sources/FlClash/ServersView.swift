@@ -12,6 +12,17 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
     private let table = ListTableView()
     private let empty = EmptyStateView(symbol: "server.rack")
     private var rows: [Row] = []
+    /// One tab for all servers and one per group, shown once there are two groups.
+    private let tabs = NSSegmentedControl()
+    private let tabBar = NSView()
+    /// The groups the tabs stand for, after the tab of all; "" is all.
+    private var tabGroups: [String] = []
+    /// The list starts under the tabs, or at the top when there are none.
+    private var listUnderTabs: NSLayoutConstraint!
+    private var listAtTop: NSLayoutConstraint!
+    private var tab = UserDefaults.standard.string(forKey: "serverTab") ?? "" {
+        didSet { UserDefaults.standard.set(tab, forKey: "serverTab") }
+    }
 
     private func server(at index: Int) -> Server? {
         guard index >= 0, index < rows.count, case .server(let server) = rows[index] else { return nil }
@@ -53,11 +64,13 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         root.onDropImage = { [weak self] image in self?.importImage(image) }
 
         // A list, not a sheet of data: no header, the order is chosen in the toolbar.
-        for (id, width) in [("mark", 26.0), ("name", 260.0), ("protocol", 220.0), ("delay", 96.0)] {
+        for (id, width) in [("mark", 26.0), ("flag", 22.0), ("name", 260.0), ("protocol", 220.0), ("delay", 96.0)] {
             let column = NSTableColumn(identifier: .init(id))
             column.width = width
-            column.minWidth = id == "mark" ? 26 : 60
-            if id == "mark" { column.maxWidth = 26 }
+            column.minWidth = id == "mark" || id == "flag" ? width : 60
+            if id == "mark" || id == "flag" { column.maxWidth = width }
+            // Only the name gives and takes room: the rest keep their width.
+            column.resizingMask = id == "name" ? [.autoresizingMask, .userResizingMask] : []
             if id == "delay" { column.maxWidth = 110 }
             table.addTableColumn(column)
         }
@@ -68,7 +81,7 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         table.usesAlternatingRowBackgroundColors = false
         table.allowsMultipleSelection = true
         // The name takes what is left; the rest keep their width.
-        table.columnAutoresizingStyle = .reverseSequentialColumnAutoresizingStyle
+        table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         table.dataSource = self
         table.delegate = self
         table.target = self
@@ -90,12 +103,32 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         empty.button.target = self
         empty.button.action = #selector(importFromClipboardPressed(_:))
 
-        for subview in [scroll, empty] as [NSView] {
+        tabs.segmentStyle = .automatic
+        tabs.trackingMode = .selectOne
+        tabs.target = self
+        tabs.action = #selector(tabChanged(_:))
+        tabs.setAccessibilityLabel(L("Server Groups"))
+        tabs.translatesAutoresizingMaskIntoConstraints = false
+        tabBar.addSubview(tabs)
+        NSLayoutConstraint.activate([
+            tabs.topAnchor.constraint(equalTo: tabBar.topAnchor, constant: 10),
+            tabs.bottomAnchor.constraint(equalTo: tabBar.bottomAnchor, constant: -4),
+            tabs.centerXAnchor.constraint(equalTo: tabBar.centerXAnchor),
+            tabs.leadingAnchor.constraint(greaterThanOrEqualTo: tabBar.leadingAnchor, constant: 16),
+            tabs.trailingAnchor.constraint(lessThanOrEqualTo: tabBar.trailingAnchor, constant: -16),
+        ])
+        for subview in [tabBar, scroll, empty] as [NSView] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(subview)
         }
+        // The tabs above the list; without them the list goes up to the top.
+        listUnderTabs = scroll.topAnchor.constraint(equalTo: tabBar.bottomAnchor)
+        listAtTop = scroll.topAnchor.constraint(equalTo: root.topAnchor)
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: root.topAnchor),
+            tabBar.topAnchor.constraint(equalTo: root.topAnchor),
+            tabBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            tabBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            listAtTop,
             scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
@@ -154,7 +187,17 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
             // What was added by hand comes first.
             groups.insert(group, at: groups.count - subscriptions.count)
         }
-        if groups.count > 1 || !subscriptions.isEmpty {
+        updateTabs(groups)
+        // The chosen tab stays chosen while its group is not there, as before
+        // the list has loaded; meanwhile all servers show.
+        let current = tabGroups.contains(tab) ? tab : ""
+        if !current.isEmpty {
+            // One group: its servers, under the heading only a subscription has,
+            // since that heading says how fresh it is and can read it again.
+            let members = list.filter { $0.group == current }
+            rows = subscriptions.contains(current) && (needle.isEmpty || !members.isEmpty) ? [.group(current)] : []
+            rows += members.map { .server($0) }
+        } else if groups.count > 1 || !subscriptions.isEmpty {
             rows = []
             for group in groups {
                 let members = list.filter { $0.group == group }
@@ -181,6 +224,36 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         }
     }
 
+    /// Shows a tab per group once there are two; while the chosen group is
+    /// not there, the tab of all is lit.
+    private func updateTabs(_ groups: [String]) {
+        let shown = groups.count > 1 ? groups : []
+        tabBar.isHidden = shown.isEmpty
+        // The one that goes off goes first, so that the two never hold at once.
+        let (on, off) = shown.isEmpty ? (listAtTop!, listUnderTabs!) : (listUnderTabs!, listAtTop!)
+        off.isActive = false
+        on.isActive = true
+        if shown != tabGroups {
+            tabGroups = shown
+            let titles = [L("All Servers")] + shown.map { $0 == "default" ? L("Added by Hand") : $0 }
+            tabs.segmentCount = titles.count
+            for (index, title) in titles.enumerated() {
+                tabs.setLabel(title, forSegment: index)
+                tabs.setWidth(0, forSegment: index)
+            }
+        }
+        if !shown.isEmpty {
+            tabs.selectedSegment = (shown.firstIndex(of: tab) ?? -1) + 1
+        }
+    }
+
+    @objc private func tabChanged(_ sender: NSSegmentedControl) {
+        let index = sender.selectedSegment
+        tab = index > 0 && index <= tabGroups.count ? tabGroups[index - 1] : ""
+        reload()
+        table.scrollRowToVisible(0)
+    }
+
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
     func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
@@ -200,6 +273,7 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         guard let column = tableColumn, let server = server(at: row) else { return nil }
         let selected = server.id == Model.shared.view.selected
         if column.identifier.rawValue == "mark" { return markCell(selected) }
+        if column.identifier.rawValue == "flag" { return flagCell(server) }
         if column.identifier.rawValue == "delay" { return delayCell(Model.shared.delays[server.id]) }
         let text: String
         switch column.identifier.rawValue {
@@ -572,6 +646,26 @@ func markCell(_ chosen: Bool) -> NSView {
     NSLayoutConstraint.activate([
         image.centerXAnchor.constraint(equalTo: cell.centerXAnchor),
         image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+    ])
+    return cell
+}
+
+/// The flag of the country a server lets traffic out in, as it was last
+/// found; nothing while that is not known.
+func flagCell(_ server: Server) -> NSView {
+    let cell = NSTableCellView()
+    guard let flag = server.flag else { return cell }
+    let label = NSTextField(labelWithString: flag)
+    label.font = .systemFont(ofSize: 15)
+    label.alignment = .center
+    if let code = server.country {
+        label.setAccessibilityLabel(Locale.current.localizedString(forRegionCode: code) ?? code)
+    }
+    label.translatesAutoresizingMaskIntoConstraints = false
+    cell.addSubview(label)
+    NSLayoutConstraint.activate([
+        label.centerXAnchor.constraint(equalTo: cell.centerXAnchor),
+        label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
     ])
     return cell
 }

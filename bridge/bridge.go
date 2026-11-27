@@ -135,6 +135,10 @@ func handle(req request) (out reply) {
 		if err != nil {
 			return fail(err)
 		}
+		// The list shows the country of the server too.
+		if state, err := st.Load(); err == nil && exit.Country != "" {
+			app.RememberCountry(st, state.Selected, exit.Country, true)
+		}
 		out.Exit = &exit
 		return out
 	case "log":

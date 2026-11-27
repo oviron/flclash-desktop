@@ -28,6 +28,8 @@ type Server struct {
 	Name     string `json:"name"`
 	Group    string `json:"group"`
 	Protocol string `json:"protocol"`
+	// Country is where the server lets traffic out, once that was asked.
+	Country string `json:"country,omitempty"`
 }
 
 // Policy is a routing policy as a front end shows it.
@@ -80,7 +82,7 @@ func Snapshot(st *store.Store) (View, error) {
 		view.Policies = append(view.Policies, Policy{Name: name, Builtin: isBuiltin, Rules: len(p.Rules)})
 	}
 	for _, e := range state.Servers {
-		view.Servers = append(view.Servers, Server{ID: e.ID, Name: e.Name, Group: e.Group, Protocol: protocol(e.Proxy)})
+		view.Servers = append(view.Servers, Server{ID: e.ID, Name: e.Name, Group: e.Group, Protocol: protocol(e.Proxy), Country: e.Country})
 	}
 	return view, nil
 }
@@ -422,43 +424,104 @@ func Delay(st *store.Store, ref string) (int, error) {
 	if err := ingest.Check(entry.Server); err != nil {
 		return 0, err
 	}
-	if status, err := Status(); err == nil && status.Running {
-		return helper.Delay(entry.Server)
+	status, err := Status()
+	running := err == nil && status.Running
+	var ms int
+	if running {
+		ms, err = helper.Delay(entry.Server)
+	} else {
+		ms, err = runCore("-delay", entry.Server, helper.DelayURL)
 	}
-	return localDelay(entry.Server)
+	if err == nil && time.Since(time.Unix(entry.Asked, 0)) > countryAge(entry) {
+		askCountry(st, entry, running)
+	}
+	return ms, err
 }
 
-// localDelay runs the core binary that ships next to this program.
-func localDelay(server ingest.Server) (int, error) {
+// countryAge is how long the country of a server is taken as known. A server
+// that answers is asked about its country this seldom, so that a measurement
+// costs the server one more small request at most once a week.
+func countryAge(entry store.Entry) time.Duration {
+	if entry.Country == "" {
+		return 24 * time.Hour
+	}
+	return 7 * 24 * time.Hour
+}
+
+// askCountry asks through a server where it lets traffic out and keeps the
+// answer. No answer keeps what was known.
+func askCountry(st *store.Store, entry store.Entry, running bool) {
+	var exit helper.Exit
+	var err error
+	if running {
+		exit, err = helper.ExitOf(entry.Server)
+	} else {
+		var reply helper.CoreReply
+		reply, err = callCore("-exit", entry.Server, helper.ExitURL)
+		if reply.Exit != nil {
+			exit = *reply.Exit
+		}
+	}
+	RememberCountry(st, entry.ID, exit.Country, err == nil)
+}
+
+// RememberCountry keeps the country a server was found to let traffic out
+// in; a failed ask only says when it was made.
+func RememberCountry(st *store.Store, id, country string, answered bool) {
+	state, err := st.Load()
+	if err != nil {
+		return
+	}
+	for i := range state.Servers {
+		if state.Servers[i].ID == id {
+			state.Servers[i].Asked = time.Now().Unix()
+			if answered && country != "" {
+				state.Servers[i].Country = country
+			}
+			_ = st.Save(state)
+			return
+		}
+	}
+}
+
+// runCore measures the delay of a server with the core binary that ships
+// next to this program.
+func runCore(mode string, server ingest.Server, url string) (int, error) {
+	reply, err := callCore(mode, server, url)
+	return reply.Delay, err
+}
+
+// callCore runs the core for one request, without privileges.
+func callCore(mode string, server ingest.Server, url string) (helper.CoreReply, error) {
 	self, err := os.Executable()
 	if err != nil {
-		return 0, err
+		return helper.CoreReply{}, err
 	}
 	request, err := json.Marshal(helper.CoreDelay{
 		Proxy:     compile.Proxy(server),
-		URL:       helper.DelayURL,
+		URL:       url,
 		TimeoutMS: int(helper.DelayTimeout / time.Millisecond),
 	})
 	if err != nil {
-		return 0, err
+		return helper.CoreReply{}, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), helper.DelayTimeout+5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, filepath.Join(filepath.Dir(self), "flclash-core"), "-delay")
+	cmd := exec.CommandContext(ctx, filepath.Join(filepath.Dir(self), "flclash-core"), mode)
 	// The server goes in through stdin: its credentials stay out of the process list.
 	cmd.Stdin = bytes.NewReader(request)
 	out, err := cmd.Output()
 	if err != nil {
-		return 0, say.Errorf("the core did not run: %w", err)
+		return helper.CoreReply{}, say.Errorf("the core did not run: %w", err)
 	}
 	var reply helper.CoreReply
 	if err := json.Unmarshal(out, &reply); err != nil {
-		return 0, say.Errorf("the core answered nonsense: %w", err)
+		return helper.CoreReply{}, say.Errorf("the core answered nonsense: %w", err)
 	}
 	if reply.Error != "" {
-		return 0, errors.New(reply.Error)
+		return reply, errors.New(reply.Error)
 	}
-	return reply.Delay, nil
+	return reply, nil
 }
 
 // checkStored says whether a stored server is one the helper would run.

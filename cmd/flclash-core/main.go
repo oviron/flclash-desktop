@@ -6,9 +6,10 @@
 // When stdin closes, which also happens if the helper dies, it shuts the core
 // down and exits, and the tunnel goes with it.
 //
-// With -delay it does one thing and exits: reads a delay request from stdin,
-// measures, writes the answer to stdout. That needs no privileges; the app
-// runs it so while the tunnel is off.
+// With -delay or -exit it does one thing and exits: reads the request from
+// stdin, measures the delay or asks where the server lets traffic out, writes
+// the answer to stdout. That needs no privileges; the app runs it so while
+// the tunnel is off.
 package main
 
 import (
@@ -31,13 +32,15 @@ func main() {
 	if len(os.Args) == 3 && os.Args[1] == "-home" {
 		home = os.Args[2]
 	}
-	if len(os.Args) == 2 && os.Args[1] == "-delay" {
+	if len(os.Args) == 2 && (os.Args[1] == "-delay" || os.Args[1] == "-exit") {
 		// Stdout carries the answer alone.
 		log.SetLevel(log.SILENT)
 		body, err := io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
 		reply := helper.CoreReply{}
 		if err != nil {
 			reply.Error = err.Error()
+		} else if os.Args[1] == "-exit" {
+			reply = exit(body)
 		} else {
 			reply = delay(body)
 		}
@@ -64,14 +67,7 @@ func main() {
 		case helper.FrameDelay:
 			reply = delay(body)
 		case helper.FrameExit:
-			var req helper.CoreDelay
-			if err := json.Unmarshal(body, &req); err != nil {
-				reply.Error = "bad exit request: " + err.Error()
-			} else if exit, err := core.Exit(req.Proxy, req.URL, time.Duration(req.TimeoutMS)*time.Millisecond); err != nil {
-				reply.Error = err.Error()
-			} else {
-				reply.Exit = &exit
-			}
+			reply = exit(body)
 		case helper.FrameClose:
 			if !core.Close(string(body)) {
 				reply.Error = "the connection is gone already"
@@ -100,4 +96,16 @@ func delay(body []byte) helper.CoreReply {
 	}
 	// A delay of zero would read as no answer.
 	return helper.CoreReply{Delay: max(ms, 1)}
+}
+
+func exit(body []byte) helper.CoreReply {
+	var req helper.CoreDelay
+	if err := json.Unmarshal(body, &req); err != nil {
+		return helper.CoreReply{Error: "bad exit request: " + err.Error()}
+	}
+	exit, err := core.Exit(req.Proxy, req.URL, time.Duration(req.TimeoutMS)*time.Millisecond)
+	if err != nil {
+		return helper.CoreReply{Error: err.Error()}
+	}
+	return helper.CoreReply{Exit: &exit}
 }

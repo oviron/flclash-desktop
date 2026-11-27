@@ -248,6 +248,7 @@ final class Model {
         guard !fresh.isEmpty else { return }
         for id in fresh { delays[id] = .waiting }
         changed()
+        var left = fresh.count
         for id in fresh {
             Engine.measure(server: id) { [weak self] reply in
                 guard let self else { return }
@@ -257,6 +258,9 @@ final class Model {
                     self.delays[id] = .failed(reply.error ?? "")
                 }
                 self.changed()
+                // A measurement may have learned where servers let traffic out.
+                left -= 1
+                if left == 0 { self.refresh() }
             }
         }
     }
@@ -391,6 +395,11 @@ final class Model {
             self.exit = reply.exit
             self.exitFailed = reply.exit == nil
             self.changed()
+            // The engine kept the country for the list as well.
+            if let country = reply.exit?.country,
+               self.view.servers.first(where: { $0.id == self.view.selected })?.country != country {
+                self.refresh()
+            }
         }
     }
 

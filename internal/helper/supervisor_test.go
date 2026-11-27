@@ -40,9 +40,12 @@ func TestMain(m *testing.M) {
 			os.Exit(3)
 		}
 		if frame[0] == FrameExit {
-			// The address is asked through the server that runs, whoever asks.
+			// The address is asked through the server that runs, or the one
+			// the request names; each has an exit of its own.
 			if bytes.Contains(frame, []byte(`"name":"first"`)) && bytes.Contains(frame, []byte(ExitURL)) {
 				reply.Exit = &Exit{IP: "203.0.113.7", Country: "NL"}
+			} else if bytes.Contains(frame, []byte(`"name":"other"`)) && bytes.Contains(frame, []byte(ExitURL)) {
+				reply.Exit = &Exit{IP: "198.51.100.9", Country: "DE"}
 			} else {
 				reply.Error = "asked through the wrong server"
 			}
@@ -611,14 +614,24 @@ func TestStats(t *testing.T) {
 
 func TestExit(t *testing.T) {
 	s := supervisor(t, true)
-	if _, err := s.exit(); err == nil {
+	if _, err := s.exit(Request{}); err == nil {
 		t.Fatal("with nothing running there is no exit")
 	}
 	if err := s.do(request("first", 1)); err != nil {
 		t.Fatal(err)
 	}
-	exit, err := s.exit()
+	exit, err := s.exit(Request{})
 	if err != nil || exit.IP != "203.0.113.7" || exit.Country != "NL" {
 		t.Fatalf("got %+v, %v", exit, err)
+	}
+	// Another server is asked about through the running core.
+	if exit, err := s.exit(Request{Server: request("other", 2).Server}); err != nil || exit.Country != "DE" {
+		t.Fatalf("got %+v, %v", exit, err)
+	}
+	// A server the helper would not run is not given to the core either.
+	bad := request("other", 2).Server
+	bad.Proxy = map[string]any{"name": bad.Name, "type": "nonsense", "server": "x", "port": 1}
+	if _, err := s.exit(Request{Server: bad}); err == nil {
+		t.Fatal("a server outside the allow-list went to the core")
 	}
 }

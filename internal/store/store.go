@@ -24,6 +24,11 @@ type Entry struct {
 	ID    string `json:"id"`
 	Group string `json:"group"`
 	ingest.Server
+	// Country is where the server lets traffic out, a two-letter code, as a
+	// service on the far side last said; empty while not known.
+	Country string `json:"country,omitempty"`
+	// Asked is when that was last asked, in unix seconds, answered or not.
+	Asked int64 `json:"asked,omitempty"`
 }
 
 // State is the whole of what the user has set up.
@@ -169,6 +174,10 @@ func writeAtomic(path string, data []byte) error {
 func (state *State) Put(group string, server ingest.Server) Entry {
 	for i, e := range state.Servers {
 		if e.Group == group && e.Name == server.Name {
+			// Another address may let traffic out elsewhere.
+			if e.Proxy["server"] != server.Proxy["server"] {
+				state.Servers[i].Country, state.Servers[i].Asked = "", 0
+			}
 			state.Servers[i].Server = server
 			return state.Servers[i]
 		}

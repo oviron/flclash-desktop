@@ -242,8 +242,12 @@ func CloseConnection(id string) error {
 }
 
 // ReadExit asks where the server that runs lets traffic out.
-func ReadExit() (Exit, error) {
-	resp, err := call(Request{Op: OpExit}, DelayTimeout+10*time.Second)
+func ReadExit() (Exit, error) { return ExitOf(ingest.Server{}) }
+
+// ExitOf asks through one server, not the running one, where it lets traffic
+// out. It needs a running core to ask from.
+func ExitOf(server ingest.Server) (Exit, error) {
+	resp, err := call(Request{Op: OpExit, Server: server}, DelayTimeout+10*time.Second)
 	if err != nil || resp.Exit == nil {
 		return Exit{}, err
 	}

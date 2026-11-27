@@ -11,6 +11,7 @@
 "Add servers" = "Добавить серверы";
 "Add" = "Добавить";
 "Added by Hand" = "Добавлены вручную";
+"All Servers" = "Все серверы";
 "All traffic goes through the server." = "Весь трафик идёт через сервер.";
 "Apps that follow the system proxy are offline until it is back." = "Программы, которые слушаются системного прокси, без сети, пока он не вернётся.";
 "Apps that follow the system proxy setting go through the local port." = "Через локальный порт идут программы, которые слушаются системной настройки прокси.";
@@ -134,6 +135,7 @@
 "Search" = "Поиск";
 "Select All" = "Выбрать всё";
 "Selected" = "Выбран";
+"Server Groups" = "Группы серверов";
 "Server" = "Сервер";
 "Servers" = "Серверы";
 "Settings" = "Настройки";

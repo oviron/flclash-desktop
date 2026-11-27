@@ -6,10 +6,18 @@ struct Server: Decodable, Equatable {
     let name: String
     let group: String
     let proto: String
+    /// Where the server lets traffic out, a two-letter code, once it was asked.
+    var country: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, name, group
+        case id, name, group, country
         case proto = "protocol"
+    }
+
+    /// The flag of that country, made of the two regional letters.
+    var flag: String? {
+        guard let code = country, code.count == 2 else { return nil }
+        return String(String.UnicodeScalarView(code.uppercased().unicodeScalars.compactMap { UnicodeScalar(127397 + $0.value) }))
     }
 }
 
