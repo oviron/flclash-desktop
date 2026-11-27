@@ -51,6 +51,8 @@ func describe(s helper.Status) string {
 		guard += " (" + s.GuardProblem + ")"
 	}
 	switch {
+	case s.Blocked && s.Mode == helper.ModeSystem:
+		return fmt.Sprintf("BLOCKED: the core that ran through %s is gone and the system proxy stays set; turn it on again or off", s.Server)
 	case s.Blocked:
 		return fmt.Sprintf("BLOCKED: the tunnel through %s is gone and the guard holds; turn it on again or off", s.Server)
 	case !s.Running:
