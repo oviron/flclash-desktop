@@ -1,0 +1,10 @@
+This copy of FlClash is portable: it keeps its servers and settings in the
+data folder beside it, not in your user profile. Move the whole folder to take
+them along. Delete this file to keep the data in the profile instead.
+
+The data folder holds the keys of your servers: keep the folder where others
+cannot read it.
+
+TUN needs the system helper, which is installed on each computer the first
+time TUN is turned on. Before you leave a computer, remove it in Settings,
+System helper.

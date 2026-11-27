@@ -133,6 +133,7 @@
 "Record Shortcut" = "Задать сочетание";
 "Refuse" = "Отклонять";
 "refused" = "отклонено";
+"Remove" = "Удалить";
 "Resolves names for what goes through the tunnel." = "Разрешает имена для того, что идёт через туннель.";
 "Restore from a Backup…" = "Восстановить из копии…";
 "Restore" = "Восстановить";
@@ -141,6 +142,7 @@
 "Routing: which connections go through the server." = "Маршрутизация: какие соединения идут через сервер.";
 "Rule" = "Правило";
 "Rules" = "Правила";
+"Runs TUN with administrator rights and stays on the computer when FlClash is gone. Remove it from a computer you leave: turning TUN on installs it again." = "Запускает TUN с правами администратора и остаётся на компьютере, даже когда FlClash уже нет. Удалите его с компьютера, который оставляете: при включении TUN он установится снова.";
 "Russia direct" = "Россия напрямую";
 "Russian sites go directly, the rest through the server." = "Российские сайты идут напрямую, остальное через сервер.";
 "Save a Backup…" = "Сохранить резервную копию…";
@@ -159,6 +161,7 @@
 "Since the tunnel came up: %@ down, %@ up" = "С момента включения: получено %@, отправлено %@";
 "Subscription Settings…" = "Настройки подписки…";
 "Subscription “%@”" = "Подписка «%@»";
+"System helper" = "Системный помощник";
 "System Proxy" = "Системный прокси";
 "TB" = "ТБ";
 "Test environment" = "Тестовое окружение";
@@ -178,6 +181,7 @@
 "The file dialog did not open" = "Окно выбора файла не открылось";
 "The helper was not installed" = "Помощник не установлен";
 "The core writes here once something runs." = "Ядро пишет сюда, когда что-то запущено.";
+"The helper was not removed" = "Помощник не удалён";
 "The home network and local addresses go directly, the rest through the server." = "Домашняя сеть и локальные адреса идут напрямую, остальное через сервер.";
 "The internet is off until the tunnel is back." = "Интернета нет, пока туннель не вернётся.";
 "The last update failed" = "Последнее обновление не удалось";

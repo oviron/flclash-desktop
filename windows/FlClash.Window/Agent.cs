@@ -276,6 +276,7 @@ public sealed class Agent
     public void ConnectTo(string server) => Send(new Message { Action = "connect", Server = server });
     public void Measure(IEnumerable<string> servers) => Send(new Message { Action = "measure", Servers = servers.ToList() });
     public Task<Reply> InstallHelper() => Ask(new Message { Action = "installHelper" });
+    public Task<Reply> RemoveHelper() => Ask(new Message { Action = "removeHelper" });
     public Task<Reply> SetHotKey(HotKey key) => Ask(new Message { Action = "hotKey", HotKey = key });
     public Task<Reply> SetLogin(bool on) => Ask(new Message { Action = "login", On = on });
 

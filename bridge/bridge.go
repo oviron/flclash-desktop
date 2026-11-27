@@ -55,6 +55,7 @@ func FlcStart(lang *C.char, emit C.FlcEmit) {
 			Model:         m,
 			App:           func() agent.App { return agent.App{Lang: language} },
 			InstallHelper: installHelper,
+			RemoveHelper:  removeHelper,
 		}
 		local, _ = a.Local(func(event []byte) {
 			text := C.CString(string(event))
@@ -102,13 +103,22 @@ func startLocal() {
 // installHelper installs the helper through the system's administrator
 // prompt and waits for it.
 func installHelper() error {
+	return asAdministrator("helper install -uid " + strconv.Itoa(os.Getuid()))
+}
+
+// removeHelper removes the helper and what it keeps, the same way.
+func removeHelper() error { return asAdministrator("helper uninstall") }
+
+// asAdministrator runs the command line with args through the system's
+// administrator prompt and waits for it.
+func asAdministrator(args string) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
 	}
 	tool := filepath.Join(filepath.Dir(self), "flclashctl")
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
-	command := quote(tool) + " helper install -uid " + strconv.Itoa(os.Getuid())
+	command := quote(tool) + " " + args
 	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(command)
 	cmd := exec.Command("/usr/bin/osascript", "-e", `do shell script "`+escaped+`" with administrator privileges`)
 	var stderr strings.Builder

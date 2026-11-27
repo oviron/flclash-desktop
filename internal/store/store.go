@@ -99,20 +99,49 @@ func (state State) LocalPort() int {
 // Store is a directory holding state.json and policies/.
 type Store struct{ dir string }
 
-// Open uses $FLCLASH_HOME, or the per-user config directory of the system.
+// PortableMark is the file that, beside the program, keeps its data beside it
+// too, in PortableData: a copy that is carried from one computer to another.
+const (
+	PortableMark = "portable"
+	PortableData = "data"
+)
+
+// Dir is where the data lives: $FLCLASH_HOME; the data folder beside the
+// program when the portable mark lies there; or the user's own folder.
+func Dir() (string, error) {
+	if dir := os.Getenv("FLCLASH_HOME"); dir != "" {
+		return dir, nil
+	}
+	if exe, err := os.Executable(); err == nil {
+		if dir, ok := portableDir(filepath.Dir(exe)); ok {
+			return dir, nil
+		}
+	}
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	// On Windows the config directory roams with the profile to other
+	// machines; credentials stay on this one.
+	if local := os.Getenv("LOCALAPPDATA"); runtime.GOOS == "windows" && local != "" {
+		base = local
+	}
+	return filepath.Join(base, "flclash-desktop"), nil
+}
+
+// portableDir is the data folder of a portable copy in programDir.
+func portableDir(programDir string) (string, bool) {
+	if info, err := os.Stat(filepath.Join(programDir, PortableMark)); err != nil || info.IsDir() {
+		return "", false
+	}
+	return filepath.Join(programDir, PortableData), true
+}
+
+// Open opens the store in Dir.
 func Open() (*Store, error) {
-	dir := os.Getenv("FLCLASH_HOME")
-	if dir == "" {
-		base, err := os.UserConfigDir()
-		if err != nil {
-			return nil, err
-		}
-		// On Windows the config directory roams with the profile to other
-		// machines; credentials stay on this one.
-		if local := os.Getenv("LOCALAPPDATA"); runtime.GOOS == "windows" && local != "" {
-			base = local
-		}
-		dir = filepath.Join(base, "flclash-desktop")
+	dir, err := Dir()
+	if err != nil {
+		return nil, err
 	}
 	// Server entries carry credentials: the directory is the user's alone.
 	if err := os.MkdirAll(filepath.Join(dir, "policies"), 0o700); err != nil {

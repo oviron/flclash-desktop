@@ -54,7 +54,8 @@ on Windows the model the window draws, which is the Go twin of `Model.swift`.
   helper for the tunnel, in the app for the other modes. It checks the server
   and the rules it is handed and builds the config itself; it links no core
   code.
-- `internal/store` — state on disk; `$FLCLASH_HOME` overrides the directory.
+- `internal/store` — state on disk; `$FLCLASH_HOME` overrides the directory, and a
+  file named `portable` beside the program puts it in `data\` next to it.
 - `internal/app` — what the product does; the command line and the windows call
   the same functions here.
 - `cmd/flclashctl` — the command line. `cmd/flclash-helper` — the supervisor,

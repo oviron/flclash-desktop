@@ -21,9 +21,9 @@ public sealed class SettingsPage : IPage
     ToggleSwitch protect = null!, login = null!, autoConnect = null!, lan = null!;
     NumberBox port = null!;
     TextBox auth = null!, dns = null!;
-    Button hotKey = null!;
+    Button hotKey = null!, removeHelper = null!;
     TextBlock version = null!;
-    bool filling, recording, built, saying;
+    bool filling, recording, built, saying, removing;
     string shownLang = "";
 
     public SettingsPage(MainWindow window)
@@ -43,6 +43,16 @@ public sealed class SettingsPage : IPage
         auth = new() { Width = 190, PlaceholderText = L.T("user:password") };
         dns = new() { Width = 250 };
         hotKey = new() { MinWidth = 150 };
+        removeHelper = new() { Content = L.T("Remove") };
+        removeHelper.Click += async (_, _) =>
+        {
+            removing = true;
+            Update(false);
+            var reply = await A.RemoveHelper();
+            removing = false;
+            Update(false);
+            if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(window.Content.XamlRoot, L.T("The helper was not removed"), reply.Error);
+        };
         version = Ui.Text("", 12, null, Ui.Secondary);
         protect.Toggled += (_, _) => { if (!filling) A.SetProtect(protect.IsOn); };
         autoConnect.Toggled += (_, _) => { if (!filling) A.SetAutoConnect(autoConnect.IsOn); };
@@ -120,6 +130,9 @@ public sealed class SettingsPage : IPage
         column.Children.Add(Group(Row(L.T("Backup"),
             L.T("The backup holds the keys of your servers and the addresses of your subscriptions. Keep it where others cannot read it."),
             Ui.Row(8, saveBackup, restoreBackup))));
+        column.Children.Add(Group(Row(L.T("System helper"),
+            L.T("Runs TUN with administrator rights and stays on the computer when FlClash is gone. Remove it from a computer you leave: turning TUN on installs it again."),
+            removeHelper)));
         column.Children.Add(version);
         built = true;
     }
@@ -182,6 +195,7 @@ public sealed class SettingsPage : IPage
         if (auth.FocusState == FocusState.Unfocused) auth.Text = s.View.Auth;
         auth.IsEnabled = s.View.Lan && !s.Busy;
         if (dns.FocusState == FocusState.Unfocused) dns.Text = s.View.Dns;
+        removeHelper.IsEnabled = s.Status.Installed && !s.Status.Running && !s.Status.Blocked && !s.Busy && !removing;
         if (!recording) ShowHotKey();
         version.Text = string.IsNullOrEmpty(A.App.Version) ? "FlClash" : "FlClash " + A.App.Version;
         filling = false;

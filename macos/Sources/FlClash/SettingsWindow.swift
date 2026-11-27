@@ -13,6 +13,8 @@ final class SettingsWindowController: NSWindowController {
     private let auth = NSTextField()
     private let dns = NSTextField()
     private let hotKey = HotKeyRecorder()
+    private let removeHelper = NSButton(title: L("Remove"), target: nil, action: nil)
+    private var removing = false
 
     init() {
         let window = NSWindow(
@@ -48,6 +50,8 @@ final class SettingsWindowController: NSWindowController {
         dns.target = self
         dns.action = #selector(dnsChanged)
         dns.widthAnchor.constraint(equalToConstant: 230).isActive = true
+        removeHelper.target = self
+        removeHelper.action = #selector(removeHelperClicked)
 
         let column = NSStackView(views: [
             group([
@@ -69,6 +73,11 @@ final class SettingsWindowController: NSWindowController {
             group([
                 row(L("Launch at Login"), nil, login),
                 row(L("Connect when FlClash starts"), nil, autoConnect),
+            ]),
+            group([
+                row(L("System helper"),
+                    L("Runs TUN with administrator rights and stays on the computer when FlClash is gone. Remove it from a computer you leave: turning TUN on installs it again."),
+                    removeHelper),
             ]),
         ])
         column.orientation = .vertical
@@ -193,6 +202,7 @@ final class SettingsWindowController: NSWindowController {
         auth.isEnabled = Model.shared.view.lan && !Model.shared.busy
         if dns.currentEditor() == nil { dns.stringValue = Model.shared.view.dns }
         dns.isEnabled = !Model.shared.busy
+        removeHelper.isEnabled = Model.shared.status.installed && !Model.shared.status.running && !Model.shared.status.blocked && !Model.shared.busy && !removing
         // A value the engine refused is said once, by the window.
         if let problem = Model.shared.problem, let window, window.attachedSheet == nil, window.isKeyWindow {
             Model.shared.dismissProblem()
@@ -217,6 +227,23 @@ final class SettingsWindowController: NSWindowController {
 
     @objc private func portChanged() {
         Model.shared.setPort(port.integerValue)
+    }
+
+    @objc private func removeHelperClicked() {
+        removing = true
+        update()
+        Model.shared.removeHelper { [weak self] error in
+            DispatchQueue.main.async {
+                self?.removing = false
+                self?.update()
+                if let error, let window = self?.window {
+                    let alert = NSAlert()
+                    alert.messageText = L("The helper was not removed")
+                    alert.informativeText = error
+                    alert.beginSheetModal(for: window)
+                }
+            }
+        }
     }
 
     /// The system keeps the list of what starts at login; this adds or removes the app.

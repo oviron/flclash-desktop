@@ -246,6 +246,21 @@ type fakeGuard struct {
 	log  []string
 }
 
+// guardView is what the fake guard was asked, read at one moment.
+type guardView struct {
+	on, full bool
+	tun      string
+	log      []string
+}
+
+// view reads the fake guard under its lock: a core that died is brought back
+// on another goroutine, which engages the guard while a test reads it.
+func (g *fakeGuard) view() guardView {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return guardView{on: g.on, full: g.full, tun: g.tun, log: append([]string(nil), g.log...)}
+}
+
 func (g *fakeGuard) Engage(tun string, _ int, full bool) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -305,18 +320,18 @@ func TestGuardFollowsTheTunnel(t *testing.T) {
 	if err := s.do(request("first", 1)); err != nil {
 		t.Fatal(err)
 	}
-	if st := s.Status(); st.Guard != GuardIPv6 || g.full || g.tun != "utun9" {
-		t.Fatalf("without protect only IPv6 is closed: %+v, %v", st, g.log)
+	if st := s.Status(); st.Guard != GuardIPv6 || g.view().full || g.view().tun != "utun9" {
+		t.Fatalf("without protect only IPv6 is closed: %+v, %v", st, g.view().log)
 	}
 	if err := s.do(protected("first", 2)); err != nil {
 		t.Fatal(err)
 	}
 	if st := s.Status(); st.Guard != GuardFull || st.GuardProblem != "" || !g.Holding() {
-		t.Fatalf("got %+v, %v", st, g.log)
+		t.Fatalf("got %+v, %v", st, g.view().log)
 	}
 	s.Stop()
-	if st := s.Status(); st.Guard != "" || g.on {
-		t.Fatalf("the guard must come off with the tunnel: %+v, %v", st, g.log)
+	if st := s.Status(); st.Guard != "" || g.view().on {
+		t.Fatalf("the guard must come off with the tunnel: %+v, %v", st, g.view().log)
 	}
 }
 
@@ -330,13 +345,13 @@ func TestACoreThatDiesUnderAFullGuardLeavesTheHostBlocked(t *testing.T) {
 	kill(s)
 	waitFor(t, "blocked", func() bool { return s.Status().Blocked })
 	st := s.Status()
-	if st.Running || st.Captured || st.Server != "first" || !g.Holding() || g.tun != "" {
-		t.Fatalf("got %+v, %v", st, g.log)
+	if st.Running || st.Captured || st.Server != "first" || !g.Holding() || g.view().tun != "" {
+		t.Fatalf("got %+v, %v", st, g.view().log)
 	}
 	// Turning it off is what opens the host again.
 	s.Stop()
-	if st := s.Status(); st.Blocked || g.on {
-		t.Fatalf("got %+v, %v", st, g.log)
+	if st := s.Status(); st.Blocked || g.view().on {
+		t.Fatalf("got %+v, %v", st, g.view().log)
 	}
 }
 
@@ -347,13 +362,13 @@ func TestACoreThatDiesUnderAFullGuardIsBroughtBack(t *testing.T) {
 	}
 	kill(s)
 	waitFor(t, "the core is back", func() bool { st := s.Status(); return st.Running && !st.Blocked })
-	if st := s.Status(); st.Server != "first" || st.Guard != GuardFull || !g.Holding() || g.tun != "utun9" {
-		t.Fatalf("got %+v, %v", st, g.log)
+	if st := s.Status(); st.Server != "first" || st.Guard != GuardFull || !g.Holding() || g.view().tun != "utun9" {
+		t.Fatalf("got %+v, %v", st, g.view().log)
 	}
 	// The guard never came off in between.
-	for _, entry := range g.log {
+	for _, entry := range g.view().log {
 		if entry == "release" {
-			t.Fatalf("the guard was released on the way: %v", g.log)
+			t.Fatalf("the guard was released on the way: %v", g.view().log)
 		}
 	}
 }
@@ -366,8 +381,8 @@ func TestACoreThatDiesWithoutProtectTurnsEverythingOff(t *testing.T) {
 	kill(s)
 	waitFor(t, "off", func() bool { return !s.Status().Running })
 	time.Sleep(60 * time.Millisecond) // a recovery, if one was started, would have run
-	if st := s.Status(); st.Blocked || st.Running || g.on {
-		t.Fatalf("got %+v, %v", st, g.log)
+	if st := s.Status(); st.Blocked || st.Running || g.view().on {
+		t.Fatalf("got %+v, %v", st, g.view().log)
 	}
 }
 
@@ -377,8 +392,8 @@ func TestAGuardThatCutsTheCoreOffIsLoosened(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := s.Status()
-	if !st.Running || st.Guard != GuardIPv6 || st.GuardProblem == "" || g.full {
-		t.Fatalf("got %+v, %v", st, g.log)
+	if !st.Running || st.Guard != GuardIPv6 || st.GuardProblem == "" || g.view().full {
+		t.Fatalf("got %+v, %v", st, g.view().log)
 	}
 }
 
@@ -388,7 +403,7 @@ func TestADeadServerIsNotBlamedOnTheGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	if st := s.Status(); st.Guard != GuardFull || st.GuardProblem != "" || !g.Holding() {
-		t.Fatalf("got %+v, %v", st, g.log)
+		t.Fatalf("got %+v, %v", st, g.view().log)
 	}
 }
 
@@ -461,8 +476,8 @@ func TestTheProxyModesTouchOnlyWhatTheyPromise(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := s.Status()
-	if !st.Running || !st.Captured || st.Mode != ModeProxy || st.Port != 7890 || st.Guard != "" || g.on || p.current() != 0 {
-		t.Fatalf("a plain proxy changes nothing in the system: %+v, %v, %v", st, g.log, p.log)
+	if !st.Running || !st.Captured || st.Mode != ModeProxy || st.Port != 7890 || st.Guard != "" || g.view().on || p.current() != 0 {
+		t.Fatalf("a plain proxy changes nothing in the system: %+v, %v, %v", st, g.view().log, p.log)
 	}
 	pid := s.core.Process.Pid
 
@@ -485,14 +500,14 @@ func TestTheProxyModesTouchOnlyWhatTheyPromise(t *testing.T) {
 		t.Fatal(err)
 	}
 	if st = s.Status(); st.Mode != ModeTUN || st.Guard != GuardFull || s.core.Process.Pid == pid {
-		t.Fatalf("got %+v, %v", st, g.log)
+		t.Fatalf("got %+v, %v", st, g.view().log)
 	}
 	// And back: the guard comes off with the tunnel.
 	if err := s.do(inMode(ModeSystem, 7890, 5)); err != nil {
 		t.Fatal(err)
 	}
-	if st = s.Status(); st.Mode != ModeSystem || st.Guard != "" || g.on || p.current() != 7890 {
-		t.Fatalf("got %+v, %v, %v", st, g.log, p.log)
+	if st = s.Status(); st.Mode != ModeSystem || st.Guard != "" || g.view().on || p.current() != 7890 {
+		t.Fatalf("got %+v, %v, %v", st, g.view().log, p.log)
 	}
 	s.Stop()
 	if p.current() != 0 {
@@ -573,8 +588,8 @@ func TestLeavingABlockedTunnelForAProxyModeTakesTheGuardOff(t *testing.T) {
 	if err := s.do(inMode(ModeSystem, 7890, 2)); err != nil {
 		t.Fatal(err)
 	}
-	if st := s.Status(); !st.Running || st.Blocked || st.Guard != "" || g.on || p.current() != 7890 {
-		t.Fatalf("got %+v, %v, %v", st, g.log, p.log)
+	if st := s.Status(); !st.Running || st.Blocked || st.Guard != "" || g.view().on || p.current() != 7890 {
+		t.Fatalf("got %+v, %v, %v", st, g.view().log, p.log)
 	}
 }
 

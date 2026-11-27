@@ -37,19 +37,20 @@ func cmdHelper(args []string) error {
 	// Stop what runs now; an error only means there was nothing to stop.
 	_ = exec.Command("launchctl", "bootout", "system/"+helperLabel).Run()
 	if args[0] == "uninstall" {
-		// A helper that was killed may have left its firewall rules behind.
-		if err := helper.NewGuard().Release(); err != nil {
-			fmt.Fprintln(os.Stderr, "flclashctl:", err)
-		}
-		if err := helper.NewSystemProxy().Clear(); err != nil {
-			fmt.Fprintln(os.Stderr, "flclashctl:", err)
-		}
+		// A helper that was killed may have left its firewall rules and the
+		// system proxy behind. The files go either way; what could not be
+		// put back is the answer, so the app says it.
+		guardErr := helper.NewGuard().Release()
+		proxyErr := helper.NewSystemProxy().Clear()
 		for _, path := range []string{helperPlist, filepath.Join(helperDir, "flclash-helper"), filepath.Join(helperDir, "flclash-core"), helper.SocketPath(), helper.LogPath()} {
 			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
 		}
-		return os.RemoveAll(helper.StateDir())
+		if err := os.RemoveAll(helper.StateDir()); err != nil {
+			return err
+		}
+		return errors.Join(guardErr, proxyErr)
 	}
 
 	// The helper serves the user who ran sudo, not root.

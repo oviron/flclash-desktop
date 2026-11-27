@@ -23,6 +23,7 @@ import (
 	"github.com/oviron/flclash-desktop/internal/bridge"
 	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/model"
+	"github.com/oviron/flclash-desktop/internal/say"
 )
 
 // Message is what a client sends.
@@ -39,6 +40,7 @@ type Message struct {
 	//   change|do|aside|subscription {request, quiet}
 	//                         an engine request on that line; replied to
 	//   installHelper         asks the system to install the helper; replied to
+	//   removeHelper          asks the system to remove the helper; replied to
 	//   hotKey {hotKey}       the shortcut that connects; replied to
 	//   login {on}            start with the system; replied to
 	//   quit
@@ -92,6 +94,9 @@ type Agent struct {
 	Open func(page string)
 	// InstallHelper asks for the helper to be installed and waits for it.
 	InstallHelper func() error
+	// RemoveHelper asks for the helper to be removed, with what it keeps,
+	// and waits for it.
+	RemoveHelper func() error
 
 	installMu  sync.Mutex
 	installing bool
@@ -381,6 +386,47 @@ func (a *Agent) SetMode(mode string, reply func(bridge.Reply)) {
 	}()
 }
 
+// helperWork installs or removes the helper, one at a time: both change the
+// same service and files. ready, when set, may refuse before the prompt.
+func (a *Agent) helperWork(work func() error, ready func() error) error {
+	a.installMu.Lock()
+	if a.installing {
+		a.installMu.Unlock()
+		return errors.New(say.In(a.Model.Lang, say.New("the helper is being installed or removed; wait for it to finish")))
+	}
+	if ready != nil {
+		if err := ready(); err != nil {
+			a.installMu.Unlock()
+			return err
+		}
+	}
+	a.installing = true
+	a.installMu.Unlock()
+	defer func() {
+		a.installMu.Lock()
+		a.installing = false
+		a.installMu.Unlock()
+	}()
+	err := work()
+	a.Model.Refresh()
+	if errors.Is(err, ErrCancelled) {
+		return nil
+	}
+	return err
+}
+
+// removeHelper removes the helper once nothing runs and no guard holds:
+// removing it stops a tunnel, lifts the guard, and puts back the system
+// proxy the app may have set.
+func (a *Agent) removeHelper() error {
+	return a.helperWork(a.RemoveHelper, func() error {
+		if st := a.Model.Snapshot().Status; st.Running || st.Blocked {
+			return errors.New(say.In(a.Model.Lang, say.New("turn the connection off before removing the helper")))
+		}
+		return nil
+	})
+}
+
 func (a *Agent) handle(c *client, m Message) {
 	reply := func(r bridge.Reply) {
 		if m.ID != 0 {
@@ -458,14 +504,12 @@ func (a *Agent) handle(c *client, m Message) {
 		if refused(a.InstallHelper != nil) {
 			return
 		}
-		go func() {
-			err := a.InstallHelper()
-			model.Refresh()
-			if errors.Is(err, ErrCancelled) {
-				err = nil
-			}
-			errReply(err)
-		}()
+		go func() { errReply(a.helperWork(a.InstallHelper, nil)) }()
+	case "removeHelper":
+		if refused(a.RemoveHelper != nil) {
+			return
+		}
+		go func() { errReply(a.removeHelper()) }()
 	case "hotKey":
 		if refused(a.SetHotKey != nil) {
 			return

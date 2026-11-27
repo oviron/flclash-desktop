@@ -23,8 +23,9 @@ known type, an address, a valid port, and no field outside the importer's list.
 Rules go through the same parser as an imported policy, and a rule it does not
 know is refused.
 
-`flclashctl helper uninstall`, run with `sudo` on macOS or as administrator on
-Windows, removes the helper.
+Settings, System helper, removes the helper through the system's prompt; so
+does `flclashctl helper uninstall`, run with `sudo` on macOS or as
+administrator on Windows.
 
 ## Builds
 
