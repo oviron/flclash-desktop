@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -51,7 +52,9 @@ func TestReimportKeepsTheID(t *testing.T) {
 		t.Fatalf("got %#v, %v", loaded, err)
 	}
 	info, err := os.Stat(filepath.Join(os.Getenv("FLCLASH_HOME"), "state.json"))
-	if err != nil || info.Mode().Perm() != 0o600 {
+	// On Windows the profile's access list keeps the file private; the mode
+	// bits say nothing there.
+	if runtime.GOOS != "windows" && (err != nil || info.Mode().Perm() != 0o600) {
 		t.Fatalf("state.json holds credentials and must be 0600, got %v %v", info.Mode(), err)
 	}
 }

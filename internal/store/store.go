@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -104,6 +105,11 @@ func Open() (*Store, error) {
 		base, err := os.UserConfigDir()
 		if err != nil {
 			return nil, err
+		}
+		// On Windows the config directory roams with the profile to other
+		// machines; credentials stay on this one.
+		if local := os.Getenv("LOCALAPPDATA"); runtime.GOOS == "windows" && local != "" {
+			base = local
 		}
 		dir = filepath.Join(base, "flclash-desktop")
 	}

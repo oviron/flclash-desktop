@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -21,7 +22,15 @@ func TestMain(m *testing.M) {
 	if os.Getenv("FAKE_CORE") == "" {
 		os.Exit(m.Run())
 	}
-	out := json.NewEncoder(os.NewFile(3, "verdicts"))
+	// The answers go where -verdicts says, as with the real core.
+	verdicts := uintptr(3)
+	for i, arg := range os.Args {
+		if arg == "-verdicts" && i+1 < len(os.Args) {
+			n, _ := strconv.ParseUint(os.Args[i+1], 10, 64)
+			verdicts = uintptr(n)
+		}
+	}
+	out := json.NewEncoder(os.NewFile(verdicts, "verdicts"))
 	delays := 0
 	for {
 		var size [4]byte

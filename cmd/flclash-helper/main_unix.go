@@ -1,3 +1,5 @@
+//go:build !windows
+
 // flclash-helper is the privileged supervisor. The system starts it as root;
 // it listens on a socket only the given user can reach and runs the core.
 //

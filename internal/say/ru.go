@@ -137,6 +137,10 @@ var ru = map[string]string{
 
 	// The helper and the core.
 	"the helper is not installed: sudo flclashctl helper install":                   "помощник не установлен: sudo flclashctl helper install",
+	"the helper is not installed: run flclashctl helper install as administrator":   "помощник не установлен: запустите flclashctl helper install от имени администратора",
+	"the user the helper serves is not signed in":                                   "пользователь, для которого установлен помощник, не вошёл в систему",
+	"the system proxy could not be read: %w":                                        "не удалось прочитать системный прокси: %w",
+	"the system proxy could not be read":                                            "не удалось прочитать системный прокси",
 	"the helper was installed for another user":                                     "помощник установлен для другого пользователя",
 	"the helper does not answer: %w":                                                "помощник не отвечает: %w",
 	"the helper gave no answer: %w":                                                 "помощник ничего не ответил: %w",

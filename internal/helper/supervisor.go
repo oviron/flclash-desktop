@@ -11,14 +11,12 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/oviron/flclash-desktop/internal/compile"
@@ -54,6 +52,8 @@ type Supervisor struct {
 	// UserUID, when above zero, is the user the core runs as when it needs no
 	// privileges: in the proxy modes it has no business being root.
 	UserUID int
+	// UserSID is the same on Windows: the account the helper serves.
+	UserSID string
 	// HomeDir is where the core keeps its files; empty means StateDir.
 	HomeDir string
 	// Listening reports whether the local port answers; replaced in tests.
@@ -63,6 +63,9 @@ type Supervisor struct {
 	// RecoverAfter are the waits before each try to bring back a core that
 	// died under a full guard; nil means the default.
 	RecoverAfter []time.Duration
+	// Log takes the output of the cores; nil means stderr, where launchd
+	// writes it to the log file. A Windows service has no stderr.
+	Log io.Writer
 
 	mu      sync.Mutex
 	core    *exec.Cmd
@@ -80,6 +83,8 @@ type Supervisor struct {
 	orders int
 	// guardProven: the full guard was seen to let the core through.
 	guardProven bool
+	// closeAfterStart releases what only the start of a core needed.
+	closeAfterStart func()
 }
 
 // Serve answers requests until the listener is closed.
@@ -421,52 +426,38 @@ func (s *Supervisor) release() {
 	}
 }
 
-// start launches the core: with root's rights for the tunnel, as the user for
-// a proxy. Caller holds mu.
+// start launches the core: with the rights to make the tunnel device, or as
+// the user for a proxy. Caller holds mu.
 func (s *Supervisor) start(tunnel bool) error {
-	home := s.HomeDir
-	var credential *syscall.Credential
-	if tunnel {
-		if s.CoreGID != 0 {
-			credential = &syscall.Credential{Uid: 0, Gid: uint32(s.CoreGID), NoSetGroups: true}
-		}
-	} else {
-		// The files of a core that runs as the user are the user's.
-		home = filepath.Join(home, "user")
-		if err := os.MkdirAll(home, 0o700); err != nil {
-			return err
-		}
-		if s.UserUID > 0 {
-			gid := s.UserUID
-			if u, err := user.LookupId(strconv.Itoa(s.UserUID)); err == nil {
-				if n, err := strconv.Atoi(u.Gid); err == nil {
-					gid = n
-				}
-			}
-			if err := os.Chown(home, s.UserUID, gid); err != nil {
-				return err
-			}
-			credential = &syscall.Credential{Uid: uint32(s.UserUID), Gid: uint32(gid), NoSetGroups: true}
-		}
-	}
-	cmd := exec.Command(s.CorePath, "-home", home)
-	if credential != nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: credential}
+	cmd, err := s.coreCommand(tunnel)
+	if err != nil {
+		return err
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
 	}
 	// The core's own log goes to stdout and stderr; its verdicts come on a
-	// pipe of their own, which the child sees as descriptor 3.
+	// pipe of their own, which it is told about with -verdicts.
 	replies, verdicts, err := os.Pipe()
 	if err != nil {
 		return err
 	}
-	cmd.ExtraFiles = []*os.File{verdicts}
-	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+	if err := passVerdicts(cmd, verdicts); err != nil {
+		replies.Close()
+		verdicts.Close()
+		return err
+	}
+	cmd.Stdout, cmd.Stderr = io.Writer(os.Stderr), io.Writer(os.Stderr)
+	if s.Log != nil {
+		cmd.Stdout, cmd.Stderr = s.Log, s.Log
+	}
 	err = cmd.Start()
 	verdicts.Close()
+	if s.closeAfterStart != nil {
+		s.closeAfterStart()
+		s.closeAfterStart = nil
+	}
 	if err != nil {
 		replies.Close()
 		return say.Errorf("the core did not start: %w", err)
@@ -741,16 +732,6 @@ func tunPresent() bool {
 		}
 	}
 	return false
-}
-
-// systemResolvers reads the resolvers the system uses while no tunnel is up.
-// The tunnel's own address range is left out: it would be the core asking itself.
-func systemResolvers() []string {
-	raw, err := os.ReadFile("/etc/resolv.conf")
-	if err != nil {
-		return nil
-	}
-	return parseResolvers(string(raw))
 }
 
 func parseResolvers(text string) []string {

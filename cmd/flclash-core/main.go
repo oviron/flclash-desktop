@@ -6,6 +6,9 @@
 // When stdin closes, which also happens if the helper dies, it shuts the core
 // down and exits, and the tunnel goes with it.
 //
+// The answers go to descriptor 3, or where -verdicts says: on Windows a
+// child is handed a pipe by its handle.
+//
 // With -delay or -exit it does one thing and exits: reads the request from
 // stdin, measures the delay or asks where the server lets traffic out, writes
 // the answer to stdout. That needs no privileges; the app runs it so while
@@ -15,6 +18,7 @@ package main
 import (
 	"encoding/binary"
 	"encoding/json"
+	"flag"
 	"io"
 	"os"
 	"time"
@@ -26,20 +30,24 @@ import (
 )
 
 func main() {
+	if otherMode() {
+		return
+	}
 	// The helper says where the core keeps its files: a core that runs as the
 	// user cannot write where root's does.
-	home := helper.StateDir()
-	if len(os.Args) == 3 && os.Args[1] == "-home" {
-		home = os.Args[2]
-	}
-	if len(os.Args) == 2 && (os.Args[1] == "-delay" || os.Args[1] == "-exit") {
+	home := flag.String("home", helper.StateDir(), "where the core keeps its files")
+	verdicts := flag.Uint64("verdicts", 3, "the descriptor, or on Windows the handle, the answers go to")
+	delayOnce := flag.Bool("delay", false, "measure the server on stdin and exit")
+	exitOnce := flag.Bool("exit", false, "ask through the server on stdin where it lets traffic out, and exit")
+	flag.Parse()
+	if *delayOnce || *exitOnce {
 		// Stdout carries the answer alone.
 		log.SetLevel(log.SILENT)
 		body, err := io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
 		reply := helper.CoreReply{}
 		if err != nil {
 			reply.Error = err.Error()
-		} else if os.Args[1] == "-exit" {
+		} else if *exitOnce {
 			reply = exit(body)
 		} else {
 			reply = delay(body)
@@ -48,7 +56,7 @@ func main() {
 		return
 	}
 
-	out := json.NewEncoder(os.NewFile(3, "verdicts"))
+	out := json.NewEncoder(os.NewFile(uintptr(*verdicts), "verdicts"))
 	for {
 		var size [4]byte
 		if _, err := io.ReadFull(os.Stdin, size[:]); err != nil {
@@ -61,7 +69,7 @@ func main() {
 		var reply helper.CoreReply
 		switch kind, body := frame[0], frame[1:]; kind {
 		case helper.FrameConfig:
-			if err := core.Apply(home, body); err != nil {
+			if err := core.Apply(*home, body); err != nil {
 				reply.Error = err.Error()
 			}
 		case helper.FrameDelay:

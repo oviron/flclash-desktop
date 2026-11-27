@@ -10,35 +10,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"os"
-	"runtime"
 	"time"
 
 	"github.com/oviron/flclash-desktop/internal/ingest"
 	"github.com/oviron/flclash-desktop/internal/say"
 )
-
-// SocketPath is where the supervisor listens. The socket file belongs to the
-// user the helper was installed for, with access for that user alone.
-func SocketPath() string {
-	if path := os.Getenv("FLCLASH_HELPER_SOCK"); path != "" {
-		return path
-	}
-	return "/var/run/flclash-helper.sock"
-}
-
-// StateDir is where the root core keeps its files.
-func StateDir() string {
-	if runtime.GOOS == "darwin" {
-		return "/var/db/flclash-desktop"
-	}
-	return "/var/lib/flclash-desktop"
-}
-
-// LogPath is the file the helper and the cores it runs write to. Anyone may
-// read it: it names servers and destinations, and holds no credentials.
-func LogPath() string { return "/var/log/flclash-helper.log" }
 
 // Version says which requests the installed helper understands. Raise it
 // whenever the helper or the core it runs has to be reinstalled for the app to
@@ -272,10 +249,10 @@ func Delay(server ingest.Server) (int, error) {
 func call(req Request, timeout time.Duration) (Response, error) {
 	var resp Response
 	req.Lang = say.Language()
-	conn, err := net.DialTimeout("unix", SocketPath(), 3*time.Second)
+	conn, err := dial(3 * time.Second)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return resp, say.New("the helper is not installed: sudo flclashctl helper install")
+			return resp, notInstalled()
 		}
 		if errors.Is(err, os.ErrPermission) {
 			return resp, say.New("the helper was installed for another user")

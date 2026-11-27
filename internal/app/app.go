@@ -507,7 +507,8 @@ func callCore(mode string, server ingest.Server, url string) (helper.CoreReply, 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), helper.DelayTimeout+5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, filepath.Join(filepath.Dir(self), "flclash-core"), mode)
+	cmd := exec.CommandContext(ctx, filepath.Join(filepath.Dir(self), CoreName), mode)
+	hide(cmd)
 	// The server goes in through stdin: its credentials stay out of the process list.
 	cmd.Stdin = bytes.NewReader(request)
 	out, err := cmd.Output()
