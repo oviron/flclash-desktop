@@ -25,6 +25,10 @@ type Input struct {
 	TUN bool
 	// OS is the system the config will run on, as in runtime.GOOS.
 	OS string
+	// DirectDNS are the resolvers of the network the host is on, read before
+	// the tunnel took the system resolver over. Names that go out directly are
+	// resolved through them, as they would be with no tunnel.
+	DirectDNS []string
 }
 
 // Config returns the YAML for the core.
@@ -72,7 +76,7 @@ func Config(in Input) ([]byte, error) {
 		cfg["mixed-port"] = in.LocalPort
 	}
 	if in.TUN {
-		tun(cfg, in.OS)
+		tun(cfg, in.OS, in.DirectDNS)
 	} else {
 		// With no TUN there is nothing to hijack; names resolve through the system.
 		cfg["dns"] = map[string]any{"enable": false}
@@ -80,7 +84,12 @@ func Config(in Input) ([]byte, error) {
 	return yaml.Marshal(cfg)
 }
 
-func tun(cfg map[string]any, os string) {
+func tun(cfg map[string]any, os string, directDNS []string) {
+	// Once the tunnel is up the system resolver is the core itself, so the
+	// core cannot ask "the system" for the address of a direct destination or
+	// of its own server. It asks the network's resolvers, with a public one
+	// behind them for a network that changed since they were read.
+	outside := append(append([]string{}, directDNS...), "https://9.9.9.9/dns-query")
 	device := map[string]any{
 		"enable":                true,
 		"stack":                 "mips",
@@ -105,13 +114,11 @@ func tun(cfg map[string]any, os string) {
 		"enhanced-mode": "fake-ip",
 		"fake-ip-range": "198.18.0.1/16",
 		// Queries follow the routing policy like any other connection.
-		"respect-rules": true,
-		"nameserver":    []string{"https://9.9.9.9/dns-query"},
-		// Bootstrap for the names above and for the server itself: the system
-		// resolver first, reached outside the tunnel.
+		"respect-rules":           true,
+		"nameserver":              []string{"https://9.9.9.9/dns-query"},
 		"default-nameserver":      []string{"9.9.9.9", "94.140.14.14"},
-		"proxy-server-nameserver": []string{"system://", "https://9.9.9.9/dns-query"},
-		"direct-nameserver":       []string{"system://"},
+		"proxy-server-nameserver": outside,
+		"direct-nameserver":       outside,
 	}
 }
 

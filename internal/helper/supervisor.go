@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +31,8 @@ type Supervisor struct {
 	CorePath string
 	// Captured reports whether the tunnel device exists; replaced in tests.
 	Captured func() bool
+	// Resolvers reads the resolvers of the network the host is on; replaced in tests.
+	Resolvers func() []string
 	// DeviceTimeout is how long to wait for the device after the core accepted
 	// a config; zero means eight seconds.
 	DeviceTimeout time.Duration
@@ -40,12 +43,18 @@ type Supervisor struct {
 	replies *bufio.Reader
 	exited  chan struct{}
 	status  Status
+	// directDNS is what Resolvers gave when the core was started. It is read
+	// only then: with the tunnel up the system resolver is the core itself.
+	directDNS []string
 }
 
 // Serve answers requests until the listener is closed.
 func (s *Supervisor) Serve(l net.Listener) error {
 	if s.Captured == nil {
 		s.Captured = tunPresent
+	}
+	if s.Resolvers == nil {
+		s.Resolvers = systemResolvers
 	}
 	for {
 		conn, err := l.Accept()
@@ -115,16 +124,6 @@ func (s *Supervisor) apply(req Request) error {
 	if err := policy.Check(req.Rules); err != nil {
 		return fmt.Errorf("the routing policy was refused: %w", err)
 	}
-	config, err := compile.Config(compile.Input{
-		Server: req.Server,
-		Policy: policy.Policy{Name: req.Policy, Rules: req.Rules},
-		TUN:    true,
-		OS:     runtime.GOOS,
-	})
-	if err != nil {
-		return err
-	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reap()
@@ -132,6 +131,19 @@ func (s *Supervisor) apply(req Request) error {
 		return errors.New("a newer choice is already applied")
 	}
 	fresh := s.core == nil
+	if fresh && s.Resolvers != nil {
+		s.directDNS = s.Resolvers()
+	}
+	config, err := compile.Config(compile.Input{
+		Server:    req.Server,
+		Policy:    policy.Policy{Name: req.Policy, Rules: req.Rules},
+		TUN:       true,
+		OS:        runtime.GOOS,
+		DirectDNS: s.directDNS,
+	})
+	if err != nil {
+		return err
+	}
 	if fresh {
 		if err := s.start(); err != nil {
 			return err
@@ -274,4 +286,33 @@ func tunPresent() bool {
 		}
 	}
 	return false
+}
+
+// systemResolvers reads the resolvers the system uses while no tunnel is up.
+// The tunnel's own address range is left out: it would be the core asking itself.
+func systemResolvers() []string {
+	raw, err := os.ReadFile("/etc/resolv.conf")
+	if err != nil {
+		return nil
+	}
+	return parseResolvers(string(raw))
+}
+
+func parseResolvers(text string) []string {
+	fakeRange := netip.MustParsePrefix("198.18.0.0/15")
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] != "nameserver" {
+			continue
+		}
+		host, _, _ := strings.Cut(fields[1], "%")
+		addr, err := netip.ParseAddr(host)
+		// A link-local address is of no use without the interface it was cut from.
+		if err != nil || fakeRange.Contains(addr) || addr.IsUnspecified() || addr.IsLinkLocalUnicast() {
+			continue
+		}
+		out = append(out, addr.String())
+	}
+	return out
 }

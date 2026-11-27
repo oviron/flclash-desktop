@@ -126,3 +126,28 @@ func TestListRulesBecomeRuleSets(t *testing.T) {
 		t.Fatalf("got %d providers and %d rules", len(parsed.RuleProviders), len(parsed.Rules))
 	}
 }
+
+// Under the tunnel the system resolver is the core itself: direct names and
+// the server's own name must go to the network's resolvers instead.
+func TestDirectNamesUseTheNetworkResolvers(t *testing.T) {
+	pol, _ := policy.Builtin("ru-direct")
+	raw, err := Config(Input{Server: server(t), Policy: pol, TUN: true, OS: "darwin", DirectDNS: []string{"192.168.1.1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "system://") {
+		t.Fatal("a TUN config must not ask the system resolver")
+	}
+	parsed, err := config.Parse(raw)
+	if err != nil {
+		t.Fatalf("the core refused the config: %v", err)
+	}
+	for name, servers := range map[string]int{"direct": len(parsed.DNS.DirectNameServer), "proxy-server": len(parsed.DNS.ProxyServerNameserver)} {
+		if servers != 2 {
+			t.Errorf("%s resolvers: got %d, want the network's and the public fallback", name, servers)
+		}
+	}
+	if parsed.DNS.DirectNameServer[0].Addr != "192.168.1.1:53" {
+		t.Errorf("the network's resolver must come first, got %q", parsed.DNS.DirectNameServer[0].Addr)
+	}
+}

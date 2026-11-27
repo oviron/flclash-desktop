@@ -39,7 +39,7 @@ func StateDir() string {
 // Version says which requests the installed helper understands. Raise it
 // whenever the helper or the core it runs has to be reinstalled for the app to
 // work: a new rule type, a new server field, a change of this protocol.
-const Version = 2
+const Version = 3
 
 // Operations of Request.Op.
 const (

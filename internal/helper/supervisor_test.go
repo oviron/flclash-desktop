@@ -163,3 +163,11 @@ func TestADeadCoreIsNoticed(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+func TestResolversFromResolvConf(t *testing.T) {
+	got := parseResolvers("# a comment\nsearch lan\nnameserver 192.168.1.1\nnameserver 198.18.0.2\nnameserver fe80::1%en0\nnameserver 0.0.0.0\nnameserver nonsense\n")
+	want := []string{"192.168.1.1"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
