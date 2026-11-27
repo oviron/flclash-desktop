@@ -31,7 +31,8 @@ final class RoutingViewController: NSViewController, NSTableViewDataSource, NSTa
         table.style = .inset
         table.rowSizeStyle = .medium
         table.allowsMultipleSelection = false
-        table.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
+        // Every column gives way together, so none is pushed out of a narrow window.
+        table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         table.dataSource = self
         table.delegate = self
         table.target = self

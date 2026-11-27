@@ -32,7 +32,7 @@ final class HeaderView: NSView {
         button.controlSize = .large
         button.target = self
         button.action = #selector(toggle)
-        button.keyEquivalent = "\r"
+        // No Return shortcut: a stray Enter must not turn the tunnel on or off.
 
         let top = NSStackView(views: [dot, titles, NSView(), spinner, button])
         top.orientation = .horizontal

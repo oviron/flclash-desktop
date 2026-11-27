@@ -35,11 +35,11 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         bar.edgeInsets = NSEdgeInsets(top: 10, left: 14, bottom: 8, right: 14)
         search.widthAnchor.constraint(equalToConstant: 200).isActive = true
 
-        for (id, title, width) in [("mark", "", 22.0), ("name", L("Name"), 220.0), ("protocol", L("Protocol"), 190.0), ("group", L("Group"), 120.0)] {
+        for (id, title, width) in [("mark", "", 22.0), ("name", L("Name"), 200.0), ("protocol", L("Protocol"), 170.0), ("group", L("Group"), 90.0)] {
             let column = NSTableColumn(identifier: .init(id))
             column.title = title
             column.width = width
-            column.minWidth = id == "mark" ? 22 : 80
+            column.minWidth = id == "mark" ? 22 : 60
             if id == "mark" { column.maxWidth = 22 } else {
                 column.sortDescriptorPrototype = NSSortDescriptor(key: id, ascending: true)
             }
@@ -49,7 +49,8 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         table.rowSizeStyle = .medium
         table.usesAlternatingRowBackgroundColors = false
         table.allowsMultipleSelection = false
-        table.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
+        // Every column gives way together, so none is pushed out of a narrow window.
+        table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         table.dataSource = self
         table.delegate = self
         table.target = self
@@ -94,6 +95,11 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         super.viewDidLoad()
         NotificationCenter.default.addObserver(self, selector: #selector(reload), name: .modelChanged, object: nil)
         reload()
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        table.sizeToFit()
     }
 
     @objc private func reload() {
