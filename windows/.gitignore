@@ -1,0 +1,5 @@
+bin/
+obj/
+*.user
+# Made by build.ps1 from assets/icon-1024.png.
+/FlClash.ico

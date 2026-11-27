@@ -24,7 +24,7 @@ app: tools bridge
 	vtool -set-build-version macos 15.0 $$(xcrun --show-sdk-version) -replace \
 		-output dist/FlClash.app/Contents/MacOS/FlClash macos/.build/release/FlClash
 	cp macos/Resources/Info.plist dist/FlClash.app/Contents/
-	cp -R macos/Resources/AppIcon.icns macos/Resources/en.lproj macos/Resources/ru.lproj dist/FlClash.app/Contents/Resources/
+	cp -R macos/Resources/AppIcon.icns l10n/en.lproj l10n/ru.lproj dist/FlClash.app/Contents/Resources/
 	codesign --force --deep --sign - dist/FlClash.app
 
 check:

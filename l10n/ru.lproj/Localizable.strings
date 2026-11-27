@@ -13,9 +13,11 @@
 "Added by Hand" = "Добавлены вручную";
 "All Servers" = "Все серверы";
 "All traffic goes through the server." = "Весь трафик идёт через сервер.";
+"Another program answered in place of FlClash. Nothing was sent to it." = "Вместо FlClash ответила другая программа. Ей ничего не отправлено.";
 "Apps that follow the system proxy are offline until it is back." = "Программы, которые слушаются системного прокси, без сети, пока он не вернётся.";
 "Apps that follow the system proxy setting go through the local port." = "Через локальный порт идут программы, которые слушаются системной настройки прокси.";
 "As Added" = "Как добавлены";
+"Backup" = "Резервная копия";
 "By Latency" = "По задержке";
 "By Name" = "По имени";
 "Cancel" = "Отмена";
@@ -53,15 +55,19 @@
 "Duplicate…" = "Дублировать…";
 "Edit" = "Правка";
 "Edit…" = "Изменить…";
+"Empty asks for none. This computer is never asked." = "Пусто — без логина. С этого компьютера логин не спрашивается.";
 "Empty asks for none. This Mac is never asked." = "Пусто — без логина. С этого Mac логин не спрашивается.";
 "Entry %d: %@" = "Запись %d: %@";
 "Everything else goes" = "Всё остальное идёт";
 "everything else" = "остальное";
+"Everything on this computer goes through the tunnel." = "Через туннель идёт всё на этом компьютере.";
 "Everything on this Mac goes through the tunnel." = "Через туннель идёт всё на этом Mac.";
 "Everything set up now — servers, subscriptions, policies, settings — is replaced by what the backup holds." = "Всё настроенное сейчас — серверы, подписки, политики, настройки — заменится тем, что лежит в копии.";
 "Everything through the server" = "Всё через сервер";
 "File" = "Файл";
 "Find" = "Найти";
+"FlClash is not running. Start FlClash, then open its window from the icon in the notification area." = "FlClash не запущен. Запустите FlClash и откройте окно значком в области уведомлений.";
+"GB" = "ГБ";
 "Give the policy a name." = "Дайте политике название.";
 "Helper is not installed" = "Помощник не установлен";
 "Helper needs an update" = "Помощник нужно обновить";
@@ -72,10 +78,12 @@
 "Import from Clipboard" = "Импорт из буфера обмена";
 "Import from File…" = "Импорт из файла…";
 "Imported %d, not imported %d" = "Импортировано: %d, не импортировано: %d";
+"In TUN mode nothing leaves this computer past the tunnel, IPv6 included. If the connection breaks, the internet stays off until it is back or you turn it off; in System Proxy mode that holds for the apps that follow the system proxy. The local network always works." = "В режиме TUN с этого компьютера ничего не уходит мимо туннеля, включая IPv6. Если соединение оборвётся, интернета не будет, пока оно не вернётся или вы его не выключите; в режиме системного прокси это касается программ, которые его слушаются. Локальная сеть работает всегда.";
 "In TUN mode nothing leaves this Mac past the tunnel, IPv6 included. If the connection breaks, the internet stays off until it is back or you turn it off; in System Proxy mode that holds for the apps that follow the system proxy. The local network always works." = "В режиме TUN с этого Mac ничего не уходит мимо туннеля, включая IPv6. Если соединение оборвётся, интернета не будет, пока оно не вернётся или вы его не выключите; в режиме системного прокси это касается программ, которые его слушаются. Локальная сеть работает всегда.";
 "Install Helper…" = "Установить помощник…";
 "Internet is blocked" = "Интернет заблокирован";
 "Its servers will be deleted with it." = "Вместе с ней удалятся её серверы.";
+"KB" = "КБ";
 "Launch at Login" = "Запускать при входе";
 "Leave out servers with these words, comma-separated" = "Не брать серверы с этими словами, через запятую";
 "Let nothing go past FlClash" = "Ничего не выпускать мимо FlClash";
@@ -86,6 +94,7 @@
 "Local port" = "Локальный порт";
 "Log" = "Журнал";
 "Login for other devices" = "Логин для других устройств";
+"MB" = "МБ";
 "Minimize" = "Свернуть";
 "Mode" = "Режим";
 "Name (optional)" = "Название (необязательно)";
@@ -103,11 +112,13 @@
 "Nothing runs" = "Ничего не запущено";
 "Nothing was imported" = "Ничего не импортировано";
 "Off" = "Выключено";
+"OK" = "ОК";
 "One per line. A name stands for itself and everything under it: example.com, .ru. A network: 10.0.0.0/8. Or say the kind: domain:exact.example, keyword:word, geosite:youtube, geoip:us." = "По одному в строке. Имя означает себя и всё, что под ним: example.com, .ru. Сеть: 10.0.0.0/8. Или назовите вид: domain:точное.имя, keyword:слово, geosite:youtube, geoip:us.";
 "Open FlClash to set it up" = "Откройте FlClash, чтобы настроить";
 "Open FlClash" = "Открыть FlClash";
 "Open For" = "Открыто";
 "Order" = "Порядок";
+"Other devices at home can point at this computer's address and the port." = "Другие устройства дома смогут указать адрес этого компьютера и порт.";
 "Other devices at home can point at this Mac's address and the port." = "Другие устройства дома смогут указать адрес этого Mac и порт.";
 "Paste" = "Вставить";
 "Pause" = "Пауза";
@@ -123,6 +134,7 @@
 "refused" = "отклонено";
 "Resolves names for what goes through the tunnel." = "Разрешает имена для того, что идёт через туннель.";
 "Restore from a Backup…" = "Восстановить из копии…";
+"Restore" = "Восстановить";
 "Resume" = "Продолжить";
 "Routing" = "Маршрутизация";
 "Routing: which connections go through the server." = "Маршрутизация: какие соединения идут через сервер.";
@@ -147,6 +159,7 @@
 "Subscription Settings…" = "Настройки подписки…";
 "Subscription “%@”" = "Подписка «%@»";
 "System Proxy" = "Системный прокси";
+"TB" = "ТБ";
 "Test environment" = "Тестовое окружение";
 "Test Latency" = "Замерить задержку";
 "The address your provider gave you. FlClash reads the list of servers from it and keeps it up to date." = "Адрес, который дал провайдер. FlClash читает по нему список серверов и сам его обновляет.";
@@ -179,6 +192,7 @@
 "through the server" = "через сервер";
 "Through the server" = "Через сервер";
 "Through" = "Через";
+"To capture the traffic of this computer, FlClash needs a system helper. Installing it asks for administrator rights once." = "Чтобы захватывать трафик этого компьютера, FlClash нужен системный помощник. При установке один раз понадобятся права администратора.";
 "To capture the traffic of this Mac, FlClash needs a system helper. Installing it asks for an administrator password once." = "Чтобы захватывать трафик этого Mac, FlClash нужен системный помощник. При установке один раз понадобится пароль администратора.";
 "To get it back, you will have to import it again." = "Чтобы вернуть, придётся импортировать заново.";
 "TUN" = "TUN";
@@ -195,3 +209,4 @@
 "View" = "Вид";
 "Window" = "Окно";
 "Works from any app." = "Работает из любой программы.";
+"yesterday" = "вчера";

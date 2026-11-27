@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The window of FlClash on Windows: WinUI 3, unpackaged and carrying its
+       own runtime. It is started by FlClash.exe, the agent in the notification
+       area, and talks to it over a named pipe; closing it ends the process. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>FlClash</RootNamespace>
+    <AssemblyName>FlClash.Window</AssemblyName>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\FlClash.ico</ApplicationIcon>
+    <SatelliteResourceLanguages>en;ru</SatelliteResourceLanguages>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <DebugType>none</DebugType>
+    <PublishReadyToRun>false</PublishReadyToRun>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.7.0" />
+    <PackageReference Include="QRCoder" Version="1.9.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The strings every desktop app shows, shared with macOS. -->
+    <EmbeddedResource Include="..\..\l10n\ru.lproj\Localizable.strings" Link="l10n\ru.strings" LogicalName="ru.strings" />
+    <EmbeddedResource Include="..\..\l10n\ru.lproj\Localizable.stringsdict" Link="l10n\ru.stringsdict" LogicalName="ru.stringsdict" />
+    <EmbeddedResource Include="..\..\l10n\en.lproj\Localizable.stringsdict" Link="l10n\en.stringsdict" LogicalName="en.stringsdict" />
+    <Content Include="..\FlClash.ico" Link="FlClash.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- The app's resource index holds the compiled XAML and the styles of the
+       controls; publishing leaves it behind, and without it no control draws. -->
+  <Target Name="PublishResourceIndex" AfterTargets="Publish">
+    <Copy SourceFiles="$(OutDir)$(TargetName).pri" DestinationFolder="$(PublishDir)" Condition="Exists('$(OutDir)$(TargetName).pri')" />
+  </Target>
+</Project>

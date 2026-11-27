@@ -129,8 +129,22 @@ func cmdHelper(args []string) error {
 	if err := s.Start(); err != nil {
 		return err
 	}
-	// Installed means it answers, not that the files are in place.
+	// Installed means it answers, not that the files are in place. It
+	// answers only the user it serves; an administrator who installs it for
+	// another sees it run instead.
 	deadline := time.Now().Add(10 * time.Second)
+	if self, err := windows.GetCurrentProcessToken().GetTokenUser(); err == nil && self.User.Sid.String() != sid {
+		for {
+			if status, err := s.Query(); err == nil && status.State == svc.Running {
+				fmt.Println("the helper is installed and running")
+				return nil
+			}
+			if time.Now().After(deadline) {
+				return fmt.Errorf("the helper was installed but did not start; see %s", helper.LogPath())
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
 	for {
 		if status, err := helper.Call(helper.Request{Op: helper.OpStatus}, 3*time.Second); err == nil && status.Version == helper.Version {
 			fmt.Println("the helper is installed and running")

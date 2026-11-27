@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>%d servers</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d сервер</string>
+			<key>few</key>
+			<string>%d сервера</string>
+			<key>many</key>
+			<string>%d серверов</string>
+			<key>other</key>
+			<string>%d сервера</string>
+		</dict>
+	</dict>
+	<key>Imported, %d rules</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Своя, %d правило</string>
+			<key>few</key>
+			<string>Своя, %d правила</string>
+			<key>many</key>
+			<string>Своя, %d правил</string>
+			<key>other</key>
+			<string>Своя, %d правила</string>
+		</dict>
+	</dict>
+	<key>%d open</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d открыто</string>
+			<key>few</key>
+			<string>%d открыто</string>
+			<key>many</key>
+			<string>%d открыто</string>
+			<key>other</key>
+			<string>%d открыто</string>
+		</dict>
+	</dict>
+	<key>%d bytes</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d байт</string>
+			<key>few</key>
+			<string>%d байта</string>
+			<key>many</key>
+			<string>%d байт</string>
+			<key>other</key>
+			<string>%d байта</string>
+		</dict>
+	</dict>
+	<key>%d minutes ago</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d минуту назад</string>
+			<key>few</key>
+			<string>%d минуты назад</string>
+			<key>many</key>
+			<string>%d минут назад</string>
+			<key>other</key>
+			<string>%d минуты назад</string>
+		</dict>
+	</dict>
+	<key>%d hours ago</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d час назад</string>
+			<key>few</key>
+			<string>%d часа назад</string>
+			<key>many</key>
+			<string>%d часов назад</string>
+			<key>other</key>
+			<string>%d часа назад</string>
+		</dict>
+	</dict>
+	<key>%d days ago</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d день назад</string>
+			<key>few</key>
+			<string>%d дня назад</string>
+			<key>many</key>
+			<string>%d дней назад</string>
+			<key>other</key>
+			<string>%d дня назад</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

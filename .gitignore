@@ -5,3 +5,4 @@
 /macos/.build/
 /macos/Bridge/
 .DS_Store
+/cmd/flclash-windows/*.syso

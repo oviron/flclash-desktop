@@ -5,9 +5,14 @@ with a native window per system on top. GPL-3.0. The Android app lives in
 `oviron/FlClash`; this repository shares no code with it yet.
 
 What exists now: import of servers, routing policies, the config compiler, a
-privileged helper for macOS that runs the core with a TUN device, the command
-line, and the first macOS app: a menu bar item and a window with servers and
-routing. Windows and Linux have neither helper nor window yet.
+privileged helper that runs the core (a launchd daemon on macOS, a service on
+Windows), the command line, the macOS app (a menu bar item and a window), and
+the Windows app (an icon in the notification area and a WinUI window). Linux has
+neither helper nor window yet.
+
+Each system gets its own native app, and they look and behave alike. What can
+be shared is shared: the engine, the strings (`l10n`), the icon (`assets`), and
+on Windows the model the window draws, which is the Go twin of `Model.swift`.
 
 ## Constraints
 
@@ -20,10 +25,13 @@ routing. Windows and Linux have neither helper nor window yet.
 - A server keeps its ID across re-import and rename; selections refer to IDs.
 - Entries and compiled configs hold credentials. Files are written `0600`,
   nothing prints an imported line, test fixtures use made-up hosts and keys.
-- The window is native AppKit and stays light: no web view, no cross-platform
-  toolkit. Closing it releases it; the app stays in the menu bar.
-- The product captures traffic through TUN and opens no local port.
-  `run -local-port` exists to check the core without privileges.
+- The windows are native — AppKit on macOS, WinUI 3 on Windows — and stay
+  light: no web view, no cross-platform toolkit. Closing the window releases
+  it; the app stays in the menu bar or the notification area. On Windows the
+  window is a process of its own and exits when closed.
+- Three modes: `proxy` (a local HTTP/SOCKS port only, the default), `system`
+  (the port, and the system proxy pointed at it) and `tun` (the whole host).
+  A change to one app's behavior is made in the other too, or noted as a gap.
 - Nothing the unprivileged side sends reaches the root core as written: the
   helper accepts only the server shape `ingest` produces and rules `policy`
   produces. A new server field or rule type has to be added to those checks.
@@ -44,9 +52,21 @@ routing. Windows and Linux have neither helper nor window yet.
   the same functions here.
 - `cmd/flclashctl` — the command line. `cmd/flclash-helper` — the supervisor,
   root. `cmd/flclash-core` — the core process the supervisor runs.
-- `bridge` — the engine as a C library: one JSON call in, one JSON reply out.
-- `macos` — the AppKit app, a Swift package that links the bridge. Strings are
-  keyed by their English text; `Resources/ru.lproj` holds the Russian.
+- `internal/bridge` — the engine behind one call: a JSON request in, a JSON
+  reply out. `bridge` exports it as a C library for the macOS app.
+- `internal/model` — the state a front end draws and the rules for changing
+  it, ported from `Model.swift`; `internal/agent` serves it to a window in
+  another process, one JSON object per line.
+- `internal/wfp`, `internal/winproxy` — the Windows firewall guard and the
+  WinINet system proxy.
+- `cmd/flclash-windows` — `FlClash.exe`: the icon in the notification area,
+  the engine and the model; it starts the window and installs the helper.
+- `windows` — the WinUI 3 window, a C# project.
+- `macos` — the AppKit app, a Swift package that links the bridge.
+- `l10n` — the strings of every app, keyed by their English text, in the
+  macOS formats; `ru.lproj` holds the Russian. The Windows parts read the same
+  files.
+- `assets` — the app icon every system's icon is made from.
 
 ## Checks
 
@@ -57,3 +77,14 @@ make app          # tools, bridge, Swift build, dist/FlClash.app (ad hoc signed)
 
 The app needs only the Command Line Tools to build. Look at a change to the
 window in the running app before calling it done: `open dist/FlClash.app`.
+
+On Windows, with Go and the .NET 10 SDK:
+
+```powershell
+windows\build.ps1   # everything into dist\windows\FlClash; -SkipGo, -SkipWindow
+```
+
+`FlClash.exe` starts the window from `window\` beside it; the helper is
+installed from the window or with `flclashctl helper install` as
+administrator. Look at a window change in the running app on Windows too, and
+keep the two apps saying and doing the same.
