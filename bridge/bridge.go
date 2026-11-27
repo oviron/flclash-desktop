@@ -10,6 +10,7 @@ import "C"
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"unsafe"
 
@@ -40,6 +41,9 @@ type status struct {
 	Since    int64  `json:"since"` // unix seconds, 0 when off
 	// Guard is "full" when nothing leaves past the tunnel, "ipv6" when only
 	// IPv6 is closed, empty when there is no guard.
+	// Mode and Port say what runs: "tun", "system" or "proxy", and the local port.
+	Mode         string `json:"mode"`
+	Port         int    `json:"port"`
 	Guard        string `json:"guard"`
 	GuardProblem string `json:"guardProblem"`
 	// Blocked: the tunnel is gone and the guard holds the host closed.
@@ -53,11 +57,13 @@ type reply struct {
 	Imported *app.ImportResult `json:"imported,omitempty"`
 	// Delay answers the delay operation, in milliseconds.
 	Delay int `json:"delay,omitempty"`
+	// Stats answers the stats operation.
+	Stats *helper.Stats `json:"stats,omitempty"`
 }
 
 func toStatus(s helper.Status, err error) *status {
 	out := &status{Installed: true, Running: s.Running, Captured: s.Captured, Server: s.Server, Policy: s.Policy,
-		Guard: s.Guard, GuardProblem: s.GuardProblem, Blocked: s.Blocked}
+		Mode: s.Mode, Port: s.Port, Guard: s.Guard, GuardProblem: s.GuardProblem, Blocked: s.Blocked}
 	out.Outdated = err == nil && s.Version != helper.Version
 	if !s.Since.IsZero() {
 		out.Since = s.Since.Unix()
@@ -94,6 +100,13 @@ func handle(req request) (out reply) {
 		}
 		out.Delay = ms
 		return out
+	case "stats":
+		stats, err := helper.ReadStats()
+		if err != nil {
+			return fail(err)
+		}
+		out.Stats = &stats
+		return out
 	case "on":
 		s, err := app.On(st)
 		out.Status = toStatus(s, err)
@@ -126,6 +139,45 @@ func handle(req request) (out reply) {
 		}
 	case "policyImport":
 		if err := st.ImportPolicy(req.Name, req.Text); err != nil {
+			return fail(err)
+		}
+	case "mode":
+		if err := app.SetMode(st, req.Text); err != nil {
+			return fail(err)
+		}
+	case "port":
+		port, _ := strconv.Atoi(req.Text)
+		if err := app.SetPort(st, port); err != nil {
+			return fail(err)
+		}
+	case "subAdd":
+		result, err := app.AddSubscription(st, req.Name, req.Text)
+		out.Imported = &result
+		if err != nil {
+			return fail(err)
+		}
+	case "subUpdate":
+		if req.Name == "" {
+			if _, err := app.UpdateDue(st); err != nil {
+				return fail(err)
+			}
+			break
+		}
+		result, err := app.UpdateSubscription(st, req.Name)
+		out.Imported = &result
+		if err != nil {
+			// The servers that were there stay; the list shows why it failed.
+			if view, viewErr := app.Snapshot(st); viewErr == nil {
+				out.View = &view
+			}
+			return fail(err)
+		}
+	case "subRemove":
+		if err := app.RemoveSubscription(st, req.Name); err != nil {
+			return fail(err)
+		}
+	case "autoConnect":
+		if err := app.SetAutoConnect(st, req.Text == "on"); err != nil {
 			return fail(err)
 		}
 	case "protect":

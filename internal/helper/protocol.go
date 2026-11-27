@@ -39,7 +39,7 @@ func StateDir() string {
 // Version says which requests the installed helper understands. Raise it
 // whenever the helper or the core it runs has to be reinstalled for the app to
 // work: a new rule type, a new server field, a change of this protocol.
-const Version = 5
+const Version = 7
 
 // Operations of Request.Op.
 const (
@@ -49,6 +49,8 @@ const (
 	// OpDelay measures a server from inside the running core; with the tunnel
 	// off the caller runs the core itself, without privileges.
 	OpDelay = "delay"
+	// OpStats reads the traffic counters and the open connections of the core.
+	OpStats = "stats"
 )
 
 // The measurement of a delay is one request for DelayURL through the server,
@@ -63,7 +65,41 @@ const (
 const (
 	FrameConfig = 'c' // body: the config
 	FrameDelay  = 'd' // body: a CoreDelay
+	FrameStats  = 's' // no body; the answer carries Stats
 )
+
+// Stats is the traffic of the core at one moment.
+type Stats struct {
+	// Up and Down are bytes per second right now; the totals count from the
+	// start of the core.
+	Up        int64 `json:"up"`
+	Down      int64 `json:"down"`
+	UpTotal   int64 `json:"upTotal"`
+	DownTotal int64 `json:"downTotal"`
+	// Connections are the open ones, newest first, at most MaxConnections.
+	Connections []Connection `json:"connections"`
+	// Open counts all open connections, also those left out of the list.
+	Open int `json:"open"`
+}
+
+// MaxConnections bounds the list in Stats: an answer has to stay small.
+const MaxConnections = 300
+
+// Connection is one open connection as the core sees it.
+type Connection struct {
+	ID string `json:"id"`
+	// Host is the name it goes to, or the address when the name is not known.
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	Network string `json:"network"` // tcp or udp
+	// Via is where the policy sent it: the server, DIRECT or REJECT.
+	Via string `json:"via"`
+	// Rule is the rule that decided, as written in the policy.
+	Rule     string `json:"rule"`
+	Upload   int64  `json:"upload"`
+	Download int64  `json:"download"`
+	Start    int64  `json:"start"` // unix seconds
+}
 
 // CoreDelay asks the core to measure one server.
 type CoreDelay struct {
@@ -76,7 +112,22 @@ type CoreDelay struct {
 type CoreReply struct {
 	Error string `json:"error,omitempty"`
 	Delay int    `json:"delay,omitempty"`
+	Stats *Stats `json:"stats,omitempty"`
 }
+
+// The ways the core can serve the host, Request.Mode. They differ in what the
+// system is told, and in the rights the core runs with.
+const (
+	// ModeTUN captures the traffic of the whole host through a tunnel device.
+	// The core runs as root. An empty Mode means this one.
+	ModeTUN = "tun"
+	// ModeSystem opens the local port and names it as the proxy of the system:
+	// programs that follow the system setting go through it.
+	ModeSystem = "system"
+	// ModeProxy opens the local port and changes nothing else: only programs
+	// pointed at the port go through it.
+	ModeProxy = "proxy"
+)
 
 // Request is one call; a connection carries one request and one response.
 type Request struct {
@@ -87,6 +138,11 @@ type Request struct {
 	Server   ingest.Server `json:"server,omitempty"`
 	Policy   string        `json:"policy,omitempty"`
 	Rules    []string      `json:"rules,omitempty"`
+	// Mode is how the host is served: ModeTUN, ModeSystem or ModeProxy.
+	Mode string `json:"mode,omitempty"`
+	// Port is the loopback port for HTTP and SOCKS. The proxy modes need one;
+	// with the tunnel it is an extra door, and zero leaves it shut.
+	Port int `json:"port,omitempty"`
 	// Protect asks for the full guard: nothing leaves past the tunnel, also
 	// when the core dies. Without it only IPv6 is closed while the tunnel is up.
 	Protect bool `json:"protect,omitempty"`
@@ -96,9 +152,12 @@ type Request struct {
 type Status struct {
 	// Running: the core process is alive with a config it accepted.
 	Running bool `json:"running"`
-	// Captured: the tunnel device is present on the system. Only this, not
-	// Running, means traffic is being captured.
+	// Captured: what the mode promises is in place: the tunnel device is
+	// present, or the local port answers. Only this, not Running, means
+	// traffic can go through.
 	Captured bool      `json:"captured"`
+	Mode     string    `json:"mode,omitempty"`
+	Port     int       `json:"port,omitempty"`
 	Server   string    `json:"server,omitempty"`
 	Policy   string    `json:"policy,omitempty"`
 	Revision int64     `json:"revision,omitempty"`
@@ -121,12 +180,23 @@ type Response struct {
 	Status Status `json:"status"`
 	// Delay answers OpDelay, in milliseconds.
 	Delay int `json:"delay,omitempty"`
+	// Stats answers OpStats.
+	Stats *Stats `json:"stats,omitempty"`
 }
 
 // Call sends one request to the supervisor.
 func Call(req Request, timeout time.Duration) (Status, error) {
 	resp, err := call(req, timeout)
 	return resp.Status, err
+}
+
+// ReadStats reads the traffic of the running core.
+func ReadStats() (Stats, error) {
+	resp, err := call(Request{Op: OpStats}, 10*time.Second)
+	if err != nil || resp.Stats == nil {
+		return Stats{}, err
+	}
+	return *resp.Stats, nil
 }
 
 // Delay measures a server through the running core.

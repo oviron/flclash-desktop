@@ -56,8 +56,10 @@ func Config(in Input) ([]byte, error) {
 	}
 	proxy := Proxy(in.Server)
 	cfg := map[string]any{
-		"mode":            "rule",
-		"log-level":       "info",
+		"mode": "rule",
+		// Connections are shown from the counters of the core, not from its
+		// log: a line per connection would only grow the file.
+		"log-level":       "warning",
 		"allow-lan":       false,
 		"bind-address":    "127.0.0.1",
 		"geo-auto-update": false,
@@ -69,6 +71,19 @@ func Config(in Input) ([]byte, error) {
 			"type":    "select",
 			"proxies": []string{in.Server.Name},
 		}},
+	}
+	// A program that resolved a name by itself connects to a bare address,
+	// and the rules that go by name would not see it. The first bytes of the
+	// connection usually carry the name; reading it there puts the rules back
+	// to work and lets the server resolve the name on its side.
+	cfg["sniffer"] = map[string]any{
+		"enable":        true,
+		"parse-pure-ip": true,
+		"sniff": map[string]any{
+			"HTTP": map[string]any{"ports": []any{80, "8080-8880"}},
+			"TLS":  map[string]any{"ports": []any{443, 8443}},
+			"QUIC": map[string]any{"ports": []any{443, 8443}},
+		},
 	}
 	rules, providers := lists(in.Policy.Rules)
 	cfg["rules"] = rules

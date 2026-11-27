@@ -39,6 +39,9 @@ func TestMain(m *testing.M) {
 		if bytes.Contains(frame, []byte("die-now")) {
 			os.Exit(3)
 		}
+		if frame[0] == FrameStats {
+			reply.Stats = &Stats{Down: 1000, Open: 1, Connections: []Connection{{ID: "a", Host: "example.org", Port: 443, Via: "first"}}}
+		}
 		if frame[0] == FrameDelay && reply.Error == "" {
 			delays++
 			switch {
@@ -380,5 +383,153 @@ func TestAGuardLeftByADeadHelperKeepsTheHostBlocked(t *testing.T) {
 	}
 	if st := s.Status(); st.Blocked || !st.Running {
 		t.Fatalf("connecting must end the block: %+v", st)
+	}
+}
+
+// fakeProxy is the system proxy as the tests see it.
+type fakeProxy struct {
+	mu   sync.Mutex
+	port int
+	log  []string
+}
+
+func (p *fakeProxy) Set(port int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.port = port
+	p.log = append(p.log, fmt.Sprintf("set %d", port))
+	return nil
+}
+
+func (p *fakeProxy) Clear() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.port != 0 {
+		p.log = append(p.log, "clear")
+	}
+	p.port = 0
+	return nil
+}
+
+func (p *fakeProxy) current() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.port
+}
+
+func withModes(t *testing.T) (*Supervisor, *fakeGuard, *fakeProxy) {
+	t.Helper()
+	s, g := guarded(t)
+	p := &fakeProxy{}
+	s.SystemProxy = p
+	s.HomeDir = t.TempDir()
+	s.Listening = func(int) bool { return true }
+	s.PortFree = func(int) bool { return true }
+	return s, g, p
+}
+
+func inMode(mode string, port int, revision int64) Request {
+	req := protected("first", revision)
+	req.Mode, req.Port = mode, port
+	return req
+}
+
+func TestTheProxyModesTouchOnlyWhatTheyPromise(t *testing.T) {
+	s, g, p := withModes(t)
+	if err := s.do(inMode(ModeProxy, 7890, 1)); err != nil {
+		t.Fatal(err)
+	}
+	st := s.Status()
+	if !st.Running || !st.Captured || st.Mode != ModeProxy || st.Port != 7890 || st.Guard != "" || g.on || p.current() != 0 {
+		t.Fatalf("a plain proxy changes nothing in the system: %+v, %v, %v", st, g.log, p.log)
+	}
+	pid := s.core.Process.Pid
+
+	// The same core serves the system mode: only the system setting changes.
+	if err := s.do(inMode(ModeSystem, 7890, 2)); err != nil {
+		t.Fatal(err)
+	}
+	if st = s.Status(); st.Mode != ModeSystem || p.current() != 7890 || s.core.Process.Pid != pid {
+		t.Fatalf("got %+v, %v", st, p.log)
+	}
+	if err := s.do(inMode(ModeProxy, 7890, 3)); err != nil {
+		t.Fatal(err)
+	}
+	if p.current() != 0 || s.core.Process.Pid != pid {
+		t.Fatalf("leaving the system mode must put the system proxy back: %v", p.log)
+	}
+
+	// The tunnel needs another core, and brings the guard.
+	if err := s.do(inMode(ModeTUN, 7890, 4)); err != nil {
+		t.Fatal(err)
+	}
+	if st = s.Status(); st.Mode != ModeTUN || st.Guard != GuardFull || s.core.Process.Pid == pid {
+		t.Fatalf("got %+v, %v", st, g.log)
+	}
+	// And back: the guard comes off with the tunnel.
+	if err := s.do(inMode(ModeSystem, 7890, 5)); err != nil {
+		t.Fatal(err)
+	}
+	if st = s.Status(); st.Mode != ModeSystem || st.Guard != "" || g.on || p.current() != 7890 {
+		t.Fatalf("got %+v, %v, %v", st, g.log, p.log)
+	}
+	s.Stop()
+	if p.current() != 0 {
+		t.Fatalf("stopping must put the system proxy back: %v", p.log)
+	}
+}
+
+func TestACoreThatDiesInTheSystemModeFreesTheSystem(t *testing.T) {
+	s, _, p := withModes(t)
+	if err := s.do(inMode(ModeSystem, 7890, 1)); err != nil {
+		t.Fatal(err)
+	}
+	kill(s)
+	waitFor(t, "off", func() bool { return !s.Status().Running })
+	if st := s.Status(); st.Blocked || p.current() != 0 {
+		t.Fatalf("the system must not be left pointing at a dead port: %+v, %v", st, p.log)
+	}
+}
+
+func TestTheLocalPortIsChecked(t *testing.T) {
+	s, _, _ := withModes(t)
+	for _, req := range []Request{inMode(ModeProxy, 0, 1), inMode(ModeSystem, 80, 1), inMode(ModeTUN, 70000, 1), inMode("else", 7890, 1)} {
+		if err := s.do(req); err == nil {
+			t.Errorf("mode %q with port %d must be refused", req.Mode, req.Port)
+		}
+	}
+	s.PortFree = func(int) bool { return false }
+	err := s.do(inMode(ModeProxy, 7890, 2))
+	if err == nil || !strings.Contains(err.Error(), "taken") {
+		t.Fatalf("got %v", err)
+	}
+	if st := s.Status(); st.Running {
+		t.Fatalf("got %+v", st)
+	}
+}
+
+func TestAPortThatDoesNotOpenMeansNotConnected(t *testing.T) {
+	s, _, p := withModes(t)
+	s.Listening = func(int) bool { return false }
+	err := s.do(inMode(ModeSystem, 7890, 1))
+	if err == nil || !strings.Contains(err.Error(), "port did not open") {
+		t.Fatalf("got %v", err)
+	}
+	if st := s.Status(); st.Running || p.current() != 0 {
+		t.Fatalf("got %+v, %v", st, p.log)
+	}
+}
+
+func TestStats(t *testing.T) {
+	s := supervisor(t, true)
+	if _, err := s.stats(); err == nil {
+		t.Fatal("with nothing running there are no numbers")
+	}
+	if err := s.do(request("first", 1)); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := s.stats()
+	if err != nil || stats.Down != 1000 || len(stats.Connections) != 1 || stats.Connections[0].Host != "example.org" {
+		t.Fatalf("got %+v, %v", stats, err)
 	}
 }

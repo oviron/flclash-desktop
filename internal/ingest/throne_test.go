@@ -193,13 +193,14 @@ func TestCheckRefusesWhatTheImporterNeverWrites(t *testing.T) {
 		return Server{Name: "s", Proxy: map[string]any{"type": "hysteria2", "server": "a.example", "port": 443}}
 	}
 	for field, value := range map[string]any{
-		"private-key":      "/etc/master.passwd",
-		"dialer-proxy":     "other",
-		"interface-name":   "en0",
-		"skip-cert-verify": true,
-		"reality-opts":     map[string]any{"public-key": "k", "extra": 1},
-		"alpn":             []any{"h3", 1},
-		"server":           map[string]any{"x": 1},
+		"private-key":    "/etc/master.passwd",
+		"dialer-proxy":   "other",
+		"interface-name": "en0",
+		"plugin":         "obfs",
+		"ws-opts":        map[string]any{"headers": map[string]any{"Cookie": "x"}},
+		"reality-opts":   map[string]any{"public-key": "k", "extra": 1},
+		"alpn":           []any{"h3", 1},
+		"server":         map[string]any{"x": 1},
 	} {
 		s := base()
 		s.Proxy[field] = value

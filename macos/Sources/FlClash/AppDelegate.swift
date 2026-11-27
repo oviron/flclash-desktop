@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         Model.shared.refresh()
+        Model.shared.watchStats(true)
     }
 
     /// The command line may have changed the lists while the window was aside.
@@ -59,7 +60,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         // Let go of the window and everything in it: closed means gone, not hidden.
-        if (notification.object as? NSWindow) === settings?.window { settings = nil } else { window = nil }
+        if (notification.object as? NSWindow) === settings?.window {
+            settings = nil
+        } else {
+            window = nil
+            Model.shared.watchStats(false)
+        }
         // With no window left the app goes back to the menu bar.
         if window == nil, settings == nil { NSApp.setActivationPolicy(.accessory) }
     }
@@ -106,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let viewMenu = NSMenu(title: L("View"))
         viewMenu.addItem(withTitle: L("Servers"), action: #selector(MainWindowController.showServers(_:)), keyEquivalent: "1")
         viewMenu.addItem(withTitle: L("Routing"), action: #selector(MainWindowController.showRouting(_:)), keyEquivalent: "2")
+        viewMenu.addItem(withTitle: L("Connections"), action: #selector(MainWindowController.showConnections(_:)), keyEquivalent: "3")
         viewItem.submenu = viewMenu
         main.addItem(viewItem)
 

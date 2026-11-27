@@ -25,6 +25,12 @@ import (
 )
 
 func main() {
+	// The helper says where the core keeps its files: a core that runs as the
+	// user cannot write where root's does.
+	home := helper.StateDir()
+	if len(os.Args) == 3 && os.Args[1] == "-home" {
+		home = os.Args[2]
+	}
 	if len(os.Args) == 2 && os.Args[1] == "-delay" {
 		// Stdout carries the answer alone.
 		log.SetLevel(log.SILENT)
@@ -52,11 +58,14 @@ func main() {
 		var reply helper.CoreReply
 		switch kind, body := frame[0], frame[1:]; kind {
 		case helper.FrameConfig:
-			if err := core.Apply(helper.StateDir(), body); err != nil {
+			if err := core.Apply(home, body); err != nil {
 				reply.Error = err.Error()
 			}
 		case helper.FrameDelay:
 			reply = delay(body)
+		case helper.FrameStats:
+			stats := core.Stats()
+			reply.Stats = &stats
 		default:
 			reply.Error = "unknown frame"
 		}

@@ -41,6 +41,9 @@ final class HeaderView: NSView {
     private let detail = NSTextField(labelWithString: "")
     private let button = NSButton(title: "", target: nil, action: nil)
     private let spinner = NSProgressIndicator()
+    private let speed = NSTextField(labelWithString: "")
+    private let modes = NSSegmentedControl(labels: [L("TUN"), L("System Proxy"), L("Port Only")], trackingMode: .selectOne, target: nil, action: nil)
+    private let address = NSTextField(labelWithString: "")
     private let notice = NSTextField(wrappingLabelWithString: "")
     private let noticeButton = NSButton(title: "", target: nil, action: nil)
     private let noticeRow = NSStackView()
@@ -90,10 +93,29 @@ final class HeaderView: NSView {
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.init(1), for: .horizontal)
-        let top = NSStackView(views: [badge, titles, spacer, spinner, button])
+        speed.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        speed.textColor = .secondaryLabelColor
+        speed.alignment = .right
+        speed.setContentHuggingPriority(.required, for: .horizontal)
+        speed.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let top = NSStackView(views: [badge, titles, spacer, speed, spinner, button])
         top.orientation = .horizontal
         top.alignment = .centerY
         top.spacing = 12
+
+        modes.target = self
+        modes.action = #selector(modeChanged)
+        modes.setToolTip(L("Everything on this Mac goes through the tunnel."), forSegment: 0)
+        modes.setToolTip(L("Apps that follow the system proxy setting go through the local port."), forSegment: 1)
+        modes.setToolTip(L("Nothing changes in the system: only apps pointed at the local port use it."), forSegment: 2)
+        address.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        address.textColor = .secondaryLabelColor
+        address.isSelectable = true
+        address.toolTip = L("The local port for HTTP and SOCKS. It can be changed in Settings.")
+        let modeRow = NSStackView(views: [modes, address])
+        modeRow.orientation = .horizontal
+        modeRow.alignment = .centerY
+        modeRow.spacing = 12
 
         notice.font = .systemFont(ofSize: 12)
         notice.textColor = .secondaryLabelColor
@@ -120,7 +142,7 @@ final class HeaderView: NSView {
         card.fillColor = .quaternarySystemFill
         card.contentViewMargins = .zero
 
-        let column = NSStackView(views: [top, noticeRow])
+        let column = NSStackView(views: [top, modeRow, noticeRow])
         column.orientation = .vertical
         column.alignment = .leading
         column.spacing = 12
@@ -143,7 +165,18 @@ final class HeaderView: NSView {
         ])
 
         NotificationCenter.default.addObserver(self, selector: #selector(update), name: .modelChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateSpeed), name: .statsChanged, object: nil)
         update()
+        updateSpeed()
+    }
+
+    @objc private func updateSpeed() {
+        guard let stats = Model.shared.stats, Model.shared.status.running else {
+            speed.stringValue = ""
+            return
+        }
+        speed.stringValue = "↓ " + rate(stats.down) + "   ↑ " + rate(stats.up)
+        speed.toolTip = String(format: L("Since the tunnel came up: %@ down, %@ up"), amount(stats.downTotal), amount(stats.upTotal))
     }
 
     @available(*, unavailable)
@@ -182,9 +215,15 @@ final class HeaderView: NSView {
             detail.stringValue = L("Choose a server to connect")
         } else {
             var parts = [server, policyTitle(policy)]
-            if status.running, status.guard_ == "full" { parts.append(L("protection is on")) }
+            if status.running, status.guard_ == "full" { parts.append(L("protected")) }
             detail.stringValue = parts.joined(separator: "  ·  ")
         }
+
+        // While on, the switch shows what runs; while off, what would.
+        let mode = status.running && !status.mode.isEmpty ? status.mode : model.view.mode
+        modes.selectedSegment = ["tun": 0, "system": 1, "proxy": 2][mode] ?? 0
+        modes.isEnabled = model.helperReady && !model.busy
+        address.stringValue = "127.0.0.1:" + String(status.running && status.port > 0 ? status.port : model.view.port)
 
         button.title = status.running ? L("Disconnect") : (status.blocked ? L("Connect Again") : L("Connect"))
         button.isEnabled = model.helperReady && !model.busy && (status.running || model.selectedServer != nil)
@@ -229,6 +268,10 @@ final class HeaderView: NSView {
 
     @objc private func toggle() { Model.shared.toggle() }
 
+    @objc private func modeChanged() {
+        Model.shared.setMode(["tun", "system", "proxy"][max(0, min(2, modes.selectedSegment))])
+    }
+
     @objc private func noticeAction() {
         if Model.shared.helperReady {
             // Blocked: the button takes the guard off. Otherwise it hides a message.
@@ -248,6 +291,16 @@ final class HeaderView: NSView {
             Model.shared.refresh()
         }
     }
+}
+
+/// A number of bytes for people.
+func amount(_ bytes: Int) -> String {
+    ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .binary)
+}
+
+/// A number of bytes per second for people.
+func rate(_ bytes: Int) -> String {
+    String(format: L("%@/s"), amount(bytes))
 }
 
 /// Installs the privileged helper through the system's administrator prompt.

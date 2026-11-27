@@ -38,8 +38,19 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
         window.center()
         window.setFrameAutosaveName("FlClashMainWindow")
 
-        root.onPage = { [weak self] in self?.pageChanged() }
+        root.onPage = { [weak self] in
+            // The field keeps its text; the page that comes to the front takes it.
+            if let self, let field = self.searchItem?.searchField {
+                if self.root.page == .connections {
+                    self.root.content.connections.query = field.stringValue
+                } else if self.root.page == .servers {
+                    self.root.content.servers.query = field.stringValue
+                }
+            }
+            self?.pageChanged()
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(pageChanged), name: .modelChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(pageChanged), name: .statsChanged, object: nil)
         pageChanged()
     }
 
@@ -56,10 +67,14 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
             window.subtitle = count == 0 ? "" : String.localizedStringWithFormat(L("%d servers"), count)
         case .routing:
             window.subtitle = ""
+        case .connections:
+            let open = Model.shared.stats?.open ?? 0
+            window.subtitle = open == 0 ? "" : String.localizedStringWithFormat(L("%d open"), open)
         }
         for item in window.toolbar?.items ?? [] {
             switch item.itemIdentifier {
-            case .measure, .addServers, .search: item.isHidden = page != .servers
+            case .measure, .addServers: item.isHidden = page != .servers
+            case .search: item.isHidden = page == .routing
             case .addPolicy: item.isHidden = page != .routing
             default: break
             }
@@ -125,13 +140,19 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
 
     func controlTextDidChange(_ obj: Notification) {
         guard let field = obj.object as? NSSearchField else { return }
-        root.content.servers.query = field.stringValue
+        // One field, and it searches the page in front.
+        if root.page == .connections {
+            root.content.connections.query = field.stringValue
+        } else {
+            root.content.servers.query = field.stringValue
+        }
     }
 
     // MARK: Actions of the menus and the toolbar
 
     @objc func showServers(_ sender: Any?) { root.show(.servers) }
     @objc func showRouting(_ sender: Any?) { root.show(.routing) }
+    @objc func showConnections(_ sender: Any?) { root.show(.connections) }
 
     @objc func importFromClipboard(_ sender: Any?) {
         root.show(.servers)
@@ -159,7 +180,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     }
 
     @objc func focusSearch(_ sender: Any?) {
-        root.show(.servers)
+        if root.page == .routing { root.show(.servers) }
         searchItem?.beginSearchInteraction()
     }
 }
@@ -194,12 +215,13 @@ final class RootSplitViewController: NSSplitViewController {
 }
 
 enum Page: Int, CaseIterable {
-    case servers, routing
+    case servers, routing, connections
 
     var title: String {
         switch self {
         case .servers: return L("Servers")
         case .routing: return L("Routing")
+        case .connections: return L("Connections")
         }
     }
 
@@ -207,6 +229,7 @@ enum Page: Int, CaseIterable {
         switch self {
         case .servers: return "server.rack"
         case .routing: return "arrow.triangle.branch"
+        case .connections: return "arrow.left.arrow.right"
         }
     }
 }
@@ -278,6 +301,7 @@ final class ContentViewController: NSViewController {
     private(set) var page = Page.servers
     private(set) lazy var servers = ServersViewController()
     private(set) lazy var routing = RoutingViewController()
+    private(set) lazy var connections = ConnectionsViewController()
 
     override func loadView() {
         let root = NSView()
@@ -303,7 +327,12 @@ final class ContentViewController: NSViewController {
     }
 
     func show(_ page: Page) {
-        let next: NSViewController = page == .servers ? servers : routing
+        let next: NSViewController
+        switch page {
+        case .servers: next = servers
+        case .routing: next = routing
+        case .connections: next = connections
+        }
         guard next !== current else { return }
         self.page = page
         current?.view.removeFromSuperview()

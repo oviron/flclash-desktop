@@ -35,7 +35,7 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         table.dataSource = self
         table.delegate = self
         table.target = self
-        table.doubleAction = #selector(useSelected(_:))
+        table.doubleAction = #selector(connectClicked(_:))
         table.onDelete = { [weak self] in self?.delete(nil) }
         table.setAccessibilityLabel(L("Servers"))
         let menu = NSMenu()
@@ -172,6 +172,13 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
     @objc func useSelected(_ sender: Any?) {
         let servers = actionRows
         if servers.count == 1 { Model.shared.select(server: servers[0].id) }
+    }
+
+    /// A double click is the whole wish: this server, now.
+    @objc private func connectClicked(_ sender: Any?) {
+        let row = table.clickedRow
+        guard row >= 0, row < rows.count, Model.shared.helperReady, !Model.shared.busy else { return }
+        Model.shared.connect(server: rows[row].id)
     }
 
     @objc private func measureSelected(_ sender: Any?) {

@@ -25,6 +25,12 @@ func main() {
 	if err := os.MkdirAll(helper.StateDir(), 0o700); err != nil {
 		log.Fatal(err)
 	}
+	// The core of the proxy modes runs as the user and keeps its files in a
+	// directory of its own under this one, so the user has to be able to pass
+	// through. Passing through shows nothing: the files here stay root's.
+	if err := os.Chmod(helper.StateDir(), 0o711); err != nil {
+		log.Fatal(err)
+	}
 	path := helper.SocketPath()
 	_ = os.Remove(path) // a socket left by a previous run
 	// Nobody may connect between the socket appearing and its owner being set.
@@ -38,7 +44,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	sup := &helper.Supervisor{CorePath: *corePath, Guard: helper.NewGuard()}
+	sup := &helper.Supervisor{CorePath: *corePath, Guard: helper.NewGuard(), SystemProxy: helper.NewSystemProxy(), UserUID: *uid}
 	if sup.Guard != nil {
 		// The guard tells the core from everyone else by its group.
 		sup.CoreGID = helper.CoreGID

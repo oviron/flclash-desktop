@@ -56,7 +56,17 @@ func describe(s helper.Status) string {
 	case !s.Running:
 		return "off"
 	case !s.Captured:
-		return fmt.Sprintf("NOT CAPTURING: the core runs with %s, policy %s, but the tunnel device is missing", s.Server, s.Policy)
+		return fmt.Sprintf("NOT WORKING: the core runs with %s, policy %s, but the tunnel device or the local port is missing", s.Server, s.Policy)
 	}
-	return fmt.Sprintf("on: %s, policy %s, since %s; %s", s.Server, s.Policy, s.Since.Local().Format("15:04:05"), guard)
+	since := s.Since.Local().Format("15:04:05")
+	switch s.Mode {
+	case helper.ModeSystem:
+		return fmt.Sprintf("on: %s, policy %s, since %s; system proxy on 127.0.0.1:%d", s.Server, s.Policy, since, s.Port)
+	case helper.ModeProxy:
+		return fmt.Sprintf("on: %s, policy %s, since %s; proxy on 127.0.0.1:%d, the system is not told", s.Server, s.Policy, since, s.Port)
+	}
+	if s.Port != 0 {
+		guard += fmt.Sprintf("; proxy on 127.0.0.1:%d", s.Port)
+	}
+	return fmt.Sprintf("on: %s, policy %s, since %s; %s", s.Server, s.Policy, since, guard)
 }

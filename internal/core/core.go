@@ -6,12 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/adapter"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/hub/executor"
+	"github.com/metacubex/mihomo/tunnel/statistic"
+
+	"github.com/oviron/flclash-desktop/internal/helper"
 )
 
 var mu sync.Mutex
@@ -59,4 +63,57 @@ func Delay(proxy map[string]any, url string, timeout time.Duration) (int, error)
 		return 0, err
 	}
 	return int(ms), nil
+}
+
+// Stats reads the traffic counters and the open connections.
+func Stats() helper.Stats {
+	manager := statistic.DefaultManager
+	stats := helper.Stats{Connections: []helper.Connection{}}
+	stats.Up, stats.Down = manager.Now()
+	stats.UpTotal, stats.DownTotal = manager.Total()
+	manager.Range(func(tracker statistic.Tracker) bool {
+		info := tracker.Info()
+		meta := info.Metadata
+		if meta == nil {
+			return true
+		}
+		host := meta.Host
+		if host == "" {
+			host = meta.DstIP.String()
+		}
+		via := ""
+		if len(info.Chain) > 0 {
+			// The chain runs from the outbound that carries the connection up
+			// to the group the rule named.
+			via = info.Chain[0]
+		}
+		rule := info.Rule
+		if info.RulePayload != "" {
+			rule += "," + info.RulePayload
+		}
+		stats.Connections = append(stats.Connections, helper.Connection{
+			ID:       info.UUID.String(),
+			Host:     host,
+			Port:     int(meta.DstPort),
+			Network:  meta.NetWork.String(),
+			Via:      via,
+			Rule:     rule,
+			Upload:   info.UploadTotal.Load(),
+			Download: info.DownloadTotal.Load(),
+			Start:    info.Start.Unix(),
+		})
+		return true
+	})
+	stats.Open = len(stats.Connections)
+	sort.Slice(stats.Connections, func(i, j int) bool {
+		a, b := stats.Connections[i], stats.Connections[j]
+		if a.Start != b.Start {
+			return a.Start > b.Start
+		}
+		return a.ID < b.ID
+	})
+	if len(stats.Connections) > helper.MaxConnections {
+		stats.Connections = stats.Connections[:helper.MaxConnections]
+	}
+	return stats
 }

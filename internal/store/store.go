@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/oviron/flclash-desktop/internal/ingest"
 	"github.com/oviron/flclash-desktop/internal/policy"
@@ -30,9 +31,47 @@ type State struct {
 	Servers  []Entry `json:"servers"`
 	Selected string  `json:"selected,omitempty"` // server ID
 	Policy   string  `json:"policy,omitempty"`   // policy name
+	// Subscriptions are the groups that are filled from an address.
+	Subscriptions []Subscription `json:"subscriptions,omitempty"`
+	// Mode is how the host is served: "tun", "system" or "proxy"; empty is "tun".
+	Mode string `json:"mode,omitempty"`
+	// Port is the loopback port for HTTP and SOCKS; zero is DefaultPort.
+	Port int `json:"port,omitempty"`
+	// AutoConnect: the app turns the tunnel on when it starts.
+	AutoConnect bool `json:"autoConnect,omitempty"`
 	// Unprotected turns the full guard off: traffic may then leave past the
 	// tunnel, and does when the core dies. Protection is what a new setup gets.
 	Unprotected bool `json:"unprotected,omitempty"`
+}
+
+// Subscription is a group of servers that comes from an address and is read
+// from it again from time to time. Its servers are the entries whose Group is
+// its Name.
+type Subscription struct {
+	Name string `json:"name"`
+	// URL usually carries the token of the account: it is a secret.
+	URL     string    `json:"url"`
+	Updated time.Time `json:"updated,omitempty"`
+	// Hours is how often the provider asked to be read; zero means it did not say.
+	Hours int `json:"hours,omitempty"`
+	// What the provider said about the account: bytes used and allowed, and
+	// when it ends, as unix seconds. Zero means it did not say.
+	Used   int64 `json:"used,omitempty"`
+	Total  int64 `json:"total,omitempty"`
+	Expire int64 `json:"expire,omitempty"`
+	// Problem is why the last update failed; empty after one that worked.
+	Problem string `json:"problem,omitempty"`
+}
+
+// DefaultPort is the local port of a new setup, the one Clash clients use.
+const DefaultPort = 7890
+
+// LocalPort is the port in effect.
+func (state State) LocalPort() int {
+	if state.Port == 0 {
+		return DefaultPort
+	}
+	return state.Port
 }
 
 // Store is a directory holding state.json and policies/.

@@ -42,6 +42,9 @@ func cmdHelper(args []string) error {
 		if err := helper.NewGuard().Release(); err != nil {
 			fmt.Fprintln(os.Stderr, "flclashctl:", err)
 		}
+		if err := helper.NewSystemProxy().Clear(); err != nil {
+			fmt.Fprintln(os.Stderr, "flclashctl:", err)
+		}
 		for _, path := range []string{helperPlist, filepath.Join(helperDir, "flclash-helper"), filepath.Join(helperDir, "flclash-core"), helper.SocketPath(), helperLog} {
 			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err

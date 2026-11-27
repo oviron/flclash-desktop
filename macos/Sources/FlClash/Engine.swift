@@ -25,6 +25,32 @@ struct EngineView: Decodable, Equatable {
     var policies: [Policy] = []
     var policy = ""
     var protect = true
+    /// "tun", "system" or "proxy".
+    var mode = "tun"
+    var port = 7890
+    var autoConnect = false
+}
+
+struct Connection: Decodable, Equatable {
+    let id: String
+    let host: String
+    let port: Int
+    let network: String
+    let via: String
+    let rule: String
+    let upload: Int
+    let download: Int
+    let start: Int
+}
+
+/// The traffic of the core at one moment.
+struct Stats: Decodable, Equatable {
+    var up = 0
+    var down = 0
+    var upTotal = 0
+    var downTotal = 0
+    var connections: [Connection] = []
+    var open = 0
 }
 
 struct TunnelStatus: Decodable, Equatable {
@@ -40,9 +66,12 @@ struct TunnelStatus: Decodable, Equatable {
     var guardProblem = ""
     /// The tunnel is gone and the guard keeps the Mac offline.
     var blocked = false
+    /// What runs: "tun", "system" or "proxy", and the local port (0: none).
+    var mode = ""
+    var port = 0
 
     enum CodingKeys: String, CodingKey {
-        case installed, outdated, running, captured, server, policy, since, guardProblem, blocked
+        case installed, outdated, running, captured, server, policy, since, guardProblem, blocked, mode, port
         case guard_ = "guard"
     }
 }
@@ -62,6 +91,7 @@ struct Reply: Decodable {
     let status: TunnelStatus?
     let imported: ImportResult?
     var delay: Int? = nil
+    var stats: Stats? = nil
 }
 
 /// The Go engine. Calls can take as long as a tunnel takes to come up, so they
@@ -83,6 +113,17 @@ enum Engine {
     static func measure(server: String, then done: @escaping (Reply) -> Void) {
         measuring.async {
             let reply = callSync(["op": "delay", "server": server])
+            DispatchQueue.main.async { done(reply) }
+        }
+    }
+
+    /// The counters are read every second while a window shows them; they
+    /// must not wait behind a tunnel that is coming up, nor hold it up.
+    private static let counting = DispatchQueue(label: "flclash.engine.stats", qos: .utility)
+
+    static func stats(then done: @escaping (Reply) -> Void) {
+        counting.async {
+            let reply = callSync(["op": "stats"])
             DispatchQueue.main.async { done(reply) }
         }
     }

@@ -1,0 +1,124 @@
+import AppKit
+
+/// What goes through the core right now: where to, by which rule, how much.
+final class ConnectionsViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
+    private let table = NSTableView()
+    private let empty = EmptyStateView(symbol: "arrow.left.arrow.right")
+    private var rows: [Connection] = []
+
+    /// What the search field of the toolbar holds.
+    var query = "" {
+        didSet { if isViewLoaded, query != oldValue { reload() } }
+    }
+
+    override func loadView() {
+        let root = NSView()
+        for (id, title, width) in [("host", L("Destination"), 250.0), ("via", L("Through"), 110.0), ("rule", L("Rule"), 170.0), ("down", "↓", 70.0), ("up", "↑", 70.0), ("age", L("Open For"), 70.0)] {
+            let column = NSTableColumn(identifier: .init(id))
+            column.title = title
+            column.width = width
+            column.minWidth = 50
+            table.addTableColumn(column)
+        }
+        table.style = .inset
+        table.rowSizeStyle = .medium
+        table.usesAlternatingRowBackgroundColors = false
+        table.allowsMultipleSelection = false
+        table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+        table.dataSource = self
+        table.delegate = self
+        table.setAccessibilityLabel(L("Connections"))
+
+        let scroll = NSScrollView()
+        scroll.documentView = table
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+
+        empty.button.isHidden = true
+        for subview in [scroll, empty] as [NSView] {
+            subview.translatesAutoresizingMaskIntoConstraints = false
+            root.addSubview(subview)
+        }
+        NSLayoutConstraint.activate([
+            scroll.topAnchor.constraint(equalTo: root.topAnchor),
+            scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            empty.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            empty.centerYAnchor.constraint(equalTo: root.centerYAnchor),
+            empty.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, constant: -60),
+        ])
+        view = root
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        NotificationCenter.default.addObserver(self, selector: #selector(reload), name: .statsChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(reload), name: .modelChanged, object: nil)
+        reload()
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        table.sizeToFit()
+    }
+
+    @objc private func reload() {
+        // The list changes every second; nothing to do while nobody looks.
+        guard view.window != nil || rows.isEmpty else { return }
+        let chosen = table.selectedRow >= 0 && table.selectedRow < rows.count ? rows[table.selectedRow].id : nil
+        let all = Model.shared.status.running ? (Model.shared.stats?.connections ?? []) : []
+        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        rows = needle.isEmpty ? all : all.filter { ($0.host + " " + $0.via + " " + $0.rule).lowercased().contains(needle) }
+        table.reloadData()
+        if let chosen, let index = rows.firstIndex(where: { $0.id == chosen }) {
+            table.selectRowIndexes([index], byExtendingSelection: false)
+        }
+
+        table.enclosingScrollView?.isHidden = rows.isEmpty
+        if !Model.shared.status.running {
+            empty.show(title: L("Nothing runs"), text: L("Connections appear here while FlClash is on."), button: false)
+        } else if all.isEmpty {
+            empty.show(title: L("No open connections"), text: "", button: false)
+        } else if rows.isEmpty {
+            empty.show(title: L("Nothing matches the search"), text: "", button: false)
+        } else {
+            empty.isHidden = true
+        }
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard let column = tableColumn else { return nil }
+        let connection = rows[row]
+        let text: String
+        var numeric = true
+        switch column.identifier.rawValue {
+        case "via": text = connection.via; numeric = false
+        case "rule": text = connection.rule; numeric = false
+        case "down": text = amount(connection.download)
+        case "up": text = amount(connection.upload)
+        case "age": text = age(connection.start)
+        default:
+            // The port says something only when it is not the usual one.
+            let usual = connection.port == 443 || connection.port == 80
+            text = usual ? connection.host : connection.host + ":" + String(connection.port)
+            numeric = false
+        }
+        let cell = textCell(text, secondary: column.identifier.rawValue != "host", strong: false)
+        if numeric {
+            (cell as? NSTableCellView)?.textField?.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        }
+        if column.identifier.rawValue == "host" { cell.toolTip = connection.network.uppercased() + " " + connection.host + ":" + String(connection.port) }
+        return cell
+    }
+
+    private func age(_ start: Int) -> String {
+        let seconds = max(0, Int(Date().timeIntervalSince1970) - start)
+        if seconds < 60 { return String(format: L("%d s"), seconds) }
+        if seconds < 3600 { return String(format: L("%d min"), seconds / 60) }
+        return String(format: L("%d h"), seconds / 3600)
+    }
+}

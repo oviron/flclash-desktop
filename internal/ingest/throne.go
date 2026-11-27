@@ -449,6 +449,11 @@ var allowed = map[string]any{
 	"tls": nil, "servername": nil, "sni": nil, "alpn": nil,
 	"client-fingerprint": nil, "name-cert-verify": nil, "network": nil,
 	"congestion-controller": nil, "udp-relay-mode": nil,
+	"cipher": nil, "alterId": nil, "skip-cert-verify": nil, "obfs": nil, "obfs-password": nil,
+	"ws-opts": map[string]any{
+		"path": nil, "headers": map[string]any{"Host": nil},
+		"max-early-data": nil, "early-data-header-name": nil,
+	},
 	"reality-opts": map[string]any{"public-key": nil, "short-id": nil, "support-x25519mlkem768": nil},
 	"grpc-opts":    map[string]any{"grpc-service-name": nil},
 	"xhttp-opts": map[string]any{
@@ -464,7 +469,7 @@ var allowed = map[string]any{
 	},
 }
 
-var serverTypes = map[string]bool{"vless": true, "tuic": true, "hysteria2": true}
+var serverTypes = map[string]bool{"vless": true, "tuic": true, "hysteria2": true, "trojan": true, "ss": true, "vmess": true}
 
 // Check refuses a server that is not in the shape this package produces.
 func Check(s Server) error {

@@ -12,7 +12,10 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
+	"os/user"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -45,6 +48,17 @@ type Supervisor struct {
 	CoreGID int
 	// TunName finds the tunnel device; replaced in tests.
 	TunName func() string
+	// SystemProxy sets the proxy of the system; nil where that is not written yet.
+	SystemProxy SystemProxy
+	// UserUID, when above zero, is the user the core runs as when it needs no
+	// privileges: in the proxy modes it has no business being root.
+	UserUID int
+	// HomeDir is where the core keeps its files; empty means StateDir.
+	HomeDir string
+	// Listening reports whether the local port answers; replaced in tests.
+	Listening func(port int) bool
+	// PortFree reports whether the local port can be taken; replaced in tests.
+	PortFree func(port int) bool
 	// RecoverAfter are the waits before each try to bring back a core that
 	// died under a full guard; nil means the default.
 	RecoverAfter []time.Duration
@@ -91,6 +105,18 @@ func (s *Supervisor) init() {
 	if s.TunName == nil {
 		s.TunName = tunName
 	}
+	if s.Listening == nil {
+		s.Listening = portAnswers
+	}
+	if s.PortFree == nil {
+		s.PortFree = portFree
+	}
+	if s.HomeDir == "" {
+		s.HomeDir = StateDir()
+	}
+	// A helper that died in the system mode left the system pointing at a
+	// port nobody listens on; put back what was there.
+	s.clearProxy()
 	if s.Guard == nil {
 		return
 	}
@@ -113,9 +139,12 @@ func (s *Supervisor) handle(conn net.Conn) {
 	}
 	var resp Response
 	var err error
-	if req.Op == OpDelay {
+	switch req.Op {
+	case OpDelay:
 		resp.Delay, err = s.delay(req)
-	} else {
+	case OpStats:
+		resp.Stats, err = s.stats()
+	default:
 		err = s.do(req)
 	}
 	if err != nil {
@@ -143,7 +172,11 @@ func (s *Supervisor) Status() Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st := s.status
-	st.Captured = st.Running && s.Captured()
+	if st.Mode == ModeTUN {
+		st.Captured = st.Running && s.Captured()
+	} else {
+		st.Captured = st.Running && s.Listening(st.Port)
+	}
 	st.Version = Version
 	return st
 }
@@ -154,6 +187,21 @@ func (s *Supervisor) apply(req Request) error {
 	}
 	if err := policy.Check(req.Rules); err != nil {
 		return fmt.Errorf("the routing policy was refused: %w", err)
+	}
+	if req.Mode == "" {
+		req.Mode = ModeTUN
+	}
+	switch req.Mode {
+	case ModeTUN:
+		if req.Port != 0 && (req.Port < 1024 || req.Port > 65535) {
+			return fmt.Errorf("the local port must be between 1024 and 65535, not %d", req.Port)
+		}
+	case ModeSystem, ModeProxy:
+		if req.Port < 1024 || req.Port > 65535 {
+			return fmt.Errorf("the local port must be between 1024 and 65535, not %d", req.Port)
+		}
+	default:
+		return fmt.Errorf("unknown mode %q", req.Mode)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -167,14 +215,30 @@ func (s *Supervisor) run(req Request) error {
 	if s.core != nil && req.Revision < s.status.Revision {
 		return errors.New("a newer choice is already applied")
 	}
+	tunnel := req.Mode == ModeTUN
+	if req.Mode == ModeSystem && s.SystemProxy == nil {
+		return errors.New("setting the system proxy is not supported on this system yet")
+	}
+	// The tunnel needs a core with root's rights, the proxy modes one without:
+	// neither can become the other, so the running one ends first.
+	if s.core != nil && tunnel != (s.status.Mode == ModeTUN) {
+		s.halt()
+		s.release()
+		s.clearProxy()
+		s.status = Status{}
+	}
 	fresh := s.core == nil
+	if req.Port != 0 && (fresh || req.Port != s.status.Port) && !s.PortFree(req.Port) {
+		return fmt.Errorf("the local port %d is taken by another program; choose another in the settings", req.Port)
+	}
 	if fresh && s.Resolvers != nil {
 		s.directDNS = s.Resolvers()
 	}
 	config, err := compile.Config(compile.Input{
 		Server:    req.Server,
 		Policy:    policy.Policy{Name: req.Policy, Rules: req.Rules},
-		TUN:       true,
+		TUN:       tunnel,
+		LocalPort: req.Port,
 		OS:        runtime.GOOS,
 		DirectDNS: s.directDNS,
 	})
@@ -182,7 +246,7 @@ func (s *Supervisor) run(req Request) error {
 		return err
 	}
 	if fresh {
-		if err := s.start(); err != nil {
+		if err := s.start(tunnel); err != nil {
 			return err
 		}
 	}
@@ -194,36 +258,63 @@ func (s *Supervisor) run(req Request) error {
 		return err
 	}
 
-	// The core reports success before the device exists; wait for the device
-	// itself, since only it means anything is captured.
+	// The core reports success before the device or the port exists; wait for
+	// the thing itself, since only it means traffic can go through.
+	ready, missing := s.Captured, "the tunnel device did not appear"
+	if !tunnel {
+		ready, missing = func() bool { return s.Listening(req.Port) }, "the local port did not open"
+	}
 	wait := s.DeviceTimeout
 	if wait == 0 {
 		wait = 8 * time.Second
 	}
 	deadline := time.Now().Add(wait)
-	for !s.Captured() {
+	for !ready() {
 		if time.Now().After(deadline) {
 			s.giveUp()
-			return errors.New("the core started but the tunnel device did not appear; see the helper log")
+			return fmt.Errorf("the core started but %s; see the helper log", missing)
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+
+	// The system is told about the port only once the port answers.
+	if req.Mode == ModeSystem {
+		if err := s.SystemProxy.Set(req.Port); err != nil {
+			s.giveUp()
+			return fmt.Errorf("the system proxy was not set: %w", err)
+		}
+	} else {
+		s.clearProxy()
 	}
 
 	since := s.status.Since
 	if fresh {
 		since = time.Now()
 	}
-	s.status = Status{Running: true, Server: req.Server.Name, Policy: req.Policy, Revision: req.Revision, Since: since}
+	s.status = Status{Running: true, Mode: req.Mode, Port: req.Port, Server: req.Server.Name, Policy: req.Policy, Revision: req.Revision, Since: since}
 	s.last = req
-	// The guard goes on before anyone is told the tunnel is up.
-	s.engage(req)
+	if tunnel {
+		// The guard goes on before anyone is told the tunnel is up.
+		s.engage(req)
+	}
 	return nil
+}
+
+// clearProxy puts the system proxy back as it was. Caller holds mu.
+func (s *Supervisor) clearProxy() {
+	if s.SystemProxy == nil {
+		return
+	}
+	if err := s.SystemProxy.Clear(); err != nil {
+		log.Printf("system proxy: %v", err)
+	}
 }
 
 // giveUp ends a core that did not come up. A full guard that was holding
 // stays: a failed try to reconnect must not open what was closed.
 func (s *Supervisor) giveUp() {
 	s.halt()
+	s.clearProxy()
 	if s.status.Blocked {
 		s.status = Status{Blocked: true, Guard: GuardFull, Server: s.status.Server, Policy: s.status.Policy}
 		return
@@ -283,11 +374,37 @@ func (s *Supervisor) release() {
 	}
 }
 
-// start launches the core. Caller holds mu.
-func (s *Supervisor) start() error {
-	cmd := exec.Command(s.CorePath)
-	if s.CoreGID != 0 {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 0, Gid: uint32(s.CoreGID), NoSetGroups: true}}
+// start launches the core: with root's rights for the tunnel, as the user for
+// a proxy. Caller holds mu.
+func (s *Supervisor) start(tunnel bool) error {
+	home := s.HomeDir
+	var credential *syscall.Credential
+	if tunnel {
+		if s.CoreGID != 0 {
+			credential = &syscall.Credential{Uid: 0, Gid: uint32(s.CoreGID), NoSetGroups: true}
+		}
+	} else {
+		// The files of a core that runs as the user are the user's.
+		home = filepath.Join(home, "user")
+		if err := os.MkdirAll(home, 0o700); err != nil {
+			return err
+		}
+		if s.UserUID > 0 {
+			gid := s.UserUID
+			if u, err := user.LookupId(strconv.Itoa(s.UserUID)); err == nil {
+				if n, err := strconv.Atoi(u.Gid); err == nil {
+					gid = n
+				}
+			}
+			if err := os.Chown(home, s.UserUID, gid); err != nil {
+				return err
+			}
+			credential = &syscall.Credential{Uid: uint32(s.UserUID), Gid: uint32(gid), NoSetGroups: true}
+		}
+	}
+	cmd := exec.Command(s.CorePath, "-home", home)
+	if credential != nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: credential}
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -329,8 +446,9 @@ func (s *Supervisor) coreExited(cmd *exec.Cmd) {
 	}
 	s.core, s.toCore, s.replies = nil, nil, nil
 	if s.Guard == nil || s.status.Guard != GuardFull {
-		// Nothing was promised: the tunnel is off, and so is what came with it.
+		// Nothing was promised: it is off, and so is what came with it.
 		s.release()
+		s.clearProxy()
 		s.status = Status{}
 		return
 	}
@@ -380,6 +498,23 @@ func (s *Supervisor) delay(req Request) (int, error) {
 		return 0, errors.New("the tunnel is off: there is no core to measure from")
 	}
 	return s.measure(req.Server)
+}
+
+// stats reads the traffic of the running core.
+func (s *Supervisor) stats() (*Stats, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.core == nil {
+		return nil, errors.New("nothing runs")
+	}
+	reply, err := s.send(FrameStats, nil)
+	if err != nil {
+		return nil, err
+	}
+	if reply.Stats == nil {
+		return nil, errors.New("the core gave no numbers")
+	}
+	return reply.Stats, nil
 }
 
 // measure asks the core for the delay of a server. Caller holds mu.
@@ -440,6 +575,7 @@ func (s *Supervisor) Stop() {
 	s.orders++
 	s.halt()
 	s.release()
+	s.clearProxy()
 	s.status = Status{}
 }
 
@@ -459,6 +595,26 @@ func (s *Supervisor) halt() {
 		_ = cmd.Process.Kill()
 		<-exited
 	}
+}
+
+// portAnswers reports whether something listens on the loopback port.
+func portAnswers(port int) bool {
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// portFree reports whether the loopback port can be listened on.
+func portFree(port int) bool {
+	l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		return false
+	}
+	l.Close()
+	return true
 }
 
 func tunPresent() bool {

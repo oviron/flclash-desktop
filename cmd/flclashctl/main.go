@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -27,6 +28,10 @@ const usage = `usage:
   flclashctl policy import NAME FILE          add a routing policy from a rules file
   flclashctl policy remove NAME               delete an imported policy
   flclashctl on | off | status                turn the tunnel on or off, or show what is true right now
+  flclashctl sub add NAME URL                 add a group that is filled from a subscription address
+  flclashctl sub update [NAME] | remove NAME  read a subscription again (all that are due without NAME), or delete it
+  flclashctl mode tun | system | proxy        capture everything, set the system proxy, or only open the local port
+  flclashctl port N                           the loopback port for HTTP and SOCKS
   flclashctl protect on | off                 whether traffic may leave past the tunnel, also when the core dies
   flclashctl delay [SERVER...]                measure servers one by one: a connection and a small request
   flclashctl helper install | uninstall       set up or remove the privileged helper (run with sudo)
@@ -50,6 +55,23 @@ func main() {
 		"off":    cmdOff,
 		"status": cmdStatus,
 		"delay":  cmdDelay,
+		"sub":    cmdSub,
+		"mode": func(st *store.Store, args []string) error {
+			if len(args) != 1 {
+				return errors.New("usage: flclashctl mode tun | system | proxy")
+			}
+			return app.SetMode(st, args[0])
+		},
+		"port": func(st *store.Store, args []string) error {
+			if len(args) != 1 {
+				return errors.New("usage: flclashctl port N")
+			}
+			port, err := strconv.Atoi(args[0])
+			if err != nil {
+				return errors.New("usage: flclashctl port N")
+			}
+			return app.SetPort(st, port)
+		},
 		"protect": func(st *store.Store, args []string) error {
 			if len(args) != 1 || (args[0] != "on" && args[0] != "off") {
 				return errors.New("usage: flclashctl protect on | off")
@@ -170,6 +192,29 @@ func cmdSelect(st *store.Store, args []string) error {
 		return errors.New("name a server, a policy, or both")
 	}
 	return app.Select(st, ref, *policyName)
+}
+
+func cmdSub(st *store.Store, args []string) error {
+	report := func(result app.ImportResult, err error) error {
+		fmt.Printf("servers read: %d, entries not read: %d\n", len(result.Imported), len(result.Failed))
+		for _, f := range result.Failed {
+			fmt.Printf("  entry %d: %s\n", f.Entry, f.Reason)
+		}
+		return err
+	}
+	switch {
+	case len(args) == 3 && args[0] == "add":
+		return report(app.AddSubscription(st, args[1], args[2]))
+	case len(args) == 2 && args[0] == "update":
+		return report(app.UpdateSubscription(st, args[1]))
+	case len(args) == 1 && args[0] == "update":
+		n, err := app.UpdateDue(st)
+		fmt.Printf("subscriptions read: %d\n", n)
+		return err
+	case len(args) == 2 && args[0] == "remove":
+		return app.RemoveSubscription(st, args[1])
+	}
+	return errors.New("usage: flclashctl sub add NAME URL | update [NAME] | remove NAME")
 }
 
 // cmdDelay measures the named servers, or all of them, one after another.

@@ -46,6 +46,14 @@ type View struct {
 	Policy   string   `json:"policy"`
 	// Protect: nothing leaves past the tunnel, also when the core dies.
 	Protect bool `json:"protect"`
+	// Mode is how the host is served: "tun", "system" or "proxy".
+	Mode string `json:"mode"`
+	// Port is the loopback port for HTTP and SOCKS.
+	Port int `json:"port"`
+	// AutoConnect: the app turns the tunnel on when it starts.
+	AutoConnect bool `json:"autoConnect"`
+	// Subscriptions are the groups that are filled from an address.
+	Subscriptions []Subscription `json:"subscriptions"`
 }
 
 // Snapshot reads the current state.
@@ -58,7 +66,7 @@ func Snapshot(st *store.Store) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	view := View{Servers: []Server{}, Selected: state.Selected, Policies: []Policy{}, Policy: state.Policy, Protect: !state.Unprotected}
+	view := View{Servers: []Server{}, Selected: state.Selected, Policies: []Policy{}, Policy: state.Policy, Protect: !state.Unprotected, Mode: mode(state), Port: state.LocalPort(), AutoConnect: state.AutoConnect, Subscriptions: subscriptions(state)}
 	for _, name := range names {
 		_, isBuiltin := policy.Builtin(name)
 		p, _ := st.Policy(name)
@@ -72,12 +80,33 @@ func Snapshot(st *store.Store) (View, error) {
 
 // protocol names a server the way people call it: "VLESS REALITY XHTTP".
 func protocol(p map[string]any) string {
+	label := protocolName(p)
+	// A server whose certificate is not checked can be impersonated by anyone
+	// on the way to it; the list says so.
+	if insecure, _ := p["skip-cert-verify"].(bool); insecure {
+		label += ", certificate not checked"
+	}
+	return label
+}
+
+func protocolName(p map[string]any) string {
 	kind, _ := p["type"].(string)
 	switch kind {
 	case "hysteria2":
 		return "Hysteria2"
 	case "tuic":
 		return "TUIC"
+	case "ss":
+		return "Shadowsocks"
+	case "trojan", "vmess":
+		parts := []string{map[string]string{"trojan": "Trojan", "vmess": "VMess"}[kind]}
+		switch network, _ := p["network"].(string); network {
+		case "ws":
+			parts = append(parts, "WebSocket")
+		case "grpc":
+			parts = append(parts, "gRPC")
+		}
+		return strings.Join(parts, " ")
 	case "vless":
 		parts := []string{"VLESS"}
 		if _, reality := p["reality-opts"]; reality {
@@ -88,6 +117,8 @@ func protocol(p map[string]any) string {
 		switch network, _ := p["network"].(string); network {
 		case "xhttp":
 			parts = append(parts, "XHTTP")
+		case "ws":
+			parts = append(parts, "WebSocket")
 		case "grpc":
 			parts = append(parts, "gRPC")
 		}
@@ -119,6 +150,10 @@ func Import(st *store.Store, group, text string) (ImportResult, error) {
 	if err != nil {
 		return result, err
 	}
+	// A subscription serves its links as one base64 blob.
+	if lines, ok := ingest.IsSubscriptionBody(text); ok {
+		text = lines
+	}
 	n := 0
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
@@ -126,7 +161,7 @@ func Import(st *store.Store, group, text string) (ImportResult, error) {
 			continue
 		}
 		n++
-		server, err := ingest.FromThrone(line)
+		server, err := ingest.Parse(line)
 		if err != nil {
 			result.Failed = append(result.Failed, Failure{Entry: n, Reason: err.Error()})
 			continue
@@ -225,17 +260,27 @@ func On(st *store.Store) (helper.Status, error) {
 		Policy:   pol.Name,
 		Rules:    pol.Rules,
 		Protect:  !state.Unprotected,
+		Mode:     mode(state),
+		Port:     state.LocalPort(),
 	}, 90*time.Second)
 }
 
-// Protect saves whether traffic may leave past the tunnel. A tunnel that is
-// up takes the new setting at once.
-func Protect(st *store.Store, on bool) error {
+func mode(state store.State) string {
+	if state.Mode == "" {
+		return helper.ModeTUN
+	}
+	return state.Mode
+}
+
+// change saves an edit of the settings; what runs takes it at once.
+func change(st *store.Store, edit func(*store.State) error) error {
 	state, err := st.Load()
 	if err != nil {
 		return err
 	}
-	state.Unprotected = !on
+	if err := edit(&state); err != nil {
+		return err
+	}
 	if err := st.Save(state); err != nil {
 		return err
 	}
@@ -244,6 +289,49 @@ func Protect(st *store.Store, on bool) error {
 		return err
 	}
 	return nil
+}
+
+// SetMode chooses how the host is served.
+func SetMode(st *store.Store, name string) error {
+	return change(st, func(state *store.State) error {
+		switch name {
+		case helper.ModeTUN, helper.ModeSystem, helper.ModeProxy:
+			state.Mode = name
+			return nil
+		}
+		return fmt.Errorf("unknown mode %q: tun, system or proxy", name)
+	})
+}
+
+// SetAutoConnect saves whether the app connects when it starts. Nothing that
+// runs changes.
+func SetAutoConnect(st *store.Store, on bool) error {
+	state, err := st.Load()
+	if err != nil {
+		return err
+	}
+	state.AutoConnect = on
+	return st.Save(state)
+}
+
+// SetPort chooses the local port.
+func SetPort(st *store.Store, port int) error {
+	return change(st, func(state *store.State) error {
+		if port < 1024 || port > 65535 {
+			return fmt.Errorf("the local port must be between 1024 and 65535, not %d", port)
+		}
+		state.Port = port
+		return nil
+	})
+}
+
+// Protect saves whether traffic may leave past the tunnel. A tunnel that is
+// up takes the new setting at once.
+func Protect(st *store.Store, on bool) error {
+	return change(st, func(state *store.State) error {
+		state.Unprotected = !on
+		return nil
+	})
 }
 
 // Off turns the tunnel off.

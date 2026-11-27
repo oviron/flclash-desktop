@@ -42,5 +42,25 @@
 			<string>Импортированная, %d правила</string>
 		</dict>
 	</dict>
+	<key>%d open</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d открыто</string>
+			<key>few</key>
+			<string>%d открыто</string>
+			<key>many</key>
+			<string>%d открыто</string>
+			<key>other</key>
+			<string>%d открыто</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

@@ -92,6 +92,19 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
         policies.submenu = policyMenu
         menu.addItem(policies)
+
+        let modes = NSMenuItem(title: L("Mode"), action: nil, keyEquivalent: "")
+        let modeMenu = NSMenu()
+        for (name, title) in [("tun", L("TUN")), ("system", L("System Proxy")), ("proxy", L("Port Only"))] {
+            let entry = NSMenuItem(title: title, action: #selector(pickMode(_:)), keyEquivalent: "")
+            entry.target = self
+            entry.representedObject = name
+            entry.state = name == model.view.mode ? .on : .off
+            modeMenu.addItem(entry)
+        }
+        modes.submenu = modeMenu
+        modes.isEnabled = model.helperReady && !model.busy
+        menu.addItem(modes)
         menu.addItem(.separator())
 
         let open = NSMenuItem(title: L("Open FlClash"), action: #selector(open), keyEquivalent: "")
@@ -109,6 +122,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     @objc private func pickServer(_ sender: NSMenuItem) {
         if let id = sender.representedObject as? String { Model.shared.select(server: id) }
+    }
+
+    @objc private func pickMode(_ sender: NSMenuItem) {
+        if let name = sender.representedObject as? String { Model.shared.setMode(name) }
     }
 
     @objc private func pickPolicy(_ sender: NSMenuItem) {
