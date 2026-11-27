@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -23,8 +25,10 @@ const usage = `usage:
   flclashctl list                             show servers and policies
   flclashctl select SERVER [-policy NAME]     choose the server (ID or name) and, optionally, the policy
   flclashctl policy import NAME FILE          add a routing policy from a rules file
-  flclashctl config -local-port N             print the config the core would run (it contains credentials)
-  flclashctl run -local-port N                run the core with the current choice until interrupted
+  flclashctl config -tun | -local-port N      print the config the core would run (it contains credentials)
+  flclashctl run -tun | -local-port N         run the core with the current choice until interrupted:
+                                              -tun captures the whole host and needs root,
+                                              -local-port opens an HTTP/SOCKS port on loopback
 `
 
 func main() {
@@ -191,12 +195,16 @@ func cmdPolicy(st *store.Store, args []string) error {
 func current(st *store.Store, args []string, command string) ([]byte, string, error) {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	port := flags.Int("local-port", 0, "loopback port of the HTTP/SOCKS listener")
+	tun := flags.Bool("tun", false, "capture the traffic of the whole host")
 	if err := flags.Parse(args); err != nil {
 		return nil, "", err
 	}
-	if *port == 0 {
-		// Capture through TUN needs the privileged helper, which is not built yet.
-		return nil, "", errors.New("-local-port is required: this build has no TUN yet")
+	if *port == 0 && !*tun {
+		return nil, "", errors.New("say how to capture: -tun or -local-port N")
+	}
+	// The privileged helper is not built yet, so TUN runs only as root for now.
+	if *tun && command == "run" && os.Geteuid() != 0 {
+		return nil, "", errors.New("-tun needs root for now: sudo flclashctl run -tun")
 	}
 	state, err := st.Load()
 	if err != nil {
@@ -213,8 +221,14 @@ func current(st *store.Store, args []string, command string) ([]byte, string, er
 	if err != nil {
 		return nil, "", err
 	}
-	config, err := compile.Config(compile.Input{Server: entry.Server, Policy: pol, LocalPort: *port})
-	summary := fmt.Sprintf("server %s, policy %s, 127.0.0.1:%d", entry.Name, pol.Name, *port)
+	config, err := compile.Config(compile.Input{Server: entry.Server, Policy: pol, LocalPort: *port, TUN: *tun, OS: runtime.GOOS})
+	summary := fmt.Sprintf("server %s, policy %s", entry.Name, pol.Name)
+	if *tun {
+		summary += ", TUN"
+	}
+	if *port != 0 {
+		summary += fmt.Sprintf(", 127.0.0.1:%d", *port)
+	}
 	return config, summary, err
 }
 
@@ -232,7 +246,12 @@ func cmdRun(st *store.Store, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := core.Apply(st.CoreDir(), config); err != nil {
+	dir := st.CoreDir()
+	if os.Geteuid() == 0 {
+		// Root must not leave its files in the user's directory.
+		dir = filepath.Join(os.TempDir(), "flclash-desktop-core-root")
+	}
+	if err := core.Apply(dir, config); err != nil {
 		return err
 	}
 	fmt.Fprintln(os.Stderr, "running:", summary)

@@ -19,6 +19,11 @@ type Input struct {
 	// It is how the core is checked without privileges; the product itself
 	// captures traffic through TUN and opens no local port.
 	LocalPort int
+	// TUN captures the traffic of the whole host. The process needs the
+	// privileges to create the device and change routes.
+	TUN bool
+	// OS is the system the config will run on, as in runtime.GOOS.
+	OS string
 }
 
 // Config returns the YAML for the core.
@@ -55,10 +60,52 @@ func Config(in Input) ([]byte, error) {
 		}},
 		"rules": in.Policy.Rules,
 	}
+	if in.LocalPort == 0 && !in.TUN {
+		return nil, errors.New("the config captures nothing: neither TUN nor a local port")
+	}
 	if in.LocalPort != 0 {
 		cfg["mixed-port"] = in.LocalPort
+	}
+	if in.TUN {
+		tun(cfg, in.OS)
+	} else {
 		// With no TUN there is nothing to hijack; names resolve through the system.
 		cfg["dns"] = map[string]any{"enable": false}
 	}
 	return yaml.Marshal(cfg)
+}
+
+func tun(cfg map[string]any, os string) {
+	device := map[string]any{
+		"enable":                true,
+		"stack":                 "mips",
+		"auto-route":            true,
+		"auto-detect-interface": true,
+		"dns-hijack":            []string{"any:53", "tcp://any:53"},
+	}
+	if os == "darwin" {
+		// On macOS the core leaves the system resolver alone unless asked, and
+		// a query to a resolver on the LAN then never enters the device.
+		// `native` registers a temporary resolver that goes away with the process.
+		device["dns-mode"] = "native"
+	}
+	cfg["tun"] = device
+	// IPv6 stays off in the core until it is also blocked outside the tunnel.
+	cfg["ipv6"] = false
+	// No rule looks at the process, so the core need not look it up.
+	cfg["find-process-mode"] = "off"
+	cfg["dns"] = map[string]any{
+		"enable":        true,
+		"ipv6":          false,
+		"enhanced-mode": "fake-ip",
+		"fake-ip-range": "198.18.0.1/16",
+		// Queries follow the routing policy like any other connection.
+		"respect-rules": true,
+		"nameserver":    []string{"https://9.9.9.9/dns-query"},
+		// Bootstrap for the names above and for the server itself: the system
+		// resolver first, reached outside the tunnel.
+		"default-nameserver":      []string{"9.9.9.9", "94.140.14.14"},
+		"proxy-server-nameserver": []string{"system://", "https://9.9.9.9/dns-query"},
+		"direct-nameserver":       []string{"system://"},
+	}
 }

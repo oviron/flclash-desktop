@@ -55,7 +55,7 @@ func TestReservedNamesAndMissingChoice(t *testing.T) {
 	pol, _ := policy.Builtin("all")
 	s := server(t)
 	s.Name = "DIRECT"
-	if _, err := Config(Input{Server: s, Policy: pol}); err == nil || !strings.Contains(err.Error(), "cannot be named") {
+	if _, err := Config(Input{Server: s, Policy: pol, LocalPort: 17890}); err == nil || !strings.Contains(err.Error(), "cannot be named") {
 		t.Fatalf("got %v", err)
 	}
 	if _, err := Config(Input{Policy: pol}); err == nil {
@@ -63,5 +63,36 @@ func TestReservedNamesAndMissingChoice(t *testing.T) {
 	}
 	if _, err := Config(Input{Server: server(t)}); err == nil {
 		t.Fatal("a config without a policy must be refused")
+	}
+}
+
+func TestCoreAcceptsTheTUNConfig(t *testing.T) {
+	pol, _ := policy.Builtin("lan-direct")
+	for _, os := range []string{"darwin", "windows", "linux"} {
+		raw, err := Config(Input{Server: server(t), Policy: pol, TUN: true, OS: os})
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := config.Parse(raw)
+		if err != nil {
+			t.Fatalf("%s: the core refused the config: %v\n%s", os, err, raw)
+		}
+		tun := parsed.General.Tun
+		if !tun.Enable || !tun.AutoRoute || !tun.AutoDetectInterface || len(tun.DNSHijack) != 2 {
+			t.Fatalf("%s: TUN is not set up to capture: %+v", os, tun)
+		}
+		if native := tun.DNSMode == "native"; native != (os == "darwin") {
+			t.Fatalf("%s: dns-mode is %q", os, tun.DNSMode)
+		}
+		if parsed.General.MixedPort != 0 || parsed.General.IPv6 || !parsed.DNS.Enable {
+			t.Fatalf("%s: a TUN config opens no local port, keeps IPv6 off and runs DNS", os)
+		}
+	}
+}
+
+func TestAConfigMustCaptureSomething(t *testing.T) {
+	pol, _ := policy.Builtin("all")
+	if _, err := Config(Input{Server: server(t), Policy: pol}); err == nil {
+		t.Fatal("a config with neither TUN nor a local port must be refused")
 	}
 }
