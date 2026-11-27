@@ -1,4 +1,4 @@
-// flclashctl manages servers and routing policies and runs the core.
+// flclashctl manages servers and routing policies and drives the tunnel.
 package main
 
 import (
@@ -8,16 +8,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/oviron/flclash-desktop/internal/app"
 	"github.com/oviron/flclash-desktop/internal/build"
 	"github.com/oviron/flclash-desktop/internal/compile"
-	"github.com/oviron/flclash-desktop/internal/core"
 	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/store"
 )
@@ -44,7 +41,6 @@ const usage = `usage:
   flclashctl delay [SERVER...]                measure servers one by one: a connection and a small request
   flclashctl helper install | uninstall       set up or remove the privileged helper (run with sudo)
   flclashctl config -tun | -local-port N      print the config the core would run (it contains credentials)
-  flclashctl run -local-port N                run the core without privileges on a loopback HTTP/SOCKS port
   flclashctl version                          print the version
 `
 
@@ -59,7 +55,6 @@ func main() {
 		"select": cmdSelect,
 		"policy": cmdPolicy,
 		"config": cmdConfig,
-		"run":    cmdRun,
 		"on":     cmdOn,
 		"off":    cmdOff,
 		"status": cmdStatus,
@@ -330,9 +325,6 @@ func current(st *store.Store, args []string, command string) ([]byte, string, er
 	if *port == 0 && !*tun {
 		return nil, "", errors.New("say how to capture: -tun or -local-port N")
 	}
-	if *tun && command == "run" {
-		return nil, "", errors.New("the tunnel is run by the helper: flclashctl on")
-	}
 	state, err := st.Load()
 	if err != nil {
 		return nil, "", err
@@ -366,20 +358,4 @@ func cmdConfig(st *store.Store, args []string) error {
 	}
 	_, err = os.Stdout.Write(config)
 	return err
-}
-
-func cmdRun(st *store.Store, args []string) error {
-	config, summary, err := current(st, args, "run")
-	if err != nil {
-		return err
-	}
-	if err := core.Apply(st.CoreDir(), config); err != nil {
-		return err
-	}
-	fmt.Fprintln(os.Stderr, "running:", summary)
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	<-stop
-	core.Stop()
-	return nil
 }

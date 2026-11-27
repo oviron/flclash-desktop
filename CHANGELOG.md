@@ -6,6 +6,17 @@ workflow takes the notes of a release from its section here.
 
 ## [Unreleased]
 
+### Changed
+
+- The core leaves out the EasyTier, ZeroTier and Tailscale outbounds and the
+  gVisor stack, none of which the app uses: it is 39 MB instead of 64 on macOS
+  and starts with about 6 MB less memory.
+
+### Removed
+
+- `flclashctl run`: the app runs the local port itself. The command line no
+  longer carries a copy of the core and is 7 MB instead of 64.
+
 ## [0.2.0] - 2026-11-28
 
 ### Added

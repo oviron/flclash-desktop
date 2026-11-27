@@ -74,9 +74,10 @@ try {
         $ldflags = "-s -w -X github.com/oviron/flclash-desktop/internal/build.Version=$Version"
         go build -trimpath -ldflags "$ldflags -H windowsgui" -o "$out\FlClash.exe" ./cmd/flclash-windows
         if ($LASTEXITCODE -ne 0) { throw 'FlClash.exe did not build' }
-        go build -tags with_gvisor -trimpath -ldflags $ldflags -o "$out\flclash-core.exe" ./cmd/flclash-core
+        # The same tags as CORE_TAGS in the Makefile.
+        go build -tags no_easytier,no_zerotier -trimpath -ldflags $ldflags -o "$out\flclash-core.exe" ./cmd/flclash-core
         if ($LASTEXITCODE -ne 0) { throw 'flclash-core.exe did not build' }
-        go build -tags with_gvisor -trimpath -ldflags $ldflags -o "$out\flclashctl.exe" ./cmd/flclashctl
+        go build -trimpath -ldflags $ldflags -o "$out\flclashctl.exe" ./cmd/flclashctl
         if ($LASTEXITCODE -ne 0) { throw 'flclashctl.exe did not build' }
         go build -trimpath -ldflags $ldflags -o "$out\flclash-helper.exe" ./cmd/flclash-helper
         if ($LASTEXITCODE -ne 0) { throw 'flclash-helper.exe did not build' }

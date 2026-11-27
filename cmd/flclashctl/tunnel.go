@@ -11,8 +11,7 @@ import (
 
 // The command line reaches the helper only, and the helper runs the tunnel
 // only: the local port and the system proxy run inside the app.
-const inApp = "the local port and the system proxy run inside the FlClash app: turn them on there, " +
-	"or use flclashctl run -local-port N for a core that runs while the command does"
+const inApp = "the local port and the system proxy run inside the FlClash app: turn them on there"
 
 func cmdOn(st *store.Store, _ []string) error {
 	if state, err := st.Load(); err == nil && state.Mode != helper.ModeTUN {
