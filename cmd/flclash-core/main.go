@@ -63,6 +63,15 @@ func main() {
 			}
 		case helper.FrameDelay:
 			reply = delay(body)
+		case helper.FrameExit:
+			var req helper.CoreDelay
+			if err := json.Unmarshal(body, &req); err != nil {
+				reply.Error = "bad exit request: " + err.Error()
+			} else if exit, err := core.Exit(req.Proxy, req.URL, time.Duration(req.TimeoutMS)*time.Millisecond); err != nil {
+				reply.Error = err.Error()
+			} else {
+				reply.Exit = &exit
+			}
 		case helper.FrameStats:
 			stats := core.Stats()
 			reply.Stats = &stats

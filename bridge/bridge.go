@@ -66,6 +66,8 @@ type reply struct {
 	Delay int `json:"delay,omitempty"`
 	// Stats answers the stats operation.
 	Stats *helper.Stats `json:"stats,omitempty"`
+	// Exit answers the exit operation: where the running server lets traffic out.
+	Exit *helper.Exit `json:"exit,omitempty"`
 	// Log answers the log operation: the end of the helper's log.
 	Log string `json:"log,omitempty"`
 	// Document answers policyRead.
@@ -110,6 +112,13 @@ func handle(req request) (out reply) {
 			return fail(err)
 		}
 		out.Delay = ms
+		return out
+	case "exit":
+		exit, err := helper.ReadExit()
+		if err != nil {
+			return fail(err)
+		}
+		out.Exit = &exit
 		return out
 	case "log":
 		out.Log = logTail(256 << 10)

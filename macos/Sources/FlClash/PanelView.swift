@@ -200,8 +200,8 @@ final class PanelViewController: NSViewController, NSTableViewDataSource, NSTabl
             detail.stringValue = L("Open FlClash to set it up")
         } else if server.isEmpty {
             detail.stringValue = L("Choose a server to connect")
-        } else if status.running, status.guard_ == "full" {
-            detail.stringValue = server + "  ·  " + L("protected")
+        } else if status.running, let place = model.exit?.place {
+            detail.stringValue = server + "  ·  " + place
         } else {
             detail.stringValue = server
         }

@@ -17,6 +17,7 @@ import (
 	"github.com/oviron/flclash-desktop/internal/app"
 	"github.com/oviron/flclash-desktop/internal/compile"
 	"github.com/oviron/flclash-desktop/internal/core"
+	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/store"
 )
 
@@ -33,6 +34,7 @@ const usage = `usage:
   flclashctl mode tun | system | proxy        capture everything, set the system proxy, or only open the local port
   flclashctl port N                           the loopback port for HTTP and SOCKS
   flclashctl protect on | off                 whether traffic may leave past the tunnel, also when the core dies
+  flclashctl exit                             ask through the running server what address sites see
   flclashctl delay [SERVER...]                measure servers one by one: a connection and a small request
   flclashctl helper install | uninstall       set up or remove the privileged helper (run with sudo)
   flclashctl config -tun | -local-port N      print the config the core would run (it contains credentials)
@@ -55,7 +57,15 @@ func main() {
 		"off":    cmdOff,
 		"status": cmdStatus,
 		"delay":  cmdDelay,
-		"sub":    cmdSub,
+		"exit": func(*store.Store, []string) error {
+			exit, err := helper.ReadExit()
+			if err != nil {
+				return err
+			}
+			fmt.Println(exit.IP, exit.Country)
+			return nil
+		},
+		"sub": cmdSub,
 		"mode": func(st *store.Store, args []string) error {
 			if len(args) != 1 {
 				return errors.New("usage: flclashctl mode tun | system | proxy")

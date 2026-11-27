@@ -43,7 +43,7 @@ func LogPath() string { return "/var/log/flclash-helper.log" }
 // Version says which requests the installed helper understands. Raise it
 // whenever the helper or the core it runs has to be reinstalled for the app to
 // work: a new rule type, a new server field, a change of this protocol.
-const Version = 9
+const Version = 10
 
 // Operations of Request.Op.
 const (
@@ -53,6 +53,8 @@ const (
 	// OpDelay measures a server from inside the running core; with the tunnel
 	// off the caller runs the core itself, without privileges.
 	OpDelay = "delay"
+	// OpExit asks, through the server that runs, what address sites see.
+	OpExit = "exit"
 	// OpStats reads the traffic counters and the open connections of the core.
 	OpStats = "stats"
 )
@@ -71,7 +73,20 @@ const (
 	FrameConfig = 'c' // body: the config
 	FrameDelay  = 'd' // body: a CoreDelay
 	FrameStats  = 's' // no body; the answer carries Stats
+	FrameExit   = 'x' // body: a CoreDelay; the answer carries Exit
 )
+
+// ExitURL is asked through the server for the address the request came from.
+// It is Cloudflare's trace page: plain text, no account, and it sees nothing
+// but the address of the server.
+const ExitURL = "https://www.cloudflare.com/cdn-cgi/trace"
+
+// Exit is where a server lets traffic out.
+type Exit struct {
+	IP string `json:"ip"`
+	// Country is a two-letter code; empty when the service does not know.
+	Country string `json:"country,omitempty"`
+}
 
 // Stats is the traffic of the core at one moment.
 type Stats struct {
@@ -118,6 +133,7 @@ type CoreReply struct {
 	Error string `json:"error,omitempty"`
 	Delay int    `json:"delay,omitempty"`
 	Stats *Stats `json:"stats,omitempty"`
+	Exit  *Exit  `json:"exit,omitempty"`
 }
 
 // The ways the core can serve the host, Request.Mode. They differ in what the
@@ -192,12 +208,23 @@ type Response struct {
 	Delay int `json:"delay,omitempty"`
 	// Stats answers OpStats.
 	Stats *Stats `json:"stats,omitempty"`
+	// Exit answers OpExit.
+	Exit *Exit `json:"exit,omitempty"`
 }
 
 // Call sends one request to the supervisor.
 func Call(req Request, timeout time.Duration) (Status, error) {
 	resp, err := call(req, timeout)
 	return resp.Status, err
+}
+
+// ReadExit asks where the server that runs lets traffic out.
+func ReadExit() (Exit, error) {
+	resp, err := call(Request{Op: OpExit}, DelayTimeout+10*time.Second)
+	if err != nil || resp.Exit == nil {
+		return Exit{}, err
+	}
+	return *resp.Exit, nil
 }
 
 // ReadStats reads the traffic of the running core.

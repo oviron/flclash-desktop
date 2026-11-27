@@ -5,11 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,14 +62,115 @@ const delaySamples = 3
 // request and not the ones that are timed has no number: it failed.
 // It needs no running config, and it leaves a running one alone.
 func Delay(proxy map[string]any, rawURL string, timeout time.Duration) (int, error) {
-	p, err := adapter.ParseProxy(proxy)
-	if err != nil {
-		return 0, fmt.Errorf("the core refused the server: %w", err)
-	}
-	defer p.Close()
-	target, err := url.Parse(rawURL)
+	link, err := through(proxy, rawURL, timeout)
 	if err != nil {
 		return 0, err
+	}
+	defer link.close()
+	request := func() (time.Duration, error) {
+		start := time.Now()
+		resp, err := link.do(http.MethodHead)
+		if err != nil {
+			return 0, err
+		}
+		_ = resp.Body.Close()
+		return time.Since(start), nil
+	}
+	if _, err := request(); err != nil {
+		return 0, link.fail(err)
+	}
+	samples := make([]time.Duration, 0, delaySamples)
+	for range delaySamples {
+		took, err := request()
+		if err != nil {
+			return 0, link.fail(err)
+		}
+		samples = append(samples, took)
+	}
+	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
+	return max(int(samples[len(samples)/2]/time.Millisecond), 1), nil
+}
+
+// Exit asks a service on the far side of a server where the request came
+// from: the address sites see and its country. The request goes through the
+// server whatever the routing policy says, so the answer is about the server.
+func Exit(proxy map[string]any, rawURL string, timeout time.Duration) (helper.Exit, error) {
+	link, err := through(proxy, rawURL, timeout)
+	if err != nil {
+		return helper.Exit{}, err
+	}
+	defer link.close()
+	resp, err := link.do(http.MethodGet)
+	if err != nil {
+		return helper.Exit{}, link.fail(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
+	if err != nil {
+		return helper.Exit{}, link.fail(err)
+	}
+	exit, ok := parseTrace(string(body))
+	if resp.StatusCode != http.StatusOK || !ok {
+		return helper.Exit{}, fmt.Errorf("the service did not say the address (status %d)", resp.StatusCode)
+	}
+	return exit, nil
+}
+
+// parseTrace reads the key=value lines of Cloudflare's trace page.
+func parseTrace(body string) (helper.Exit, bool) {
+	var exit helper.Exit
+	for _, line := range strings.Split(body, "\n") {
+		key, value, _ := strings.Cut(strings.TrimSpace(line), "=")
+		switch key {
+		case "ip":
+			if addr, err := netip.ParseAddr(value); err == nil {
+				exit.IP = addr.String()
+			}
+		case "loc":
+			// A two-letter country code; XX and T1 mean it is not known.
+			if len(value) == 2 && value != "XX" && value != "T1" {
+				exit.Country = strings.ToUpper(value)
+			}
+		}
+	}
+	return exit, exit.IP != ""
+}
+
+// link is one connection to the host of a URL through a server, and requests
+// over it.
+type link struct {
+	client http.Client
+	url    string
+	ctx    context.Context
+	close  func()
+	wait   time.Duration
+}
+
+func (l *link) do(method string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(l.ctx, method, l.url, nil)
+	if err != nil {
+		return nil, err
+	}
+	return l.client.Do(req)
+}
+
+// fail says "no answer" for an error that is the deadline passing.
+func (l *link) fail(err error) error {
+	if l.ctx.Err() != nil {
+		return fmt.Errorf("no answer in %s", l.wait)
+	}
+	return err
+}
+
+func through(proxy map[string]any, rawURL string, timeout time.Duration) (*link, error) {
+	p, err := adapter.ParseProxy(proxy)
+	if err != nil {
+		return nil, fmt.Errorf("the core refused the server: %w", err)
+	}
+	target, err := url.Parse(rawURL)
+	if err != nil {
+		_ = p.Close()
+		return nil, err
 	}
 	port := target.Port()
 	if port == "" {
@@ -74,26 +178,22 @@ func Delay(proxy map[string]any, rawURL string, timeout time.Duration) (int, err
 	}
 	var destination C.Metadata
 	if err := destination.SetRemoteAddress(net.JoinHostPort(target.Hostname(), port)); err != nil {
-		return 0, err
+		_ = p.Close()
+		return nil, err
 	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	fail := func(err error) (int, error) {
-		if ctx.Err() != nil {
-			return 0, fmt.Errorf("no answer in %s", timeout)
-		}
-		return 0, err
-	}
+	l := &link{url: rawURL, ctx: ctx, wait: timeout}
 	conn, err := p.DialContext(ctx, &destination)
 	if err != nil {
-		return fail(err)
+		err = l.fail(err)
+		cancel()
+		_ = p.Close()
+		return nil, err
 	}
-	defer conn.Close()
 	// One connection for every request: a second dial would measure another
 	// handshake, not a round trip.
 	dialed := false
-	client := http.Client{
+	l.client = http.Client{
 		Transport: &http.Transport{
 			DialContext: func(context.Context, string, string) (net.Conn, error) {
 				if dialed {
@@ -105,33 +205,13 @@ func Delay(proxy map[string]any, rawURL string, timeout time.Duration) (int, err
 		},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	defer client.CloseIdleConnections()
-	request := func() (time.Duration, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
-		if err != nil {
-			return 0, err
-		}
-		start := time.Now()
-		resp, err := client.Do(req)
-		if err != nil {
-			return 0, err
-		}
-		_ = resp.Body.Close()
-		return time.Since(start), nil
+	l.close = func() {
+		l.client.CloseIdleConnections()
+		_ = conn.Close()
+		cancel()
+		_ = p.Close()
 	}
-	if _, err := request(); err != nil {
-		return fail(err)
-	}
-	samples := make([]time.Duration, 0, delaySamples)
-	for range delaySamples {
-		took, err := request()
-		if err != nil {
-			return fail(err)
-		}
-		samples = append(samples, took)
-	}
-	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
-	return max(int(samples[len(samples)/2]/time.Millisecond), 1), nil
+	return l, nil
 }
 
 // Stats reads the traffic counters and the open connections.

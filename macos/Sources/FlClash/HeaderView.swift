@@ -147,6 +147,7 @@ final class HeaderView: NSView {
     private let badge = StatusBadge()
     private let headline = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
+    private let exit = NSTextField(labelWithString: "")
     private let button = NSButton(title: "", target: nil, action: nil)
     private let spinner = NSProgressIndicator()
     private let graph = TrafficGraph()
@@ -192,7 +193,12 @@ final class HeaderView: NSView {
         }
         graph.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         graph.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-        let titles = NSStackView(views: [headline, detail])
+        exit.font = .systemFont(ofSize: 12)
+        exit.textColor = .secondaryLabelColor
+        exit.lineBreakMode = .byTruncatingTail
+        exit.isSelectable = true
+        exit.setContentCompressionResistancePriority(.init(700), for: .horizontal)
+        let titles = NSStackView(views: [headline, detail, exit])
         titles.orientation = .vertical
         titles.alignment = .leading
         titles.spacing = 3
@@ -361,6 +367,14 @@ final class HeaderView: NSView {
             }
             if status.running, status.guard_ == "full" { parts.append(L("protected")) }
             detail.stringValue = parts.joined(separator: "  ·  ")
+        }
+
+        // Where the server lets traffic out, once that is known.
+        if status.running, let found = model.exit {
+            exit.stringValue = [found.place, found.ip].compactMap { $0 }.joined(separator: "  ·  ")
+            exit.isHidden = false
+        } else {
+            exit.isHidden = true
         }
 
         // While on, the switches show what runs; while off, what would.

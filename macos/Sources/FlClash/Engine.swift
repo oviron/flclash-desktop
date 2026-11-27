@@ -56,6 +56,20 @@ struct Connection: Decodable, Equatable {
     let start: Int
 }
 
+/// Where the running server lets traffic out: the address sites see.
+struct Exit: Decodable, Equatable {
+    let ip: String
+    var country: String? = nil
+
+    /// The country for people: its flag and its name in their language.
+    var place: String? {
+        guard let code = country, code.count == 2 else { return nil }
+        let flag = String(String.UnicodeScalarView(code.uppercased().unicodeScalars.compactMap { UnicodeScalar(127397 + $0.value) }))
+        let name = Locale.current.localizedString(forRegionCode: code) ?? code
+        return flag + " " + name
+    }
+}
+
 /// The traffic of the core at one moment.
 struct Stats: Decodable, Equatable {
     var up = 0
@@ -107,6 +121,7 @@ struct Reply: Decodable {
     var stats: Stats? = nil
     var document: PolicyDocument? = nil
     var log: String? = nil
+    var exit: Exit? = nil
 }
 
 /// The Go engine. Calls can take as long as a tunnel takes to come up, so they
@@ -126,8 +141,12 @@ enum Engine {
     private static let measuring = DispatchQueue(label: "flclash.engine.delay", qos: .utility)
 
     static func measure(server: String, then done: @escaping (Reply) -> Void) {
+        measure(["op": "delay", "server": server], then: done)
+    }
+
+    static func measure(_ request: [String: String], then done: @escaping (Reply) -> Void) {
         measuring.async {
-            let reply = callSync(["op": "delay", "server": server])
+            let reply = callSync(request)
             DispatchQueue.main.async { done(reply) }
         }
     }

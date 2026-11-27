@@ -43,6 +43,13 @@ final class Model {
     private(set) var history: [(down: Int, up: Int)] = []
     static let historyLength = 60
 
+    /// Where the running server lets traffic out; nil until it is known, and
+    /// when it could not be found out.
+    private(set) var exit: Exit?
+    /// What `exit` was asked for: the server and the start of the core.
+    private var exitKey = ""
+    private var exitFailed = false
+
     /// The subscriptions that are being read right now.
     private(set) var updating: Set<String> = []
 
@@ -124,6 +131,10 @@ final class Model {
         RunLoop.main.add(timer, forMode: .common)
         statsTimer = timer
         readStats()
+        // An address that could not be found out is asked for again when
+        // someone opens a window to look.
+        exitFailed = false
+        askExit()
     }
 
     private func readStats() {
@@ -316,9 +327,34 @@ final class Model {
     private var haveView = false
     private var haveStatus = false
 
+    /// Asks for the exit address when what runs has changed. It is asked once
+    /// per connection, and only while something on screen shows it.
+    private func askExit() {
+        let key = status.running && status.captured ? status.server + "|" + String(status.since) + "|" + status.mode : ""
+        if key != exitKey {
+            exitKey = key
+            exit = nil
+            exitFailed = false
+        }
+        guard !key.isEmpty, exit == nil, !exitFailed, watchers > 0, !exitPending else { return }
+        exitPending = true
+        Engine.measure(["op": "exit"]) { [weak self] reply in
+            guard let self else { return }
+            self.exitPending = false
+            // The answer is about what ran when it was asked.
+            guard self.exitKey == key else { return }
+            self.exit = reply.exit
+            self.exitFailed = reply.exit == nil
+            self.changed()
+        }
+    }
+
+    private var exitPending = false
+
     private func take(_ reply: Reply, quiet: Bool = false) {
         if let view = reply.view { self.view = view; haveView = true }
         if let status = reply.status { self.status = status; haveStatus = true }
+        askExit()
         if let error = reply.error, !quiet { problem = error }
         changed()
         if !started, haveView, haveStatus {

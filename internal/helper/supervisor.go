@@ -155,6 +155,8 @@ func (s *Supervisor) handle(conn net.Conn) {
 		resp.Delay, err = s.delay(req)
 	case OpStats:
 		resp.Stats, err = s.stats()
+	case OpExit:
+		resp.Exit, err = s.exit()
 	default:
 		err = s.do(req)
 	}
@@ -533,6 +535,31 @@ func (s *Supervisor) delay(req Request) (int, error) {
 		return 0, errors.New("the tunnel is off: there is no core to measure from")
 	}
 	return s.measure(req.Server)
+}
+
+// exit asks, through the server that runs, what address sites see.
+func (s *Supervisor) exit() (*Exit, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.core == nil {
+		return nil, errors.New("nothing runs")
+	}
+	body, err := json.Marshal(CoreDelay{
+		Proxy:     compile.Proxy(s.last.Server),
+		URL:       ExitURL,
+		TimeoutMS: int(DelayTimeout / time.Millisecond),
+	})
+	if err != nil {
+		return nil, err
+	}
+	reply, err := s.send(FrameExit, body)
+	if err != nil {
+		return nil, err
+	}
+	if reply.Exit == nil {
+		return nil, errors.New("the core gave no address")
+	}
+	return reply.Exit, nil
 }
 
 // stats reads the traffic of the running core.

@@ -39,6 +39,14 @@ func TestMain(m *testing.M) {
 		if bytes.Contains(frame, []byte("die-now")) {
 			os.Exit(3)
 		}
+		if frame[0] == FrameExit {
+			// The address is asked through the server that runs, whoever asks.
+			if bytes.Contains(frame, []byte(`"name":"first"`)) && bytes.Contains(frame, []byte(ExitURL)) {
+				reply.Exit = &Exit{IP: "203.0.113.7", Country: "NL"}
+			} else {
+				reply.Error = "asked through the wrong server"
+			}
+		}
 		if frame[0] == FrameStats {
 			reply.Stats = &Stats{Down: 1000, Open: 1, Connections: []Connection{{ID: "a", Host: "example.org", Port: 443, Via: "first"}}}
 		}
@@ -598,5 +606,19 @@ func TestStats(t *testing.T) {
 	stats, err := s.stats()
 	if err != nil || stats.Down != 1000 || len(stats.Connections) != 1 || stats.Connections[0].Host != "example.org" {
 		t.Fatalf("got %+v, %v", stats, err)
+	}
+}
+
+func TestExit(t *testing.T) {
+	s := supervisor(t, true)
+	if _, err := s.exit(); err == nil {
+		t.Fatal("with nothing running there is no exit")
+	}
+	if err := s.do(request("first", 1)); err != nil {
+		t.Fatal(err)
+	}
+	exit, err := s.exit()
+	if err != nil || exit.IP != "203.0.113.7" || exit.Country != "NL" {
+		t.Fatalf("got %+v, %v", exit, err)
 	}
 }
