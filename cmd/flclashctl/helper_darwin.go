@@ -38,6 +38,10 @@ func cmdHelper(args []string) error {
 	// Stop what runs now; an error only means there was nothing to stop.
 	_ = exec.Command("launchctl", "bootout", "system/"+helperLabel).Run()
 	if args[0] == "uninstall" {
+		// A helper that was killed may have left its firewall rules behind.
+		if err := helper.NewGuard().Release(); err != nil {
+			fmt.Fprintln(os.Stderr, "flclashctl:", err)
+		}
 		for _, path := range []string{helperPlist, filepath.Join(helperDir, "flclash-helper"), filepath.Join(helperDir, "flclash-core"), helper.SocketPath(), helperLog} {
 			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err

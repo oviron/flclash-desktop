@@ -2,10 +2,12 @@
 "About FlClash" = "О программе FlClash";
 "Add servers" = "Добавить серверы";
 "All traffic goes through the server." = "Весь трафик идёт через сервер.";
+"Block everything that goes past the tunnel" = "Блокировать всё, что идёт мимо туннеля";
 "Cancel" = "Отмена";
 "Choose a rules file: one rule per line, ending with MATCH." = "Выберите файл правил: одно правило в строке, последним идёт MATCH.";
 "Choose a server to connect" = "Выберите сервер, чтобы подключиться";
 "Close Window" = "Закрыть окно";
+"Connect Again" = "Подключить снова";
 "Connect" = "Подключить";
 "Connected since %@" = "Подключено с %@";
 "Connected" = "Подключено";
@@ -35,6 +37,7 @@
 "Import from File…" = "Импорт из файла…";
 "Imported %d, not imported %d" = "Импортировано: %d, не импортировано: %d";
 "Install Helper…" = "Установить помощник…";
+"Internet is blocked" = "Интернет заблокирован";
 "Latency" = "Задержка";
 "Launch at Login" = "Запускать при входе";
 "Local addresses direct" = "Локальные адреса напрямую";
@@ -48,6 +51,9 @@
 "Off" = "Выключено";
 "Open FlClash" = "Открыть FlClash";
 "Paste" = "Вставить";
+"Protection did not turn on: traffic can leave past the tunnel." = "Защита не включилась: трафик может идти мимо туннеля.";
+"protection is on" = "защита включена";
+"Protection lets nothing out past the tunnel, so the internet is off until the tunnel is back. The local network works." = "Защита ничего не выпускает мимо туннеля, поэтому интернета нет, пока туннель не вернётся. Локальная сеть работает.";
 "Protocol" = "Протокол";
 "Quit FlClash" = "Завершить FlClash";
 "Routing" = "Маршрутизация";
@@ -58,6 +64,8 @@
 "Selected" = "Выбран";
 "Server" = "Сервер";
 "Servers" = "Серверы";
+"Settings" = "Настройки";
+"Settings…" = "Настройки…";
 "Test Latency" = "Замерить задержку";
 "The clipboard has no text" = "В буфере обмена нет текста";
 "The file could not be read" = "Не удалось прочитать файл";
@@ -65,10 +73,14 @@
 "The home network and local addresses go directly, the rest through the server." = "Домашняя сеть и локальные адреса идут напрямую, остальное через сервер.";
 "The policy was not imported" = "Политика не импортирована";
 "The system helper is from another version of FlClash and has to be installed again. A tunnel that is on will stop for a moment." = "Системный помощник установлен от другой версии FlClash, его нужно установить заново. Включённый туннель на мгновение остановится.";
+"The tunnel is down" = "Туннель оборвался";
+"The tunnel through %@ is down" = "Туннель через %@ оборвался";
 "To capture the traffic of this Mac, FlClash needs a system helper. Installing it asks for an administrator password once." = "Чтобы захватывать трафик этого Mac, FlClash нужен системный помощник. При установке один раз понадобится пароль администратора.";
 "To get it back, you will have to import it again." = "Чтобы вернуть, придётся импортировать заново.";
+"Unblock" = "Снять блокировку";
 "Update Helper…" = "Обновить помощник…";
 "Use This Policy" = "Использовать эту политику";
 "Use This Server" = "Использовать этот сервер";
 "View" = "Вид";
+"While the tunnel is on, nothing leaves this Mac past it, IPv6 included. If the tunnel breaks, the internet stays off until it is back or you turn it off. The local network always works." = "Пока туннель включён, с этого Mac ничего не уходит мимо него, включая IPv6. Если туннель оборвётся, интернета не будет, пока он не вернётся или вы его не выключите. Локальная сеть работает всегда.";
 "Window" = "Окно";

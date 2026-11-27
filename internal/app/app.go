@@ -44,6 +44,8 @@ type View struct {
 	Selected string   `json:"selected"`
 	Policies []Policy `json:"policies"`
 	Policy   string   `json:"policy"`
+	// Protect: nothing leaves past the tunnel, also when the core dies.
+	Protect bool `json:"protect"`
 }
 
 // Snapshot reads the current state.
@@ -56,7 +58,7 @@ func Snapshot(st *store.Store) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	view := View{Servers: []Server{}, Selected: state.Selected, Policies: []Policy{}, Policy: state.Policy}
+	view := View{Servers: []Server{}, Selected: state.Selected, Policies: []Policy{}, Policy: state.Policy, Protect: !state.Unprotected}
 	for _, name := range names {
 		_, isBuiltin := policy.Builtin(name)
 		p, _ := st.Policy(name)
@@ -222,7 +224,26 @@ func On(st *store.Store) (helper.Status, error) {
 		Server:   entry.Server,
 		Policy:   pol.Name,
 		Rules:    pol.Rules,
+		Protect:  !state.Unprotected,
 	}, 90*time.Second)
+}
+
+// Protect saves whether traffic may leave past the tunnel. A tunnel that is
+// up takes the new setting at once.
+func Protect(st *store.Store, on bool) error {
+	state, err := st.Load()
+	if err != nil {
+		return err
+	}
+	state.Unprotected = !on
+	if err := st.Save(state); err != nil {
+		return err
+	}
+	if status, err := Status(); err == nil && status.Running {
+		_, err = On(st)
+		return err
+	}
+	return nil
 }
 
 // Off turns the tunnel off.

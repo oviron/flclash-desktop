@@ -27,6 +27,7 @@ const usage = `usage:
   flclashctl policy import NAME FILE          add a routing policy from a rules file
   flclashctl policy remove NAME               delete an imported policy
   flclashctl on | off | status                turn the tunnel on or off, or show what is true right now
+  flclashctl protect on | off                 whether traffic may leave past the tunnel, also when the core dies
   flclashctl delay [SERVER...]                measure servers one by one: a connection and a small request
   flclashctl helper install | uninstall       set up or remove the privileged helper (run with sudo)
   flclashctl config -tun | -local-port N      print the config the core would run (it contains credentials)
@@ -49,6 +50,12 @@ func main() {
 		"off":    cmdOff,
 		"status": cmdStatus,
 		"delay":  cmdDelay,
+		"protect": func(st *store.Store, args []string) error {
+			if len(args) != 1 || (args[0] != "on" && args[0] != "off") {
+				return errors.New("usage: flclashctl protect on | off")
+			}
+			return app.Protect(st, args[0] == "on")
+		},
 	}
 	if os.Args[1] == "helper" {
 		// Runs as root: it must not create the user's store with root as owner.

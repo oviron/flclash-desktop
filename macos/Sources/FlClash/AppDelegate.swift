@@ -3,6 +3,7 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusMenu: StatusMenu?
     private var window: MainWindowController?
+    private var settings: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
@@ -28,6 +29,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return false
     }
 
+    @objc func showSettings(_ sender: Any?) {
+        if settings == nil { settings = SettingsWindowController() }
+        // Settings can be opened from the menu bar with no window: be an app for it.
+        NSApp.setActivationPolicy(.regular)
+        settings?.showWindow(nil)
+        settings?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     func showWindow() {
         if window == nil {
             let controller = MainWindowController()
@@ -43,12 +53,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// The command line may have changed the lists while the window was aside.
-    func windowDidBecomeKey(_ notification: Notification) { Model.shared.refresh() }
+    func windowDidBecomeKey(_ notification: Notification) {
+        if (notification.object as? NSWindow) === window?.window { Model.shared.refresh() }
+    }
 
     func windowWillClose(_ notification: Notification) {
         // Let go of the window and everything in it: closed means gone, not hidden.
-        window = nil
-        NSApp.setActivationPolicy(.accessory)
+        if (notification.object as? NSWindow) === settings?.window { settings = nil } else { window = nil }
+        // With no window left the app goes back to the menu bar.
+        if window == nil, settings == nil { NSApp.setActivationPolicy(.accessory) }
     }
 
     private func makeMainMenu() -> NSMenu {
@@ -57,6 +70,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: L("About FlClash"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: L("Settings…"), action: #selector(showSettings(_:)), keyEquivalent: ",").target = self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: L("Hide FlClash"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: L("Quit FlClash"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")

@@ -38,6 +38,12 @@ type status struct {
 	Server   string `json:"server"`
 	Policy   string `json:"policy"`
 	Since    int64  `json:"since"` // unix seconds, 0 when off
+	// Guard is "full" when nothing leaves past the tunnel, "ipv6" when only
+	// IPv6 is closed, empty when there is no guard.
+	Guard        string `json:"guard"`
+	GuardProblem string `json:"guardProblem"`
+	// Blocked: the tunnel is gone and the guard holds the host closed.
+	Blocked bool `json:"blocked"`
 }
 
 type reply struct {
@@ -50,7 +56,8 @@ type reply struct {
 }
 
 func toStatus(s helper.Status, err error) *status {
-	out := &status{Installed: true, Running: s.Running, Captured: s.Captured, Server: s.Server, Policy: s.Policy}
+	out := &status{Installed: true, Running: s.Running, Captured: s.Captured, Server: s.Server, Policy: s.Policy,
+		Guard: s.Guard, GuardProblem: s.GuardProblem, Blocked: s.Blocked}
 	out.Outdated = err == nil && s.Version != helper.Version
 	if !s.Since.IsZero() {
 		out.Since = s.Since.Unix()
@@ -119,6 +126,10 @@ func handle(req request) (out reply) {
 		}
 	case "policyImport":
 		if err := st.ImportPolicy(req.Name, req.Text); err != nil {
+			return fail(err)
+		}
+	case "protect":
+		if err := app.Protect(st, req.Text == "on"); err != nil {
 			return fail(err)
 		}
 	case "policyRemove":

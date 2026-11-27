@@ -38,7 +38,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	sup := &helper.Supervisor{CorePath: *corePath}
+	sup := &helper.Supervisor{CorePath: *corePath, Guard: helper.NewGuard()}
+	if sup.Guard != nil {
+		// The guard tells the core from everyone else by its group.
+		sup.CoreGID = helper.CoreGID
+	}
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	go func() {

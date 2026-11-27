@@ -24,6 +24,7 @@ struct EngineView: Decodable, Equatable {
     var selected = ""
     var policies: [Policy] = []
     var policy = ""
+    var protect = true
 }
 
 struct TunnelStatus: Decodable, Equatable {
@@ -34,6 +35,16 @@ struct TunnelStatus: Decodable, Equatable {
     var server = ""
     var policy = ""
     var since: Int = 0
+    /// "full": nothing leaves past the tunnel; "ipv6": only IPv6 is closed.
+    var guard_ = ""
+    var guardProblem = ""
+    /// The tunnel is gone and the guard keeps the Mac offline.
+    var blocked = false
+
+    enum CodingKeys: String, CodingKey {
+        case installed, outdated, running, captured, server, policy, since, guardProblem, blocked
+        case guard_ = "guard"
+    }
 }
 
 struct ImportResult: Decodable {

@@ -39,7 +39,7 @@ func StateDir() string {
 // Version says which requests the installed helper understands. Raise it
 // whenever the helper or the core it runs has to be reinstalled for the app to
 // work: a new rule type, a new server field, a change of this protocol.
-const Version = 4
+const Version = 5
 
 // Operations of Request.Op.
 const (
@@ -87,6 +87,9 @@ type Request struct {
 	Server   ingest.Server `json:"server,omitempty"`
 	Policy   string        `json:"policy,omitempty"`
 	Rules    []string      `json:"rules,omitempty"`
+	// Protect asks for the full guard: nothing leaves past the tunnel, also
+	// when the core dies. Without it only IPv6 is closed while the tunnel is up.
+	Protect bool `json:"protect,omitempty"`
 }
 
 // Status is what the supervisor knows to be true right now.
@@ -100,6 +103,13 @@ type Status struct {
 	Policy   string    `json:"policy,omitempty"`
 	Revision int64     `json:"revision,omitempty"`
 	Since    time.Time `json:"since,omitempty"`
+	// Guard is the guard that is on: GuardIPv6, GuardFull or none.
+	Guard string `json:"guard,omitempty"`
+	// GuardProblem says why the guard that was asked for is not on.
+	GuardProblem string `json:"guard_problem,omitempty"`
+	// Blocked: the core is gone and the full guard holds, so nothing leaves
+	// the host but local traffic, until the tunnel is back or it is turned off.
+	Blocked bool `json:"blocked,omitempty"`
 	// Version is the Version of the helper that answers; a helper from before
 	// versions existed leaves it zero.
 	Version int `json:"version,omitempty"`

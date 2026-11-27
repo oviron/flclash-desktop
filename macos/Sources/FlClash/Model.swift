@@ -118,6 +118,27 @@ final class Model {
         }
     }
 
+    func turnOff() {
+        guard !busy else { return }
+        busy = true
+        changed()
+        Engine.call(["op": "off"]) { [weak self] reply in
+            self?.busy = false
+            self?.take(reply)
+        }
+    }
+
+    func setProtect(_ on: Bool) {
+        // A running tunnel takes the new setting at once, which takes a moment.
+        busy = status.running
+        changed()
+        Engine.call(["op": "protect", "text": on ? "on" : "off"]) { [weak self] reply in
+            self?.busy = false
+            self?.take(reply)
+            self?.refreshStatus()
+        }
+    }
+
     func dismissProblem() {
         problem = nil
         changed()
@@ -140,6 +161,7 @@ extension TunnelStatus {
     var headline: String {
         if !installed { return L("Helper is not installed") }
         if outdated { return L("Helper needs an update") }
+        if blocked { return L("Internet is blocked") }
         if !running { return L("Off") }
         if !captured { return L("Not capturing") }
         return L("Connected")

@@ -153,7 +153,9 @@ final class HeaderView: NSView {
         let model = Model.shared
         let status = model.status
 
-        if !model.helperReady || (status.running && !status.captured) {
+        if model.helperReady, status.blocked {
+            badge.show(symbol: "lock.shield.fill", tint: .systemRed)
+        } else if !model.helperReady || (status.running && !status.captured) {
             badge.show(symbol: "exclamationmark.shield.fill", tint: .systemOrange)
         } else if status.running {
             badge.show(symbol: "checkmark.shield.fill", tint: .systemGreen)
@@ -172,32 +174,53 @@ final class HeaderView: NSView {
         // While on, say what runs; while off, say what would.
         let server = status.running ? status.server : (model.selectedServer?.name ?? "")
         let policy = status.running ? status.policy : model.view.policy
-        if server.isEmpty {
+        if status.blocked {
+            detail.stringValue = status.server.isEmpty
+                ? L("The tunnel is down")
+                : String(format: L("The tunnel through %@ is down"), status.server)
+        } else if server.isEmpty {
             detail.stringValue = L("Choose a server to connect")
         } else {
-            detail.stringValue = server + "  ·  " + policyTitle(policy)
+            var parts = [server, policyTitle(policy)]
+            if status.running, status.guard_ == "full" { parts.append(L("protection is on")) }
+            detail.stringValue = parts.joined(separator: "  ·  ")
         }
 
-        button.title = status.running ? L("Disconnect") : L("Connect")
+        button.title = status.running ? L("Disconnect") : (status.blocked ? L("Connect Again") : L("Connect"))
         button.isEnabled = model.helperReady && !model.busy && (status.running || model.selectedServer != nil)
         // Turning on is the thing to do here; turning off is not.
         button.bezelColor = button.isEnabled && !status.running ? .controlAccentColor : nil
         if model.busy || installing { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
 
+        notice.toolTip = nil
         if !status.installed {
             notice.stringValue = L("To capture the traffic of this Mac, FlClash needs a system helper. Installing it asks for an administrator password once.")
             noticeButton.title = L("Install Helper…")
             noticeButton.isEnabled = !installing
+            noticeButton.isHidden = false
             noticeRow.isHidden = false
         } else if status.outdated {
             notice.stringValue = L("The system helper is from another version of FlClash and has to be installed again. A tunnel that is on will stop for a moment.")
             noticeButton.title = L("Update Helper…")
             noticeButton.isEnabled = !installing
+            noticeButton.isHidden = false
+            noticeRow.isHidden = false
+        } else if status.blocked {
+            notice.stringValue = L("Protection lets nothing out past the tunnel, so the internet is off until the tunnel is back. The local network works.")
+            noticeButton.title = L("Unblock")
+            noticeButton.isEnabled = !model.busy
+            noticeButton.isHidden = false
             noticeRow.isHidden = false
         } else if let problem = model.problem {
             notice.stringValue = problem
             noticeButton.title = L("Dismiss")
             noticeButton.isEnabled = true
+            noticeButton.isHidden = false
+            noticeRow.isHidden = false
+        } else if status.running, !status.guardProblem.isEmpty {
+            notice.stringValue = L("Protection did not turn on: traffic can leave past the tunnel.")
+            notice.toolTip = status.guardProblem
+            noticeButton.isHidden = true
             noticeRow.isHidden = false
         } else {
             noticeRow.isHidden = true
@@ -208,7 +231,8 @@ final class HeaderView: NSView {
 
     @objc private func noticeAction() {
         if Model.shared.helperReady {
-            Model.shared.dismissProblem()
+            // Blocked: the button takes the guard off. Otherwise it hides a message.
+            if Model.shared.status.blocked { Model.shared.turnOff() } else { Model.shared.dismissProblem() }
             return
         }
         installing = true

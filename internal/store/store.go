@@ -30,6 +30,9 @@ type State struct {
 	Servers  []Entry `json:"servers"`
 	Selected string  `json:"selected,omitempty"` // server ID
 	Policy   string  `json:"policy,omitempty"`   // policy name
+	// Unprotected turns the full guard off: traffic may then leave past the
+	// tunnel, and does when the core dies. Protection is what a new setup gets.
+	Unprotected bool `json:"unprotected,omitempty"`
 }
 
 // Store is a directory holding state.json and policies/.

@@ -1,5 +1,4 @@
 import AppKit
-import ServiceManagement
 
 /// The menu bar item: the state at a glance, and the choices people change most.
 final class StatusMenu: NSObject, NSMenuDelegate {
@@ -21,6 +20,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let symbol: String
         if Model.shared.busy {
             symbol = "arrow.triangle.2.circlepath"
+        } else if Model.shared.helperReady, status.blocked {
+            symbol = "lock.shield.fill"
         } else if !Model.shared.helperReady || (status.running && !status.captured) {
             symbol = "exclamationmark.shield"
         } else if status.running {
@@ -45,10 +46,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         state.isEnabled = false
         menu.addItem(state)
 
-        let toggle = NSMenuItem(title: status.running ? L("Disconnect") : L("Connect"), action: #selector(toggle), keyEquivalent: "")
+        let toggle = NSMenuItem(title: status.running ? L("Disconnect") : (status.blocked ? L("Connect Again") : L("Connect")), action: #selector(toggle), keyEquivalent: "")
         toggle.target = self
         toggle.isEnabled = model.helperReady && !model.busy && (status.running || model.selectedServer != nil)
         menu.addItem(toggle)
+        if model.helperReady, status.blocked {
+            let unblock = NSMenuItem(title: L("Unblock"), action: #selector(unblock), keyEquivalent: "")
+            unblock.target = self
+            unblock.isEnabled = !model.busy
+            menu.addItem(unblock)
+        }
         menu.addItem(.separator())
 
         let servers = NSMenuItem(title: L("Server"), action: nil, keyEquivalent: "")
@@ -90,28 +97,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let open = NSMenuItem(title: L("Open FlClash"), action: #selector(open), keyEquivalent: "")
         open.target = self
         menu.addItem(open)
-        let login = NSMenuItem(title: L("Launch at Login"), action: #selector(toggleLogin), keyEquivalent: "")
-        login.target = self
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(login)
+        let settings = NSMenuItem(title: L("Settings…"), action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
+        menu.addItem(settings)
         menu.addItem(.separator())
         menu.addItem(withTitle: L("Quit FlClash"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
 
     @objc private func toggle() { Model.shared.toggle() }
     @objc private func open() { openWindow() }
-
-    /// The system keeps the list of what starts at login; this adds or removes the app.
-    @objc private func toggleLogin() {
-        let service = SMAppService.mainApp
-        do {
-            if service.status == .enabled { try service.unregister() } else { try service.register() }
-        } catch {
-            let alert = NSAlert(error: error)
-            NSApp.activate(ignoringOtherApps: true)
-            alert.runModal()
-        }
-    }
+    @objc private func unblock() { Model.shared.turnOff() }
 
     @objc private func pickServer(_ sender: NSMenuItem) {
         if let id = sender.representedObject as? String { Model.shared.select(server: id) }
