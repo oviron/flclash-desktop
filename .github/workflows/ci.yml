@@ -140,3 +140,15 @@ jobs:
           }
           & "$dir\flclashctl.exe" version
           if ($LASTEXITCODE -ne 0) { throw 'flclashctl does not run' }
+      # The installer is built here too, so a mistake in it shows before a tag.
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
+          $iscc = if ($iscc) { $iscc.Source } else { "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup did not install' }
+          }
+          & $iscc /Qp /DArch=x64 "/DSource=$PWD\dist\windows\FlClash" "/DOutput=$PWD\out" windows\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'the installer did not build' }
