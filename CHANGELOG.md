@@ -6,6 +6,8 @@ workflow takes the notes of a release from its section here.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-28
+
 ### Added
 
 - A portable build for Windows: a zip whose copy keeps its servers and
@@ -17,6 +19,15 @@ workflow takes the notes of a release from its section here.
 ### Changed
 
 - The plain Windows zip is replaced by the portable one.
+- One FlClash runs at a time: a copy from another folder says where FlClash
+  runs from and does not start.
+- Installing and removing the helper go one at a time; removing waits until
+  nothing runs and no guard holds.
+
+### Fixed
+
+- On macOS, removing the helper says so when the guard or the system proxy
+  could not be put back.
 
 ## [0.1.0] - 2026-11-28
 
@@ -47,5 +58,6 @@ The first public release.
 - Releases with SHA-256 sums and build provenance attestations; a Windows
   installer for the current user.
 
-[Unreleased]: https://github.com/oviron/flclash-desktop/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/oviron/flclash-desktop/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/oviron/flclash-desktop/releases/tag/v0.2.0
 [0.1.0]: https://github.com/oviron/flclash-desktop/releases/tag/v0.1.0
