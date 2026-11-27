@@ -231,7 +231,6 @@ final class HeaderView: NSView {
         // keeps its data elsewhere, shows numbers that may not be real. It says so.
         testMark.font = .systemFont(ofSize: 11, weight: .semibold)
         testMark.textColor = .systemOrange
-        testMark.toolTip = L("This window was started with its own helper or data folder. What it shows may not be real.")
         testMark.isHidden = !Model.testEnvironment
         testMark.setContentCompressionResistancePriority(.required, for: .horizontal)
         let top = NSStackView(views: [badge, titles, testMark, spacer, traffic, spinner, button])

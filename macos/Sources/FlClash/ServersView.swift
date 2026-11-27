@@ -520,7 +520,6 @@ func delayCell(_ delay: Model.Delay?) -> NSView {
         label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         label.textColor = .secondaryLabelColor
         cell.textField = label
-        cell.toolTip = L("One round trip to a site through this server, over a connection that is already up. Opening a connection takes several times longer.")
         views = [dot, label]
     case .failed(let reason):
         let dot = NSImageView(image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil) ?? NSImage())

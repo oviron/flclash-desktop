@@ -57,9 +57,9 @@ const (
 	OpStats = "stats"
 )
 
-// The measurement of a delay is a connection through the server and two
-// requests for DelayURL, the second of which is timed; DelayTimeout is for
-// all of it. The helper sets both: its caller does not get
+// The measurement of a delay is a connection through the server and a few
+// requests for DelayURL over it, timed after the first; DelayTimeout is for
+// all of it. See core.Delay. The helper sets both: its caller does not get
 // to send the root core wherever it likes.
 const (
 	DelayURL     = "https://www.gstatic.com/generate_204"

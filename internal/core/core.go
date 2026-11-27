@@ -5,6 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"sync"
@@ -44,29 +47,91 @@ func Stop() {
 	executor.Shutdown()
 }
 
-// Delay opens a new connection through a server, asks for the URL twice and
-// says how long the second answer took, in milliseconds: the time of one
-// round trip over a connection that is already up. The first request pays for
-// the handshakes, several round trips of them, and people read the number as
-// a ping. It needs no running config, and it leaves a running one alone.
-func Delay(proxy map[string]any, url string, timeout time.Duration) (int, error) {
-	// Applying a config sets this from the config, so it is set on every call.
-	adapter.UnifiedDelay.Store(true)
+// delaySamples is how many round trips a measurement times.
+const delaySamples = 3
+
+// Delay measures a server: it opens a connection to the URL through it, makes
+// one request to pay for the handshakes, then times a few more over the same
+// connection and gives the middle one, in milliseconds. That is one round
+// trip to a site through the server, which is what people mean by its ping.
+//
+// The number is always a measurement. A server that answered the first
+// request and not the ones that are timed has no number: it failed.
+// It needs no running config, and it leaves a running one alone.
+func Delay(proxy map[string]any, rawURL string, timeout time.Duration) (int, error) {
 	p, err := adapter.ParseProxy(proxy)
 	if err != nil {
 		return 0, fmt.Errorf("the core refused the server: %w", err)
 	}
 	defer p.Close()
+	target, err := url.Parse(rawURL)
+	if err != nil {
+		return 0, err
+	}
+	port := target.Port()
+	if port == "" {
+		port = map[string]string{"https": "443", "http": "80"}[target.Scheme]
+	}
+	var destination C.Metadata
+	if err := destination.SetRemoteAddress(net.JoinHostPort(target.Hostname(), port)); err != nil {
+		return 0, err
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	ms, err := p.URLTest(ctx, url, nil)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+	fail := func(err error) (int, error) {
+		if ctx.Err() != nil {
 			return 0, fmt.Errorf("no answer in %s", timeout)
 		}
 		return 0, err
 	}
-	return int(ms), nil
+	conn, err := p.DialContext(ctx, &destination)
+	if err != nil {
+		return fail(err)
+	}
+	defer conn.Close()
+	// One connection for every request: a second dial would measure another
+	// handshake, not a round trip.
+	dialed := false
+	client := http.Client{
+		Transport: &http.Transport{
+			DialContext: func(context.Context, string, string) (net.Conn, error) {
+				if dialed {
+					return nil, errors.New("the connection to the server closed between requests")
+				}
+				dialed = true
+				return conn, nil
+			},
+		},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	defer client.CloseIdleConnections()
+	request := func() (time.Duration, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
+		if err != nil {
+			return 0, err
+		}
+		start := time.Now()
+		resp, err := client.Do(req)
+		if err != nil {
+			return 0, err
+		}
+		_ = resp.Body.Close()
+		return time.Since(start), nil
+	}
+	if _, err := request(); err != nil {
+		return fail(err)
+	}
+	samples := make([]time.Duration, 0, delaySamples)
+	for range delaySamples {
+		took, err := request()
+		if err != nil {
+			return fail(err)
+		}
+		samples = append(samples, took)
+	}
+	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
+	return max(int(samples[len(samples)/2]/time.Millisecond), 1), nil
 }
 
 // Stats reads the traffic counters and the open connections.

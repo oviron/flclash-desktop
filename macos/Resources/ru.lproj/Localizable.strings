@@ -90,7 +90,6 @@
 "Nothing was imported" = "Ничего не импортировано";
 "Off" = "Выключено";
 "One per line. A name stands for itself and everything under it: example.com, .ru. A network: 10.0.0.0/8. Or say the kind: domain:exact.example, keyword:word, geosite:youtube, geoip:us." = "По одному в строке. Имя означает себя и всё, что под ним: example.com, .ru. Сеть: 10.0.0.0/8. Или назовите вид: domain:точное.имя, keyword:слово, geosite:youtube, geoip:us.";
-"One round trip to a site through this server, over a connection that is already up. Opening a connection takes several times longer." = "Один круг до сайта через этот сервер по уже открытому соединению. Открытие соединения занимает в несколько раз больше.";
 "Open FlClash to set it up" = "Откройте FlClash, чтобы настроить";
 "Open FlClash" = "Открыть FlClash";
 "Open For" = "Открыто";
@@ -144,7 +143,6 @@
 "The system still points at FlClash, so apps that follow the system proxy are offline until it is back. They do not go out directly." = "Система по-прежнему направлена на FlClash, поэтому программы, которые слушаются системного прокси, остаются без сети, пока он не вернётся. Напрямую они не идут.";
 "The tunnel is down" = "Туннель оборвался";
 "The tunnel through %@ is down" = "Туннель через %@ оборвался";
-"This window was started with its own helper or data folder. What it shows may not be real." = "Это окно запущено со своим помощником или папкой данных. То, что оно показывает, может быть ненастоящим.";
 "through the server" = "через сервер";
 "Through the server" = "Через сервер";
 "Through" = "Через";
