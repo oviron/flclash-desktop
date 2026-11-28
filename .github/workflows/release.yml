@@ -37,11 +37,26 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: ${{ env.GO_VERSION }}
-          check-latest: true
+          cache: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/Library/Caches/go-build
+            ~/go/bin
+          key: go-rel-macos-${{ env.GO_VERSION }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-rel-macos-${{ env.GO_VERSION }}-
+            go-ci-macos-${{ env.GO_VERSION }}-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: macos/.build
+          key: swift-macos-${{ hashFiles('macos/Package.swift', 'macos/Sources/**') }}
+          restore-keys: swift-macos-
       - name: Build
         run: |
           version="${GITHUB_REF_NAME#v}"
-          make app VERSION="$version" CHANNEL=release
+          make -j4 app VERSION="$version" CHANNEL=release
           codesign --verify --deep --strict dist/FlClash.app
           test "$(dist/FlClash.app/Contents/MacOS/flclashctl version)" = "$version"
       - name: Package
@@ -59,13 +74,12 @@ jobs:
           path: out/*
           if-no-files-found: error
 
+  # One Windows runner builds both x64 and arm64: the WPF window is AnyCPU and
+  # go-winres emits resources for both architectures, so both run once.
   windows:
     needs: tag
     runs-on: windows-latest
     timeout-minutes: 40
-    strategy:
-      matrix:
-        arch: [x64, arm64]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,40 +87,59 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: ${{ env.GO_VERSION }}
-          check-latest: true
+          cache: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/AppData/Local/go-build
+            ~/go/bin
+          key: go-rel-windows-${{ env.GO_VERSION }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-rel-windows-${{ env.GO_VERSION }}-
+            go-ci-windows-${{ env.GO_VERSION }}-${{ hashFiles('go.sum') }}
+            go-ci-windows-${{ env.GO_VERSION }}-
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: '10.0.x'
-      - name: Build
-        shell: pwsh
-        run: |
-          $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          windows\build.ps1 -Arch ${{ matrix.arch }} -Version $version -Channel release
-      - name: Package
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-windows-${{ hashFiles('windows/FlClash.Window/FlClash.Window.csproj') }}
+          restore-keys: nuget-windows-
+      - name: Build and package x64 and arm64
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           $short = ($version -split '-')[0]
           New-Item -ItemType Directory -Force out | Out-Null
-          # The portable copy: the same files and the mark that keeps the
-          # data in a folder beside them.
-          $portable = 'portable\FlClash'
-          New-Item -ItemType Directory -Force $portable | Out-Null
-          Copy-Item -Recurse dist\windows\FlClash\* $portable
-          Copy-Item windows\portable.txt "$portable\portable"
-          Compress-Archive -Path $portable -DestinationPath "out\FlClash-$version-windows-${{ matrix.arch }}-portable.zip"
+
           $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
           $iscc = if ($iscc) { $iscc.Source } else { "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
           if (-not (Test-Path $iscc)) {
             choco install innosetup --no-progress -y
             if ($LASTEXITCODE -ne 0) { throw 'Inno Setup did not install' }
           }
-          & $iscc /Qp "/DVersion=$version" "/DFileVersion=$short" "/DArch=${{ matrix.arch }}" `
-            "/DSource=$PWD\dist\windows\FlClash" "/DOutput=$PWD\out" windows\installer.iss
-          if ($LASTEXITCODE -ne 0) { throw 'the installer did not build' }
+
+          function Pack($arch) {
+            $portable = "portable-$arch\FlClash"
+            New-Item -ItemType Directory -Force $portable | Out-Null
+            Copy-Item -Recurse dist\windows\FlClash\* $portable
+            Copy-Item windows\portable.txt "$portable\portable"
+            Compress-Archive -Path $portable -DestinationPath "out\FlClash-$version-windows-$arch-portable.zip"
+            & $iscc /Qp "/DVersion=$version" "/DFileVersion=$short" "/DArch=$arch" `
+              "/DSource=$PWD\dist\windows\FlClash" "/DOutput=$PWD\out" windows\installer.iss
+            if ($LASTEXITCODE -ne 0) { throw "the $arch installer did not build" }
+          }
+
+          windows\build.ps1 -Arch x64 -Version $version -Channel release
+          Pack 'x64'
+
+          windows\build.ps1 -Arch arm64 -Version $version -Channel release -SkipWindow -SkipWinres
+          Pack 'arm64'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: windows-${{ matrix.arch }}
+          name: windows
           path: out/*
           if-no-files-found: error
 

@@ -3,7 +3,7 @@
 # command line from the Go sources, and the window under window\: WPF on the
 # .NET Framework that Windows carries, the same build for x64 and Arm64.
 #
-#   powershell -ExecutionPolicy Bypass -File windows\build.ps1 [-Arch x64|arm64] [-Version X.Y.Z] [-Channel release] [-SkipGo] [-SkipWindow]
+#   powershell -ExecutionPolicy Bypass -File windows\build.ps1 [-Arch x64|arm64] [-Version X.Y.Z] [-Channel release] [-SkipGo] [-SkipWindow] [-SkipWinres]
 #
 # -Channel release is for the release workflow: only such a copy updates itself.
 #
@@ -14,7 +14,8 @@ param(
     [string] $Version = '',
     [string] $Channel = '',
     [switch] $SkipGo,
-    [switch] $SkipWindow
+    [switch] $SkipWindow,
+    [switch] $SkipWinres
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -65,14 +66,22 @@ try {
     }
 
     if (-not $SkipGo) {
-        # The agent carries the icon, a manifest and its version. go-winres
-        # runs here, so it is built for this machine, before GOARCH is set;
-        # it writes the resources for both architectures.
-        Remove-Item Env:GOOS, Env:GOARCH -ErrorAction SilentlyContinue
-        go run github.com/tc-hib/go-winres@v0.3.3 simply --icon assets/icon-1024.png --manifest gui `
-            --product-name FlClash --file-description FlClash --product-version $short --file-version $short `
-            --original-filename FlClash.exe --arch amd64,arm64 --out cmd/flclash-windows/rsrc
-        if ($LASTEXITCODE -ne 0) { throw 'go-winres failed' }
+        if (-not $SkipWinres) {
+            # The agent carries the icon, a manifest and its version. go-winres
+            # runs here, so it is built for this machine, before GOARCH is set;
+            # it writes the resources for both architectures.
+            Remove-Item Env:GOOS, Env:GOARCH -ErrorAction SilentlyContinue
+            $gopath = (go env GOPATH).Trim()
+            $winres = Join-Path $gopath 'bin\go-winres.exe'
+            if (-not (Test-Path $winres)) {
+                go install github.com/tc-hib/go-winres@v0.3.3
+                if ($LASTEXITCODE -ne 0) { throw 'go-winres install failed' }
+            }
+            & $winres simply --icon assets/icon-1024.png --manifest gui `
+                --product-name FlClash --file-description FlClash --product-version $short --file-version $short `
+                --original-filename FlClash.exe --arch amd64,arm64 --out cmd/flclash-windows/rsrc
+            if ($LASTEXITCODE -ne 0) { throw 'go-winres failed' }
+        }
         $env:GOOS = 'windows'
         $env:GOARCH = if ($Arch -eq 'arm64') { 'arm64' } else { 'amd64' }
         $ldflags = "-s -w -X github.com/oviron/flclash-desktop/internal/build.Version=$Version -X github.com/oviron/flclash-desktop/internal/build.Channel=$Channel"

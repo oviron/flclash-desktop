@@ -17,12 +17,20 @@ CORE_TAGS := no_easytier,no_zerotier
 CHANNEL ?=
 RELEASE := -trimpath -ldflags "-s -w -X github.com/oviron/flclash-desktop/internal/build.Version=$(VERSION) -X github.com/oviron/flclash-desktop/internal/build.Channel=$(CHANNEL)"
 
-.PHONY: tools bridge app check version sign-release
+.PHONY: tools bridge swift app check version sign-release flclashctl flclash-core flclash-helper
 
 # The command line, the privileged supervisor and the core it runs.
-tools:
+# Separate phony targets let `make -j4 app` compile them alongside the bridge
+# and Swift app while still rebuilding on version or flag changes.
+tools: flclashctl flclash-core flclash-helper
+
+flclashctl:
 	go build $(RELEASE) -o flclashctl ./cmd/flclashctl
+
+flclash-core:
 	go build -tags $(CORE_TAGS) $(RELEASE) -o flclash-core ./cmd/flclash-core
+
+flclash-helper:
 	go build $(RELEASE) -o flclash-helper ./cmd/flclash-helper
 
 # The engine as a C library for the app to link.
@@ -30,9 +38,11 @@ bridge:
 	mkdir -p macos/Bridge
 	go build -buildmode=c-archive $(RELEASE) -o macos/Bridge/libflclash.a ./bridge
 
-# The app carries the tools: its helper is installed from inside the bundle.
-app: tools bridge
+swift: bridge
 	cd macos && swift build -c release
+
+# The app carries the tools: its helper is installed from inside the bundle.
+app: tools swift
 	mkdir -p dist/FlClash.app/Contents/MacOS dist/FlClash.app/Contents/Resources
 	cp flclashctl flclash-helper flclash-core dist/FlClash.app/Contents/MacOS/
 	# SwiftPM stamps the binary with the deployment target as its SDK, and the
