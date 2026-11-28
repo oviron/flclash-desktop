@@ -13,9 +13,11 @@ BUILD := $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
 # ZeroTier, about 12 MB of the core. The tunnel runs on the mips stack, which
 # needs no gVisor, so with_gvisor (and Tailscale with it) stays out too.
 CORE_TAGS := no_easytier,no_zerotier
-RELEASE := -trimpath -ldflags "-s -w -X github.com/oviron/flclash-desktop/internal/build.Version=$(VERSION)"
+# The release workflow sets CHANNEL=release: only such a copy updates itself.
+CHANNEL ?=
+RELEASE := -trimpath -ldflags "-s -w -X github.com/oviron/flclash-desktop/internal/build.Version=$(VERSION) -X github.com/oviron/flclash-desktop/internal/build.Channel=$(CHANNEL)"
 
-.PHONY: tools bridge app check version
+.PHONY: tools bridge app check version sign-release
 
 # The command line, the privileged supervisor and the core it runs.
 tools:
@@ -50,3 +52,18 @@ check:
 
 version:
 	@echo $(VERSION)
+
+# Signs the sums of a published release with the key in this Mac's keychain
+# and adds the signature to the release: the app installs only what it signs.
+# The sums are signed only once GitHub attests the release workflow made them
+# from the tag.
+# The key never leaves the keychain for CI.  make sign-release TAG=v0.4.0
+sign-release:
+	@test -n "$(TAG)" || { echo "make sign-release TAG=vX.Y.Z"; exit 1; }
+	mkdir -p dist/sign
+	gh release download $(TAG) -R oviron/flclash-desktop -p SHA256SUMS -D dist/sign --clobber
+	gh attestation verify dist/sign/SHA256SUMS -R oviron/flclash-desktop \
+		--signer-workflow oviron/flclash-desktop/.github/workflows/release.yml --source-ref refs/tags/$(TAG)
+	@FLCLASH_SIGNING_KEY="$$(security find-generic-password -a flclash-desktop -s 'FlClash release signing key' -w)" \
+		go run ./cmd/sign-release dist/sign/SHA256SUMS
+	gh release upload $(TAG) -R oviron/flclash-desktop --clobber dist/sign/SHA256SUMS.sig

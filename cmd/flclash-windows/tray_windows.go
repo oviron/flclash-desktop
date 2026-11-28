@@ -325,8 +325,13 @@ func (t *tray) items() []menuItem {
 		menuItem{title: T("Open FlClash"), action: func() { h.open("") }, bold: true},
 		menuItem{title: T("Settings…"), action: func() { h.open("settings") }},
 		separator,
-		menuItem{title: T("Quit FlClash"), action: h.quit},
 	)
+	if u := h.agent.Updater; u != nil {
+		if up := u.State(); up.Latest != "" {
+			items = append(items, menuItem{title: l10n.F(lang, "Update to %@…", up.Latest), action: h.updateNow, disabled: up.Installing}, separator)
+		}
+	}
+	items = append(items, menuItem{title: T("Quit FlClash"), action: h.quit})
 	return items
 }
 

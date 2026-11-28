@@ -41,7 +41,7 @@ jobs:
       - name: Build
         run: |
           version="${GITHUB_REF_NAME#v}"
-          make app VERSION="$version"
+          make app VERSION="$version" CHANNEL=release
           codesign --verify --deep --strict dist/FlClash.app
           test "$(dist/FlClash.app/Contents/MacOS/flclashctl version)" = "$version"
       - name: Package
@@ -81,7 +81,7 @@ jobs:
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          windows\build.ps1 -Arch ${{ matrix.arch }} -Version $version
+          windows\build.ps1 -Arch ${{ matrix.arch }} -Version $version -Channel release
       - name: Package
         shell: pwsh
         run: |
@@ -132,6 +132,11 @@ jobs:
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-checksums: out/SHA256SUMS
+      # The sums themselves too: make sign-release checks that the file it
+      # signs is the one this workflow made.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: out/SHA256SUMS
       - name: Import the signing key
         if: env.GPG_PRIVATE_KEY != ''
         uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7.0.0

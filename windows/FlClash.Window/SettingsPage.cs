@@ -16,8 +16,9 @@ public sealed class SettingsPage : IPage
     // Made anew with the rows: a control is not moved from one row to another.
     CheckBox protect = null!, login = null!, autoConnect = null!, lan = null!;
     TextBox port = null!, auth = null!, dns = null!;
-    Button hotKey = null!, removeHelper = null!;
-    TextBlock version = null!;
+    Button hotKey = null!, removeHelper = null!, updateButton = null!;
+    CheckBox autoUpdate = null!;
+    TextBlock updateTitle = null!, updateNote = null!;
     bool filling, recording, built, saying, removing;
     string shownLang = "";
 
@@ -48,7 +49,12 @@ public sealed class SettingsPage : IPage
             Update(false);
             if (!string.IsNullOrEmpty(reply.Error)) await Ui.Say(L.T("The helper was not removed"), reply.Error!);
         };
-        version = Ui.Text("", 12, null, Ui.Secondary);
+        updateTitle = Ui.Text("", 14, null, null, wrap: true);
+        updateNote = Ui.Text("", 12, null, Ui.Secondary, wrap: true);
+        updateButton = new() { MinWidth = 150 };
+        updateButton.Click += (_, _) => UpdateClicked();
+        autoUpdate = Switch();
+        Toggled(autoUpdate, on => A.SetAutoUpdate(on));
         Toggled(protect, on => A.SetProtect(on));
         Toggled(autoConnect, on => A.SetAutoConnect(on));
         Toggled(lan, on => A.SetLan(on));
@@ -124,6 +130,9 @@ public sealed class SettingsPage : IPage
         Add(Group(
             Row(L.T("Launch at Login"), null, login),
             Row(L.T("Connect when FlClash starts"), null, autoConnect)));
+        Add(Group(
+            Row(updateTitle, updateNote, updateButton),
+            Row(L.T("Check for updates automatically"), L.T("Once a day, on GitHub."), autoUpdate)));
         var saveBackup = new Button { Content = L.T("Save a Backup…") };
         var restoreBackup = new Button { Content = L.T("Restore from a Backup…") };
         saveBackup.Click += (_, _) => SaveBackup();
@@ -134,15 +143,18 @@ public sealed class SettingsPage : IPage
         Add(Group(Row(L.T("System helper"),
             L.T("Runs TUN with administrator rights and stays on the computer when FlClash is gone. Remove it from a computer you leave: turning TUN on installs it again."),
             removeHelper)));
-        Add(version);
         built = true;
     }
 
     /// One row: what it is, a note under it when it needs one, and its control.
-    static FrameworkElement Row(string title, string? note, FrameworkElement control)
+    static FrameworkElement Row(string title, string? note, FrameworkElement control) =>
+        Row(Ui.Text(title, 14, null, null, wrap: true), note == null ? null : Ui.Text(note, 12, null, Ui.Secondary, wrap: true), control);
+
+    /// A row whose words change: the caller keeps them.
+    static FrameworkElement Row(TextBlock title, TextBlock? note, FrameworkElement control)
     {
-        var words = Ui.Column(3, Ui.Text(title, 14, null, null, wrap: true));
-        if (note != null) Ui.Add(words, Ui.Text(note, 12, null, Ui.Secondary, wrap: true), 3);
+        var words = Ui.Column(3, title);
+        if (note != null) Ui.Add(words, note, 3);
         words.VerticalAlignment = VerticalAlignment.Center;
         var line = Ui.Columns(-1, Ui.Auto);
         line.MinHeight = 40;
@@ -196,10 +208,45 @@ public sealed class SettingsPage : IPage
         if (!dns.IsKeyboardFocusWithin) dns.Text = s.View.Dns;
         removeHelper.IsEnabled = s.Status.Installed && !s.Status.Running && !s.Status.Blocked && !s.Busy && !removing;
         if (!recording) ShowHotKey();
-        version.Text = string.IsNullOrEmpty(A.App.Version) ? "FlClash" : "FlClash " + A.App.Version;
+        ShowUpdate();
         filling = false;
         // A value the engine refused is said once, by the window.
         if (!string.IsNullOrEmpty(s.Problem) && !saying) Problem(s.Problem!);
+    }
+
+    /// The version, what the last check found, and the one button that does
+    /// the next thing: check, update, or open the release page.
+    void ShowUpdate()
+    {
+        var u = A.App.Update ?? new UpdateState { Current = A.App.Version };
+        updateTitle.Text = string.IsNullOrEmpty(u.Current) ? "FlClash" : "FlClash " + u.Current;
+        updateNote.Text =
+            !u.Enabled ? L.T("Updates come to copies installed from the GitHub releases.")
+            : u.Installing ? L.T("Downloading the update…")
+            : u.Checking ? L.T("Checking…")
+            : !string.IsNullOrEmpty(u.Error) ? u.Error!
+            : !string.IsNullOrEmpty(u.Latest) ? L.F("Version %@ is out. Updating restarts FlClash.", u.Latest!)
+            : u.Checked > 0 ? L.T("This is the latest version.")
+            : L.T("Not checked yet.");
+        updateButton.Content = !string.IsNullOrEmpty(u.Latest) && u.Enabled
+            ? (u.CanInstall ? L.F("Update to %@", u.Latest!) : L.T("Download…"))
+            : L.T("Check Now");
+        updateButton.IsEnabled = u.Enabled && !u.Checking && !u.Installing;
+        autoUpdate.IsChecked = u.Auto;
+        autoUpdate.IsEnabled = u.Enabled;
+    }
+
+    void UpdateClicked()
+    {
+        var u = A.App.Update;
+        if (u == null) return;
+        if (string.IsNullOrEmpty(u.Latest)) { _ = A.CheckUpdate(); return; }
+        if (u.CanInstall) { _ = A.InstallUpdate(); return; }
+        if (!string.IsNullOrEmpty(u.Page))
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(u.Page!) { UseShellExecute = true }); }
+            catch (Exception) { }
+        }
     }
 
     async void Problem(string text)

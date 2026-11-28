@@ -3,13 +3,16 @@
 # command line from the Go sources, and the window under window\: WPF on the
 # .NET Framework that Windows carries, the same build for x64 and Arm64.
 #
-#   powershell -ExecutionPolicy Bypass -File windows\build.ps1 [-Arch x64|arm64] [-Version X.Y.Z] [-SkipGo] [-SkipWindow]
+#   powershell -ExecutionPolicy Bypass -File windows\build.ps1 [-Arch x64|arm64] [-Version X.Y.Z] [-Channel release] [-SkipGo] [-SkipWindow]
+#
+# -Channel release is for the release workflow: only such a copy updates itself.
 #
 # The version comes from the last v* tag, as in the Makefile: v0.2.0 builds
 # 0.2.0, a commit after it 0.2.0-3-gabc1234. File versions take the numbers only.
 param(
     [ValidateSet('x64', 'arm64')] [string] $Arch = 'x64',
     [string] $Version = '',
+    [string] $Channel = '',
     [switch] $SkipGo,
     [switch] $SkipWindow
 )
@@ -72,7 +75,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'go-winres failed' }
         $env:GOOS = 'windows'
         $env:GOARCH = if ($Arch -eq 'arm64') { 'arm64' } else { 'amd64' }
-        $ldflags = "-s -w -X github.com/oviron/flclash-desktop/internal/build.Version=$Version"
+        $ldflags = "-s -w -X github.com/oviron/flclash-desktop/internal/build.Version=$Version -X github.com/oviron/flclash-desktop/internal/build.Channel=$Channel"
         go build -trimpath -ldflags "$ldflags -H windowsgui" -o "$out\FlClash.exe" ./cmd/flclash-windows
         if ($LASTEXITCODE -ne 0) { throw 'FlClash.exe did not build' }
         # The same tags as CORE_TAGS in the Makefile.

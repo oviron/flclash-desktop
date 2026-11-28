@@ -13,10 +13,12 @@ package agent
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -24,6 +26,7 @@ import (
 	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/model"
 	"github.com/oviron/flclash-desktop/internal/say"
+	"github.com/oviron/flclash-desktop/internal/update"
 )
 
 // Message is what a client sends.
@@ -43,6 +46,9 @@ type Message struct {
 	//   removeHelper          asks the system to remove the helper; replied to
 	//   hotKey {hotKey}       the shortcut that connects; replied to
 	//   login {on}            start with the system; replied to
+	//   checkUpdate           look for a newer release; replied to
+	//   autoUpdate {on}       look once a day, or not
+	//   installUpdate         fetch the newer release and install it; replied to
 	//   quit
 	Action  string          `json:"action"`
 	Server  string          `json:"server,omitempty"`
@@ -82,6 +88,8 @@ type App struct {
 	Login  bool   `json:"login"`
 	// Version is the version of the app, for the about box.
 	Version string `json:"version"`
+	// Update is where updating stands; nil where the host does not update.
+	Update *update.State `json:"update,omitempty"`
 }
 
 // Agent answers clients.
@@ -103,6 +111,8 @@ type Agent struct {
 	SetHotKey  func(HotKey) error
 	SetLogin   func(on bool) error
 	Quit       func()
+	// Updater finds and installs new releases.
+	Updater *update.Updater
 	// A host that does one of these itself leaves it nil, and the action
 	// is refused.
 
@@ -175,6 +185,29 @@ func (a *Agent) Activate(page string) bool {
 		c.send(Event{Event: "activate", Page: page})
 	}
 	return len(windows) > 0
+}
+
+// LocalProxy is the local port to reach the internet through while the app
+// is connected in a mode that has one; "" otherwise.
+func (a *Agent) LocalProxy() string {
+	st := a.Model.Snapshot().Status
+	if !st.Running || st.Mode == helper.ModeTUN || st.Port <= 0 {
+		return ""
+	}
+	return "127.0.0.1:" + strconv.Itoa(st.Port)
+}
+
+// Tell sends the windows an event of their own, such as "quit".
+func (a *Agent) Tell(event string) {
+	a.mu.Lock()
+	var windows []*client
+	for c := range a.windows {
+		windows = append(windows, c)
+	}
+	a.mu.Unlock()
+	for _, c := range windows {
+		c.send(Event{Event: event})
+	}
 }
 
 // Changed tells the windows that what App returns has changed.
@@ -527,6 +560,21 @@ func (a *Agent) handle(c *client, m Message) {
 		err := a.SetLogin(m.On)
 		a.Changed()
 		errReply(err)
+	case "checkUpdate", "installUpdate":
+		if refused(a.Updater != nil) {
+			return
+		}
+		go func() {
+			if m.Action == "checkUpdate" {
+				errReply(a.Updater.Check(context.Background()))
+			} else {
+				errReply(a.Updater.Install(context.Background()))
+			}
+		}()
+	case "autoUpdate":
+		if !refused(a.Updater != nil) {
+			a.Updater.SetAuto(m.On)
+		}
 	case "quit":
 		if !refused(a.Quit != nil) {
 			a.Quit()

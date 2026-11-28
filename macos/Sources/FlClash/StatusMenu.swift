@@ -165,6 +165,13 @@ final class StatusMenu: NSObject, NSMenuDelegate, NSPopoverDelegate {
         settings.target = self
         menu.addItem(settings)
         menu.addItem(.separator())
+        if let latest = model.update.latest, model.update.enabled {
+            let update = NSMenuItem(title: String(format: L("Update to %@…"), latest), action: #selector(updateNow), keyEquivalent: "")
+            update.target = self
+            update.isEnabled = !model.update.installing
+            menu.addItem(update)
+            menu.addItem(.separator())
+        }
         menu.addItem(withTitle: L("Quit FlClash"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
 
@@ -172,6 +179,17 @@ final class StatusMenu: NSObject, NSMenuDelegate, NSPopoverDelegate {
     @objc private func open() { openWindow() }
     @objc private func settingsFromMenu() { openSettings() }
     @objc private func unblock() { Model.shared.turnOff() }
+
+    /// Puts the new release in this app's place, or opens its page where the
+    /// app cannot.
+    @objc private func updateNow() {
+        let u = Model.shared.update
+        if u.canInstall {
+            Model.shared.installUpdate { _ in }
+        } else if let page = u.page, let url = URL(string: page) {
+            NSWorkspace.shared.open(url)
+        }
+    }
 
     @objc private func pickServer(_ sender: NSMenuItem) {
         if let id = sender.representedObject as? String { Model.shared.select(server: id) }

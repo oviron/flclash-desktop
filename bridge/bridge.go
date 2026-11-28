@@ -27,6 +27,7 @@ import (
 
 	"github.com/oviron/flclash-desktop/internal/agent"
 	"github.com/oviron/flclash-desktop/internal/app"
+	"github.com/oviron/flclash-desktop/internal/build"
 	"github.com/oviron/flclash-desktop/internal/helper"
 	"github.com/oviron/flclash-desktop/internal/model"
 	"github.com/oviron/flclash-desktop/internal/say"
@@ -53,10 +54,18 @@ func FlcStart(lang *C.char, emit C.FlcEmit) {
 		mdl = m
 		a := &agent.Agent{
 			Model:         m,
-			App:           func() agent.App { return agent.App{Lang: language} },
 			InstallHelper: installHelper,
 			RemoveHelper:  removeHelper,
 		}
+		a.App = func() agent.App {
+			info := agent.App{Lang: language, Version: build.Version}
+			if a.Updater != nil {
+				s := a.Updater.State()
+				info.Update = &s
+			}
+			return info
+		}
+		startUpdater(a, language)
 		local, _ = a.Local(func(event []byte) {
 			text := C.CString(string(event))
 			defer C.free(unsafe.Pointer(text))
