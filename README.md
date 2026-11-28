@@ -1,3 +1,6 @@
+> **Moved to [oviron/flint](https://github.com/oviron/flint).**
+> This repository has been renamed and migrated to **Flint** starting with `v0.1.0`. All future releases, updates, and issues live at https://github.com/oviron/flint.
+
 # flclash-desktop
 
 A native desktop proxy client for macOS and Windows, built around the
