@@ -46,6 +46,12 @@ func TestVlessLinks(t *testing.T) {
 	if xo["path"] != "/x" || xo["mode"] != "packet-up" || !reflect.DeepEqual(xo["reuse-settings"], map[string]any{"max-concurrency": "1"}) {
 		t.Fatalf("got %#v", xo)
 	}
+	for _, fp := range []string{"qq", "360", "randomized"} {
+		q := mustParse(t, "vless://u@d.example:443?security=reality&pbk=K&sni=d.example&fp="+fp+"#"+fp)
+		if q.Proxy["client-fingerprint"] != fp {
+			t.Fatalf("fp=%s: got %#v", fp, q.Proxy["client-fingerprint"])
+		}
+	}
 }
 
 func TestOtherLinks(t *testing.T) {
@@ -87,7 +93,7 @@ func TestOtherLinks(t *testing.T) {
 func TestLinksThatAreRefused(t *testing.T) {
 	for link, reason := range map[string]string{
 		"vless://u@a.example:443?security=reality&pbk=K&fragment=1,2,3":                                       "fragment",
-		"vless://u@a.example:443?security=reality&pbk=K&fp=qq":                                                "fingerprint",
+		"vless://u@a.example:443?security=reality&pbk=K&fp=opera":                                             "fingerprint",
 		"vless://u@a.example:443?security=reality":                                                            "public key",
 		"vless://u@a.example:443?type=kcp":                                                                    "transport",
 		"vless://u@a.example":                                                                                 "host and port",

@@ -264,3 +264,41 @@ func TestSubscriptionReadKeepsChangesMadeMeanwhile(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestSubscriptionTitleFromHeaders(t *testing.T) {
+	cases := []struct {
+		name        string
+		title       string
+		disposition string
+		explicit    string
+		want        string
+	}{
+		{"base64", "base64:" + base64.StdEncoding.EncodeToString([]byte("Provider One")), `attachment; filename="Ignored.txt"`, "", "Provider One"},
+		{"plain", "Plain Name", "", "", "Plain Name"},
+		{"disposition", "", `attachment; filename="FromFile.yaml"`, "", "FromFile"},
+		{"explicit wins", "Header Name", "", "My Choice", "My Choice"},
+		{"fallback host", "", "", "", "127.0.0.1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.title != "" {
+					w.Header().Set("Profile-Title", tc.title)
+				}
+				if tc.disposition != "" {
+					w.Header().Set("Content-Disposition", tc.disposition)
+				}
+				_, _ = w.Write([]byte("hy2://p@a.example:443#one\n"))
+			}))
+			defer srv.Close()
+			st := open(t)
+			if _, err := AddSubscription(st, tc.explicit, srv.URL); err != nil {
+				t.Fatal(err)
+			}
+			view, _ := Snapshot(st)
+			if len(view.Subscriptions) != 1 || view.Subscriptions[0].Name != tc.want {
+				t.Fatalf("got %+v, want name %q", view.Subscriptions, tc.want)
+			}
+		})
+	}
+}

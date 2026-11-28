@@ -471,7 +471,7 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
     }
 
     /// Asks for the address of a subscription and adds it.
-    func addSubscription() {
+    func addSubscription(prefill: String? = nil) {
         guard let window = view.window else { return }
         let address = NSTextField()
         address.placeholderString = "https://"
@@ -482,10 +482,12 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         fields.spacing = 8
         fields.frame = NSRect(x: 0, y: 0, width: 320, height: 56)
         for field in [address, name] { field.widthAnchor.constraint(equalToConstant: 320).isActive = true }
-        // A copied address is most likely the one to add.
-        if let copied = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
-           copied.hasPrefix("http://") || copied.hasPrefix("https://"), !copied.contains("\n") {
-            address.stringValue = copied
+        if let prefill {
+            address.stringValue = prefill
+        } else if let copied = NSPasteboard.general.string(forType: .string),
+                  let url = Self.subscriptionURL(copied) {
+            // A copied address is most likely the one to add.
+            address.stringValue = url
         }
         let alert = NSAlert()
         alert.messageText = L("Add a Subscription")
@@ -584,7 +586,7 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
     func importFromFile() {
         guard let window = view.window else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.plainText, .json, .text]
+        panel.allowedContentTypes = [.plainText, .json, .text] + ["yaml", "yml", "conf"].compactMap { UTType(filenameExtension: $0) }
         panel.allowsMultipleSelection = false
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
@@ -606,7 +608,21 @@ final class ServersViewController: NSViewController, NSTableViewDataSource, NSTa
         }
     }
 
+    private static func subscriptionURL(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("\n"), !trimmed.contains("\r"),
+              let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = url.host, !host.isEmpty else { return nil }
+        return trimmed
+    }
+
     private func importText(_ text: String) {
+        if let url = Self.subscriptionURL(text) {
+            addSubscription(prefill: url)
+            return
+        }
         Model.shared.importServers(text) { [weak self] result, error in
             guard let self else { return }
             let imported = result?.imported.count ?? 0

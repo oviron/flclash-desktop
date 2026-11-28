@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/oviron/flclash-desktop/internal/say"
@@ -13,10 +14,11 @@ type Refusal struct {
 	Reason string
 }
 
-// ParseAll reads every server in a document: links or Throne profiles one per
-// line, the base64 body a subscription serves, or a Clash config with its
-// `proxies` list. A refused entry does not stop the rest. Entries counts what
-// the document held, read or not.
+// ParseAll reads every server in a document: links or Throne/Xray profiles one
+// per line, a JSON array of outbound objects, a pretty-printed JSON profile,
+// the base64 body a subscription serves, or a Clash config with its `proxies`
+// list. A refused entry does not stop the rest. Entries counts what the
+// document held, read or not.
 func ParseAll(text string) (servers []Server, refused []Refusal, entries int) {
 	if lines, ok := IsSubscriptionBody(text); ok {
 		text = lines
@@ -32,6 +34,17 @@ func ParseAll(text string) (servers []Server, refused []Refusal, entries int) {
 		}
 		return servers, refused, len(proxies)
 	}
+	if items, ok := jsonOutbounds(text); ok {
+		for i, raw := range items {
+			server, err := FromThrone(string(raw))
+			if err != nil {
+				refused = append(refused, Refusal{Entry: i + 1, Reason: say.Text(err)})
+				continue
+			}
+			servers = append(servers, server)
+		}
+		return servers, refused, len(items)
+	}
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -46,6 +59,27 @@ func ParseAll(text string) (servers []Server, refused []Refusal, entries int) {
 		servers = append(servers, server)
 	}
 	return servers, refused, entries
+}
+
+// jsonOutbounds returns the raw JSON items when text is a JSON array of
+// outbound profiles (as Throne subscriptions serve) or a single multi-line JSON
+// object.
+func jsonOutbounds(text string) ([]json.RawMessage, bool) {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return nil, false
+	}
+	if trimmed[0] == '[' {
+		var items []json.RawMessage
+		if err := json.Unmarshal([]byte(trimmed), &items); err == nil {
+			return items, true
+		}
+		return nil, false
+	}
+	if trimmed[0] == '{' && strings.Contains(trimmed, "\n") && json.Valid([]byte(trimmed)) {
+		return []json.RawMessage{json.RawMessage(trimmed)}, true
+	}
+	return nil, false
 }
 
 // clashProxies returns the `proxies` of a Clash config, when text is one.

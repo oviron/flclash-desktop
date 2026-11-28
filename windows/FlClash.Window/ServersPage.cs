@@ -465,8 +465,22 @@ public sealed class ServersPage : IPage
         else ImportText(string.Join("\n", codes));
     }
 
+    static string? SubscriptionUrl(string text)
+    {
+        var trimmed = text.Trim();
+        if (trimmed.Length == 0 || trimmed.IndexOfAny(new[] { '\r', '\n' }) >= 0) return null;
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)) return null;
+        if ((uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) || string.IsNullOrEmpty(uri.Host)) return null;
+        return trimmed;
+    }
+
     async void ImportText(string text)
     {
+        if (SubscriptionUrl(text) is { } url)
+        {
+            AddSubscription(url);
+            return;
+        }
         var reply = await A.Do(new Request { Op = "import", Text = text }, quiet: true);
         int imported = reply.Imported?.Imported?.Count ?? 0;
         var failed = reply.Imported?.Failed ?? new();
@@ -494,20 +508,23 @@ public sealed class ServersPage : IPage
     }
 
     /// Asks for the address of a subscription and adds it.
-    public async void AddSubscription()
+    public async void AddSubscription(string? prefill = null)
     {
         var address = Field("https://");
         var name = Field(L.T("Name (optional)"));
-        // A copied address is most likely the one to add.
-        try
+        if (prefill != null)
         {
-            if (Clipboard.ContainsText())
-            {
-                var copied = Clipboard.GetText().Trim();
-                if ((copied.StartsWith("http://") || copied.StartsWith("https://")) && copied.IndexOf('\n') < 0) address.Text = copied;
-            }
+            address.Text = prefill;
         }
-        catch (Exception) { }
+        else
+        {
+            // A copied address is most likely the one to add.
+            try
+            {
+                if (Clipboard.ContainsText() && SubscriptionUrl(Clipboard.GetText()) is { } copied) address.Text = copied;
+            }
+            catch (Exception) { }
+        }
         var dialog = new Dialog
         {
             Title = L.T("Add a Subscription"),

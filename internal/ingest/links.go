@@ -159,20 +159,30 @@ func linkName(fragment string, proxy map[string]any) string {
 	return net.JoinHostPort(fmt.Sprint(proxy["server"]), fmt.Sprint(proxy["port"]))
 }
 
-// linkFingerprints are the uTLS names a link may carry that mean the same in
-// the core; the ones in fingerprints are renamed.
-var linkFingerprints = map[string]bool{"safari": true, "ios": true, "android": true, "edge": true, "random": true}
+// linkFingerprints are the uTLS names a link or Xray profile may carry that
+// mean the same in the core; the ones in fingerprints are renamed.
+var linkFingerprints = map[string]bool{
+	"safari": true, "ios": true, "android": true, "edge": true,
+	"qq": true, "360": true, "random": true, "randomized": true,
+}
+
+func mapFingerprint(name string) (string, bool) {
+	if mapped, ok := fingerprints[name]; ok {
+		return mapped, true
+	}
+	if linkFingerprints[name] {
+		return name, true
+	}
+	return "", false
+}
 
 func (l *link) fingerprint() string {
 	name := l.get("fp")
 	if name == "" {
 		return ""
 	}
-	if mapped, ok := fingerprints[name]; ok {
+	if mapped, ok := mapFingerprint(name); ok {
 		return mapped
-	}
-	if linkFingerprints[name] {
-		return name
 	}
 	l.fail("fp", say.Errorf("fingerprint %q has no known counterpart in the core", name))
 	return ""
@@ -520,10 +530,7 @@ func vmessLink(text string) (Server, error) {
 			p["alpn"] = strings.Split(alpn, ",")
 		}
 		if fp := text2("fp"); fp != "" {
-			mapped, known := fingerprints[fp]
-			if !known && linkFingerprints[fp] {
-				mapped, known = fp, true
-			}
+			mapped, known := mapFingerprint(fp)
 			if !known {
 				o.fail("fp", say.Errorf("fingerprint %q has no known counterpart in the core", fp))
 			}
