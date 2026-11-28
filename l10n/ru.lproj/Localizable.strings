@@ -23,6 +23,9 @@
 "By Name" = "По имени";
 "Cancel" = "Отмена";
 "certificate not checked" = "сертификат не проверяется";
+"Check for updates automatically" = "Проверять обновления автоматически";
+"Check Now" = "Проверить";
+"Checking…" = "Проверка…";
 "Choose a rules file: one rule per line, ending with MATCH." = "Выберите файл правил: одно правило в строке, последним идёт MATCH.";
 "Choose a server to connect" = "Выберите сервер, чтобы подключиться";
 "Client name told to the provider" = "Имя клиента для провайдера";
@@ -53,6 +56,8 @@
 "Dismiss" = "Скрыть";
 "DNS in TUN mode" = "DNS в режиме TUN";
 "Done" = "Готово";
+"Downloading the update…" = "Загружается обновление…";
+"Download…" = "Скачать…";
 "Duplicate…" = "Дублировать…";
 "Edit" = "Правка";
 "Edit…" = "Изменить…";
@@ -107,6 +112,7 @@
 "No open connections" = "Открытых соединений нет";
 "No QR code was found in the picture" = "На картинке не найден QR-код";
 "No servers yet" = "Серверов пока нет";
+"Not checked yet." = "Ещё не проверялось.";
 "Not working" = "Не работает";
 "Nothing changes in the system: only apps pointed at the local port use it." = "В системе ничего не меняется: портом пользуются только программы, которым он указан.";
 "Nothing matches the search" = "Ничего не найдено";
@@ -115,6 +121,7 @@
 "Nothing was imported" = "Ничего не импортировано";
 "Off" = "Выключено";
 "OK" = "ОК";
+"Once a day, on GitHub." = "Раз в день, на GitHub.";
 "One per line. A name stands for itself and everything under it: example.com, .ru. A network: 10.0.0.0/8. Or say the kind: domain:exact.example, keyword:word, geosite:youtube, geoip:us." = "По одному в строке. Имя означает себя и всё, что под ним: example.com, .ru. Сеть: 10.0.0.0/8. Или назовите вид: domain:точное.имя, keyword:слово, geosite:youtube, geoip:us.";
 "Open FlClash to set it up" = "Откройте FlClash, чтобы настроить";
 "Open FlClash" = "Открыть FlClash";
@@ -200,6 +207,7 @@
 "The system still points at FlClash, so apps that follow the system proxy are offline until it is back. They do not go out directly." = "Система по-прежнему направлена на FlClash, поэтому программы, которые слушаются системного прокси, остаются без сети, пока он не вернётся. Напрямую они не идут.";
 "The tunnel is down" = "Туннель оборвался";
 "The tunnel through %@ is down" = "Туннель через %@ оборвался";
+"This is the latest version." = "Это последняя версия.";
 "This server cannot be written as a link" = "Этот сервер нельзя записать ссылкой";
 "through the server" = "через сервер";
 "Through the server" = "Через сервер";
@@ -213,11 +221,15 @@
 "Update Helper…" = "Обновить помощник…";
 "Update Subscription" = "Обновить подписку";
 "Update Subscriptions" = "Обновить подписки";
+"Update to %@" = "Обновить до %@";
+"Update to %@…" = "Обновить до %@…";
 "updated %@" = "обновлено %@";
 "updated just now" = "обновлено только что";
+"Updates come to copies installed from the GitHub releases." = "Обновления приходят в копии, установленные из релизов на GitHub.";
 "Use This Policy" = "Использовать эту политику";
 "Use This Server" = "Использовать этот сервер";
 "user:password" = "логин:пароль";
+"Version %@ is out. Updating restarts FlClash." = "Вышла версия %@. При обновлении FlClash перезапустится.";
 "View" = "Вид";
 "Window" = "Окно";
 "Works from any app." = "Работает из любой программы.";

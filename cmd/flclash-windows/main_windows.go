@@ -118,6 +118,7 @@ func main() {
 		SetLogin:      h.setLogin,
 		Quit:          h.quit,
 	}
+	h.startUpdater()
 	go h.agent.Serve(listener)
 	h.model.Start()
 	if !*background {
@@ -221,7 +222,12 @@ func (h *host) prefs() prefs {
 }
 
 func (h *host) app() agent.App {
-	return agent.App{Lang: h.lang, HotKey: h.prefs().HotKey, Login: h.login(), Version: build.Version}
+	a := agent.App{Lang: h.lang, HotKey: h.prefs().HotKey, Login: h.login(), Version: build.Version}
+	if h.agent != nil && h.agent.Updater != nil {
+		s := h.agent.Updater.State()
+		a.Update = &s
+	}
+	return a
 }
 
 func (h *host) setHotKey(k agent.HotKey) error {

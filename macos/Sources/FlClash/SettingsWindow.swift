@@ -15,6 +15,10 @@ final class SettingsWindowController: NSWindowController {
     private let hotKey = HotKeyRecorder()
     private let removeHelper = NSButton(title: L("Remove"), target: nil, action: nil)
     private var removing = false
+    private let updateTitle = NSTextField(labelWithString: "")
+    private let updateNote = NSTextField(wrappingLabelWithString: "")
+    private let updateButton = NSButton(title: L("Check Now"), target: nil, action: nil)
+    private let autoUpdate = NSSwitch()
 
     init() {
         let window = NSWindow(
@@ -52,6 +56,10 @@ final class SettingsWindowController: NSWindowController {
         dns.widthAnchor.constraint(equalToConstant: 230).isActive = true
         removeHelper.target = self
         removeHelper.action = #selector(removeHelperClicked)
+        updateButton.target = self
+        updateButton.action = #selector(updateClicked)
+        autoUpdate.target = self
+        autoUpdate.action = #selector(autoUpdateChanged)
 
         let column = NSStackView(views: [
             group([
@@ -73,6 +81,10 @@ final class SettingsWindowController: NSWindowController {
             group([
                 row(L("Launch at Login"), nil, login),
                 row(L("Connect when FlClash starts"), nil, autoConnect),
+            ]),
+            group([
+                row(updateTitle, updateNote, updateButton),
+                row(L("Check for updates automatically"), L("Once a day, on GitHub."), autoUpdate),
             ]),
             group([
                 row(L("System helper"),
@@ -114,13 +126,16 @@ final class SettingsWindowController: NSWindowController {
 
     /// One row: what it is, a note under it when it needs one, and its control.
     private func row(_ title: String, _ note: String?, _ control: NSView) -> NSView {
-        let name = NSTextField(labelWithString: title)
+        row(NSTextField(labelWithString: title), note.map { NSTextField(wrappingLabelWithString: $0) }, control)
+    }
+
+    /// A row whose words change: the labels are kept by the caller.
+    private func row(_ name: NSTextField, _ about: NSTextField?, _ control: NSView) -> NSView {
         let words = NSStackView(views: [name])
         words.orientation = .vertical
         words.alignment = .leading
         words.spacing = 3
-        if let note {
-            let about = NSTextField(wrappingLabelWithString: note)
+        if let about {
             about.font = .systemFont(ofSize: 11)
             about.textColor = .secondaryLabelColor
             // The width the note wraps at is known before layout, so the
@@ -202,6 +217,7 @@ final class SettingsWindowController: NSWindowController {
         auth.isEnabled = Model.shared.view.lan && !Model.shared.busy
         if dns.currentEditor() == nil { dns.stringValue = Model.shared.view.dns }
         dns.isEnabled = !Model.shared.busy
+        updateUpdate()
         removeHelper.isEnabled = Model.shared.status.installed && !Model.shared.status.running && !Model.shared.status.blocked && !Model.shared.busy && !removing
         // A value the engine refused is said once, by the window.
         if let problem = Model.shared.problem, let window, window.attachedSheet == nil, window.isKeyWindow {
@@ -212,6 +228,53 @@ final class SettingsWindowController: NSWindowController {
             alert.beginSheetModal(for: window)
         }
     }
+
+    /// The version, what the last check found, and the one button that does
+    /// the next thing: check, update, or open the release page.
+    private func updateUpdate() {
+        let u = Model.shared.update
+        updateTitle.stringValue = "FlClash " + (u.current.isEmpty ? "" : u.current)
+        let note: String
+        if !u.enabled {
+            note = L("Updates come to copies installed from the GitHub releases.")
+        } else if u.installing {
+            note = L("Downloading the update…")
+        } else if u.checking {
+            note = L("Checking…")
+        } else if let error = u.error, !error.isEmpty {
+            note = error
+        } else if let latest = u.latest {
+            note = String(format: L("Version %@ is out. Updating restarts FlClash."), latest)
+        } else if u.checked != nil {
+            note = L("This is the latest version.")
+        } else {
+            note = L("Not checked yet.")
+        }
+        updateNote.stringValue = note
+        if let latest = u.latest, u.enabled {
+            updateButton.title = u.canInstall ? String(format: L("Update to %@"), latest) : L("Download…")
+        } else {
+            updateButton.title = L("Check Now")
+        }
+        updateButton.isEnabled = u.enabled && !u.checking && !u.installing
+        autoUpdate.state = u.auto ? .on : .off
+        autoUpdate.isEnabled = u.enabled
+    }
+
+    @objc private func updateClicked() {
+        let u = Model.shared.update
+        guard u.latest != nil else {
+            Model.shared.checkUpdate { _ in }
+            return
+        }
+        if !u.canInstall {
+            if let page = u.page, let url = URL(string: page) { NSWorkspace.shared.open(url) }
+            return
+        }
+        Model.shared.installUpdate { _ in }
+    }
+
+    @objc private func autoUpdateChanged() { Model.shared.setAutoUpdate(autoUpdate.state == .on) }
 
     @objc private func lanChanged() { Model.shared.setLAN(lan.state == .on) }
     @objc private func authChanged() { Model.shared.setAuth(auth.stringValue.trimmingCharacters(in: .whitespaces)) }

@@ -298,6 +298,10 @@ public sealed class Agent
     public Task<Reply> InstallHelper() => Ask(new Message { Action = "installHelper" });
     public Task<Reply> RemoveHelper() => Ask(new Message { Action = "removeHelper" });
     public Task<Reply> SetHotKey(HotKey key) => Ask(new Message { Action = "hotKey", HotKey = key });
+    public Task<Reply> CheckUpdate() => Ask(new Message { Action = "checkUpdate" });
+    public void SetAutoUpdate(bool on) => Send(new Message { Action = "autoUpdate", On = on });
+    /// Fetches the newer release and runs its installer; the app quits for that.
+    public Task<Reply> InstallUpdate() => Ask(new Message { Action = "installUpdate" });
     public Task<Reply> SetLogin(bool on) => Ask(new Message { Action = "login", On = on });
 
     // The settings, as the macOS model sends them: a value that is already

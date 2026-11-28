@@ -184,4 +184,22 @@ var ru = map[string]string{
 	"the service did not say the address (status %d)":      "сервис не сообщил адрес (код %d)",
 	"the connection to the server closed between requests": "соединение с сервером закрылось между запросами",
 	"the connection is gone already":                       "соединение уже закрыто",
+
+	// Updates.
+	"GitHub did not answer: %w":                                                     "GitHub не ответил: %w",
+	"GitHub answered %s":                                                            "GitHub ответил: %s",
+	"GitHub's answer does not read: %w":                                             "ответ GitHub не читается: %w",
+	"the latest release is not a version this app follows":                          "последний релиз — не та версия, за которой следит приложение",
+	"this copy was built by hand and has no releases to follow":                     "эта копия собрана вручную, и у неё нет релизов, за которыми следить",
+	"this copy does not install updates itself: download the new one from its page": "эта копия не ставит обновления сама: скачайте новую со страницы релиза",
+	"the update did not start: %w":                                                  "обновление не запустилось: %w",
+	"the release has no %s":                                                         "в релизе нет %s",
+	"the download broke off: %w":                                                    "загрузка оборвалась: %w",
+	"the download broke off":                                                        "загрузка оборвалась",
+	"the downloaded file is not the one the release signed":                         "скачанный файл не тот, что подписан в релизе",
+	"the release is not signed with the project's key":                              "релиз не подписан ключом проекта",
+	"the signed sums do not name %s":                                                "в подписанных суммах нет %s",
+	"the archive did not unpack: %s":                                                "архив не распаковался: %s",
+	"the new app's signature does not check: %s":                                    "подпись нового приложения не сходится: %s",
+	"the archive holds version %s, not %s":                                          "в архиве версия %s, а не %s",
 }

@@ -57,6 +57,9 @@ final class Model {
     /// The helper is there and takes this app's requests.
     private(set) var helperReady = false
 
+    /// Where updating stands: a newer release, a check or an install on its way.
+    private(set) var update = UpdateState()
+
     var selectedServer: Server? { view.servers.first { $0.id == view.selected } }
 
     /// What waits for a reply, by the ID of its message.
@@ -73,7 +76,13 @@ final class Model {
         let event: String
         var id: Int? = nil
         var model: Snapshot? = nil
+        var app: AppInfo? = nil
         var reply: Reply? = nil
+    }
+
+    /// What the engine keeps beside the model.
+    fileprivate struct AppInfo: Decodable {
+        var update: UpdateState? = nil
     }
 
     fileprivate struct Snapshot: Decodable {
@@ -98,6 +107,15 @@ final class Model {
     /// Takes an event on the main thread: the state first, then the reply
     /// that waits on it, which the engine sends after the state it made.
     fileprivate func take(_ event: Event) {
+        // Asked by the engine: the update is ready to take this app's place.
+        if event.event == "quit" {
+            NSApp.terminate(nil)
+            return
+        }
+        if let update = event.app?.update, update != self.update {
+            self.update = update
+            NotificationCenter.default.post(name: .modelChanged, object: self)
+        }
         if let snapshot = event.model { take(snapshot) }
         if event.event == "reply", let id = event.id, let done = pending.removeValue(forKey: id) {
             done(event.reply ?? Reply(error: nil, view: nil, status: nil, imported: nil))
@@ -282,6 +300,15 @@ final class Model {
 
     func updateAllSubscriptions() { send("updateAll") }
 
+    /// Asks GitHub for a newer release; nil is no error.
+    func checkUpdate(then done: @escaping (String?) -> Void) { send("checkUpdate") { done($0.error) } }
+
+    func setAutoUpdate(_ on: Bool) { send("autoUpdate", ["on": on]) }
+
+    /// Fetches the newer release and puts it in this app's place; the app
+    /// quits for that. Nil is no error.
+    func installUpdate(then done: @escaping (String?) -> Void) { send("installUpdate") { done($0.error) } }
+
     func removeSubscription(_ name: String) { request("do", ["op": "subRemove", "name": name]) }
 }
 
@@ -292,6 +319,22 @@ private let receive: FlcEmit = { raw in
     let data = Data(bytes: raw, count: strlen(raw))
     guard let event = try? JSONDecoder().decode(Model.Event.self, from: data) else { return }
     DispatchQueue.main.async { Model.shared.take(event) }
+}
+
+/// Where updating stands, as internal/update keeps it.
+struct UpdateState: Decodable, Equatable {
+    var current = ""
+    /// A copy built from a release tag: it can follow the releases.
+    var enabled = false
+    var auto = true
+    var checking = false
+    var latest: String? = nil
+    var page: String? = nil
+    var checked: Int? = nil
+    /// This copy puts the new one in its place; otherwise its page is opened.
+    var canInstall = false
+    var installing = false
+    var error: String? = nil
 }
 
 extension TunnelStatus {

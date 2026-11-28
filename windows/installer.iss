@@ -62,9 +62,10 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [InstallDelete]
-; The window is replaced whole: files of an earlier window, such as the
-; runtime the WinUI one carried, would stay behind otherwise.
-Type: filesandordirs; Name: "{app}\window"
+; The WinUI window of 0.2 carried its runtime, which the WPF one does not
+; overwrite. Only that window is removed beforehand: a failed install leaves
+; the one in place able to start.
+Type: filesandordirs; Name: "{app}\window"; Check: WinUIWindow
 
 [Files]
 Source: "{#Source}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -77,6 +78,30 @@ Filename: "{app}\FlClash.exe"; Description: "{cm:LaunchProgram,FlClash}"; Flags:
 
 [Code]
 const RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
+
+function WinUIWindow: Boolean;
+begin
+  Result := FileExists(ExpandConstant('{app}\window\FlClash.Window.runtimeconfig.json'));
+end;
+
+{ The app updating itself runs this installer silently with /update=1 and
+  quits. It comes back once the installer is done, the new version or, when
+  the install failed, the one that was there. }
+procedure DeinitializeSetup;
+var
+  App: String;
+  Code: Integer;
+begin
+  if ExpandConstant('{param:update|0}') <> '1' then
+    exit;
+  try
+    App := ExpandConstant('{app}\FlClash.exe');
+  except
+    exit;
+  end;
+  if FileExists(App) then
+    Exec(App, '', '', SW_SHOWNORMAL, ewNoWait, Code);
+end;
 
 { Start with Windows is the app's own setting. The uninstaller clears it when
   it starts this copy, not another one, such as one unpacked from the zip. }

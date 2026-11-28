@@ -150,6 +150,24 @@ public sealed class AppInfo
     public HotKey HotKey { get; set; } = new();
     public bool Login { get; set; }
     public string Version { get; set; } = "";
+    public UpdateState? Update { get; set; }
+}
+
+/// Where updating stands, as internal/update keeps it.
+public sealed class UpdateState
+{
+    public string Current { get; set; } = "";
+    /// A copy built from a release tag: it can follow the releases.
+    public bool Enabled { get; set; }
+    public bool Auto { get; set; }
+    public bool Checking { get; set; }
+    public string? Latest { get; set; }
+    public string? Page { get; set; }
+    public long Checked { get; set; }
+    /// This copy runs the new installer itself; otherwise its page is opened.
+    public bool CanInstall { get; set; }
+    public bool Installing { get; set; }
+    public string? Error { get; set; }
 }
 
 public sealed class Failure

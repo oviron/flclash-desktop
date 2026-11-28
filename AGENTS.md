@@ -106,3 +106,8 @@ CI (`.github/workflows/ci.yml`) runs the Go checks on Linux, macOS and Windows,
 govulncheck for the darwin and windows builds, gitleaks, and builds both apps.
 A `v*` tag runs `release.yml`: the version comes from the tag, the notes from
 the tag's section in `CHANGELOG.md`. Third-party actions are pinned by SHA.
+Only its builds carry `build.Channel=release` and update themselves
+(`internal/update`); after it publishes, `make sign-release TAG=v…` checks
+the attestation of `SHA256SUMS` and signs it with the Ed25519 key in the maintainer's keychain, which CI never
+gets. The public half is `update.PublicKey`; a release whose
+`SHA256SUMS.sig` is missing or does not check is not offered.

@@ -6,6 +6,16 @@ workflow takes the notes of a release from its section here.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-28
+
+### Added
+
+- Updates from GitHub: FlClash looks for a newer release once a day, or when
+  asked in Settings, and shows it in Settings and in the menu. The app in a
+  folder it can write to (macOS) and the installed copy (Windows) download it,
+  check its Ed25519 signature and sum, put it in place and restart; a portable
+  copy opens the release page.
+
 ## [0.3.0] - 2026-11-28
 
 ### Changed
@@ -76,7 +86,8 @@ The first public release.
 - Releases with SHA-256 sums and build provenance attestations; a Windows
   installer for the current user.
 
-[Unreleased]: https://github.com/oviron/flclash-desktop/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/oviron/flclash-desktop/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/oviron/flclash-desktop/releases/tag/v0.4.0
 [0.3.0]: https://github.com/oviron/flclash-desktop/releases/tag/v0.3.0
 [0.2.0]: https://github.com/oviron/flclash-desktop/releases/tag/v0.2.0
 [0.1.0]: https://github.com/oviron/flclash-desktop/releases/tag/v0.1.0

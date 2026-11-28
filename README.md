@@ -75,6 +75,19 @@ On Windows, in PowerShell as administrator, from the app's folder:
 .\flclashctl.exe helper uninstall
 ```
 
+### Updates
+
+FlClash looks for a newer release on GitHub once a day; Settings turns that
+off and checks by hand. The app in Applications and the installed Windows copy
+update themselves: the new version is downloaded, checked, and put in place,
+and FlClash restarts. A portable copy, or an app run from elsewhere, opens the
+release page instead. Updating to a version with a newer helper asks for the
+administrator the next time TUN is turned on.
+
+The app installs a file only when `SHA256SUMS.sig`, an Ed25519 signature of
+the sums made with the project's key, checks against the key built into it,
+and the file's sum is the one the signed sums give.
+
 ### Checking a download
 
 Every release lists the SHA-256 sum of each file in `SHA256SUMS`, and GitHub
@@ -140,6 +153,14 @@ git tag -a v0.2.0 -m v0.2.0 && git push origin v0.2.0
 The release workflow builds both systems, writes the sums and the
 attestations, and publishes the release with the notes from the changelog. A
 version with a hyphen, such as `v0.2.0-rc.1`, is published as a pre-release.
+
+Then sign the sums on the Mac that holds the signing key in its keychain: the
+apps offer a release only once it is signed. The sums are signed only after
+`gh attestation verify` confirms the release workflow made them from the tag.
+
+```sh
+make sign-release TAG=v0.2.0
+```
 
 ## License
 
