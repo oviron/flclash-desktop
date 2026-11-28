@@ -89,20 +89,39 @@ func xrayVless(o *object) map[string]any {
 	p := map[string]any{"type": "vless", "udp": true, "packet-encoding": "xudp"}
 
 	s := o.obj("settings")
-	p["server"] = s.str("address")
-	p["port"] = s.num("port")
-	p["uuid"] = s.str("id")
-	if flow := s.str("flow"); flow != "" {
-		p["flow"] = flow
-	}
-	if enc := s.str("encryption"); enc != "" && enc != "none" {
-		p["encryption"] = enc
+	if s.has("vnext") {
+		if v := s.one("vnext"); v != nil {
+			p["server"] = v.str("address")
+			p["port"] = v.num("port")
+			if u := v.one("users"); u != nil {
+				p["uuid"] = u.str("id")
+				if flow := u.str("flow"); flow != "" {
+					p["flow"] = flow
+				}
+				if enc := u.str("encryption"); enc != "" && enc != "none" {
+					p["encryption"] = enc
+				}
+			}
+		}
+	} else {
+		p["server"] = s.str("address")
+		p["port"] = s.num("port")
+		p["uuid"] = s.str("id")
+		if flow := s.str("flow"); flow != "" {
+			p["flow"] = flow
+		}
+		if enc := s.str("encryption"); enc != "" && enc != "none" {
+			p["encryption"] = enc
+		}
 	}
 
 	st := o.obj("streamSettings")
-	fingerprint := func(t *object) string {
+	fingerprint := func(t *object, fallback string) string {
 		name := t.str("fingerprint")
-		mapped, ok := fingerprints[name]
+		if name == "" {
+			return fallback
+		}
+		mapped, ok := mapFingerprint(name)
 		if !ok {
 			t.fail("fingerprint", say.Errorf("fingerprint %q has no known counterpart in the core", name))
 		}
@@ -113,9 +132,16 @@ func xrayVless(o *object) map[string]any {
 		r := st.obj("realitySettings")
 		p["tls"] = true
 		p["servername"] = r.str("serverName")
-		fp := fingerprint(r)
+		fp := fingerprint(r, fingerprints["chrome"])
 		p["client-fingerprint"] = fp
-		opts := map[string]any{"public-key": r.str("password")}
+		key := r.str("password")
+		if key == "" && r.has("publicKey") {
+			key = r.str("publicKey")
+		}
+		if key == "" {
+			r.fail("publicKey", say.New("a REALITY profile needs the public key"))
+		}
+		opts := map[string]any{"public-key": key}
 		if sid := r.str("shortId"); sid != "" {
 			opts["short-id"] = sid
 		}
@@ -123,13 +149,28 @@ func xrayVless(o *object) map[string]any {
 			opts["support-x25519mlkem768"] = true
 		}
 		p["reality-opts"] = opts
+		// The path of the first request to the cover site and Xray's debug flag;
+		// neither changes the tunnel the core opens.
+		if r.has("spiderX") {
+			r.str("spiderX")
+		}
+		if r.has("show") {
+			r.boolean("show")
+		}
 	case "tls":
 		t := st.obj("tlsSettings")
 		p["tls"] = true
-		p["servername"] = t.str("serverName")
-		p["client-fingerprint"] = fingerprint(t)
+		if sni := t.str("serverName"); sni != "" {
+			p["servername"] = sni
+		}
+		if fp := fingerprint(t, ""); fp != "" {
+			p["client-fingerprint"] = fp
+		}
 		if alpn := t.strs("alpn"); len(alpn) > 0 {
 			p["alpn"] = alpn
+		}
+		if t.has("allowInsecure") && t.boolean("allowInsecure") {
+			p["skip-cert-verify"] = true
 		}
 		if names := t.str("verifyPeerCertByName"); names != "" {
 			if strings.Contains(names, ",") {
@@ -137,6 +178,7 @@ func xrayVless(o *object) map[string]any {
 			}
 			p["name-cert-verify"] = names
 		}
+	case "", "none":
 	default:
 		st.fail("security", say.Errorf("security %q is not supported", sec))
 	}
@@ -148,7 +190,30 @@ func xrayVless(o *object) map[string]any {
 	case "grpc":
 		p["network"] = "grpc"
 		p["grpc-opts"] = map[string]any{"grpc-service-name": st.obj("grpcSettings").str("serviceName")}
-	case "raw", "tcp":
+	case "ws":
+		p["network"] = "ws"
+		w := st.obj("wsSettings")
+		opts := map[string]any{}
+		path := w.str("path")
+		if path == "" {
+			path = "/"
+		}
+		opts["path"] = path
+		host := w.str("host")
+		if w.has("headers") {
+			h := w.obj("headers")
+			if hh := h.str("Host"); hh != "" {
+				if host != "" && host != hh {
+					h.fail("Host", say.Errorf("contradicts %q", host))
+				}
+				host = hh
+			}
+		}
+		if host != "" {
+			opts["headers"] = map[string]any{"Host": host}
+		}
+		p["ws-opts"] = opts
+	case "", "raw", "tcp":
 		p["network"] = "tcp"
 	default:
 		st.fail("network", say.Errorf("transport %q is not supported", network))
@@ -411,6 +476,28 @@ func (o *object) obj(key string) *object {
 		fields = map[string]any{}
 	}
 	child := &object{path: o.at(key), fields: fields, read: map[string]bool{}, errs: o.errs}
+	o.children = append(o.children, child)
+	return child
+}
+
+// one reads a one-element list of objects, as Xray writes vnext and users.
+func (o *object) one(key string) *object {
+	v, ok := o.get(key)
+	list, isList := v.([]any)
+	if !ok || !isList {
+		o.fail(key, say.New("expected a list"))
+		return nil
+	}
+	if len(list) != 1 {
+		o.fail(key, say.New("expected one entry"))
+		return nil
+	}
+	fields, isObject := list[0].(map[string]any)
+	if !isObject {
+		o.fail(key, say.New("expected a list of objects"))
+		return nil
+	}
+	child := &object{path: o.at(key) + "[0]", fields: fields, read: map[string]bool{}, errs: o.errs}
 	o.children = append(o.children, child)
 	return child
 }

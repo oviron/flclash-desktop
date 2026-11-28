@@ -6,6 +6,28 @@ workflow takes the notes of a release from its section here.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-28
+
+### Added
+
+- Pasting, importing or dropping a subscription URL (`http://` or `https://`)
+  opens the Add a Subscription dialog with the address filled in, instead of
+  refusing the link.
+- Subscriptions without an explicit name take the provider's `Profile-Title`
+  (plain or `base64:`) or `Content-Disposition` filename before falling back
+  to the host name.
+- Import accepts JSON arrays of Xray outbound objects (`vnext` / `users`,
+  `publicKey`, WebSocket) and pretty-printed single JSON profiles.
+- Share links and Xray profiles accept the `qq`, `360` and `randomized` uTLS
+  fingerprints the core already supports.
+
+### Fixed
+
+- `flclashctl import` keeps line indentation, so Clash YAML files import
+  cleanly from the command line too.
+- On macOS, Import from File allows selecting `.yaml`, `.yml` and `.conf`
+  files.
+
 ## [0.4.0] - 2026-11-28
 
 ### Added
@@ -86,7 +108,8 @@ The first public release.
 - Releases with SHA-256 sums and build provenance attestations; a Windows
   installer for the current user.
 
-[Unreleased]: https://github.com/oviron/flclash-desktop/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/oviron/flclash-desktop/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/oviron/flclash-desktop/releases/tag/v0.4.1
 [0.4.0]: https://github.com/oviron/flclash-desktop/releases/tag/v0.4.0
 [0.3.0]: https://github.com/oviron/flclash-desktop/releases/tag/v0.3.0
 [0.2.0]: https://github.com/oviron/flclash-desktop/releases/tag/v0.2.0

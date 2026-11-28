@@ -1,14 +1,19 @@
 package app
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/oviron/flclash-desktop/internal/ingest"
 	"github.com/oviron/flclash-desktop/internal/say"
@@ -56,6 +61,7 @@ const defaultHours = 12
 // fetched is what a subscription address answered.
 type fetched struct {
 	body                string
+	title               string
 	hours               int
 	used, total, expire int64
 }
@@ -89,6 +95,7 @@ func fetch(address, agent string) (fetched, error) {
 		return out, say.Errorf("the answer broke off: %w", err)
 	}
 	out.body = string(raw)
+	out.title = subscriptionTitle(resp.Header)
 	out.hours, _ = strconv.Atoi(strings.TrimSpace(resp.Header.Get("Profile-Update-Interval")))
 	// upload=1; download=2; total=3; expire=4
 	for _, part := range strings.Split(resp.Header.Get("Subscription-Userinfo"), ";") {
@@ -112,6 +119,61 @@ func fetch(address, agent string) (fetched, error) {
 	return out, nil
 }
 
+// subscriptionTitle reads the display name a provider sends in Profile-Title
+// (plain or `base64:`) or Content-Disposition's filename.
+func subscriptionTitle(h http.Header) string {
+	if raw := strings.TrimSpace(h.Get("Profile-Title")); raw != "" {
+		if len(raw) >= len("base64:") && strings.EqualFold(raw[:len("base64:")], "base64:") {
+			encoded := strings.TrimRight(strings.TrimSpace(raw[len("base64:"):]), "=")
+			for _, enc := range []*base64.Encoding{base64.RawStdEncoding, base64.RawURLEncoding} {
+				if decoded, err := enc.DecodeString(encoded); err == nil {
+					if name := cleanTitle(string(decoded)); name != "" {
+						return name
+					}
+					break
+				}
+			}
+		} else if name := cleanTitle(raw); name != "" {
+			return name
+		}
+	}
+	if disp := strings.TrimSpace(h.Get("Content-Disposition")); disp != "" {
+		if _, params, err := mime.ParseMediaType(disp); err == nil {
+			if file := strings.TrimSpace(params["filename"]); file != "" {
+				file = filepath.Base(file)
+				ext := strings.ToLower(filepath.Ext(file))
+				switch ext {
+				case ".yaml", ".yml", ".txt", ".json", ".conf":
+					file = strings.TrimSuffix(file, filepath.Ext(file))
+				}
+				if name := cleanTitle(file); name != "" {
+					return name
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func cleanTitle(s string) string {
+	if !utf8.ValidString(s) {
+		return ""
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return ""
+		}
+	}
+	if runes := []rune(s); len(runes) > 100 {
+		s = strings.TrimSpace(string(runes[:100]))
+	}
+	return s
+}
+
 // AddSubscription names an address as the source of a new group and reads it.
 // A subscription that gave no server is not kept.
 func AddSubscription(st *store.Store, name, address string) (ImportResult, error) {
@@ -120,37 +182,42 @@ func AddSubscription(st *store.Store, name, address string) (ImportResult, error
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return ImportResult{}, say.New("a subscription address starts with https://")
 	}
-	if name == "" {
-		name = u.Hostname()
-	}
-	taken := func(state store.State) error {
+	taken := func(state store.State, candidate string) error {
 		for _, sub := range state.Subscriptions {
-			if sub.Name == name {
-				return say.Errorf("there is a subscription named %q already", name)
+			if sub.Name == candidate {
+				return say.Errorf("there is a subscription named %q already", candidate)
 			}
 		}
 		for _, e := range state.Servers {
-			if e.Group == name {
-				return say.Errorf("the group %q has servers that were added by hand; choose another name", name)
+			if e.Group == candidate {
+				return say.Errorf("the group %q has servers that were added by hand; choose another name", candidate)
 			}
 		}
 		return nil
 	}
-	state, err := st.Load()
-	if err != nil {
-		return ImportResult{}, err
-	}
-	if err := taken(state); err != nil {
-		return ImportResult{}, err
+	if name != "" {
+		state, err := st.Load()
+		if err != nil {
+			return ImportResult{}, err
+		}
+		if err := taken(state, name); err != nil {
+			return ImportResult{}, err
+		}
 	}
 	// The provider is asked with nothing held: it may take a while.
 	got, err := fetch(address, "")
 	if err != nil {
 		return ImportResult{Imported: []Server{}, Failed: []Failure{}}, err
 	}
+	if name == "" {
+		name = got.title
+	}
+	if name == "" {
+		name = u.Hostname()
+	}
 	var result ImportResult
 	err = st.Update(func(state *store.State) error {
-		if err := taken(*state); err != nil {
+		if err := taken(*state, name); err != nil {
 			return err
 		}
 		state.Subscriptions = append(state.Subscriptions, store.Subscription{Name: name, URL: address})

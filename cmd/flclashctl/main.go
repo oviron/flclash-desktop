@@ -164,16 +164,16 @@ func cmdImport(st *store.Store, args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	var lines []string
+	var parts []string
 	read := func(r io.Reader) error {
-		scanner := bufio.NewScanner(r)
-		scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-		for scanner.Scan() {
-			if line := strings.TrimSpace(scanner.Text()); line != "" {
-				lines = append(lines, line)
-			}
+		raw, err := io.ReadAll(io.LimitReader(r, 4<<20))
+		if err != nil {
+			return err
 		}
-		return scanner.Err()
+		if text := strings.TrimSpace(string(raw)); text != "" {
+			parts = append(parts, text)
+		}
+		return nil
 	}
 	if flags.NArg() == 0 {
 		if err := read(os.Stdin); err != nil {
@@ -191,7 +191,7 @@ func cmdImport(st *store.Store, args []string) error {
 			return err
 		}
 	}
-	result, err := app.Import(st, *group, strings.Join(lines, "\n"))
+	result, err := app.Import(st, *group, strings.Join(parts, "\n"))
 	for _, server := range result.Imported {
 		fmt.Printf("%s  %s\n", server.ID, server.Name)
 	}

@@ -158,7 +158,7 @@ func TestWhatIsNotMappedIsRefused(t *testing.T) {
 	wantError(t, strings.Replace(base, `"enabled":true`, `"enabled":true,"insecure":true`, 1)+`}`, "tls.insecure")
 	wantError(t, `{"type":"wireguard","tag":"w"}`, `"wireguard" is not supported`)
 	wantError(t, `{"protocol":"vless","tag":"x","settings":{"address":"a.example","port":443,"id":"`+uuid+`"},
-	  "streamSettings":{"network":"raw","security":"tls","tlsSettings":{"fingerprint":"safari","serverName":"a.example"}}}`, `fingerprint "safari"`)
+	  "streamSettings":{"network":"raw","security":"tls","tlsSettings":{"fingerprint":"opera","serverName":"a.example"}}}`, `fingerprint "opera"`)
 	wantError(t, "throne://add/%%%", "not base64")
 }
 
@@ -230,5 +230,46 @@ func TestCheckRefusesBadPorts(t *testing.T) {
 		if err := Check(s); err != nil {
 			t.Errorf("port %v: %v", port, err)
 		}
+	}
+}
+
+func TestXrayOutboundsArray(t *testing.T) {
+	doc := `[
+	  {"protocol":"vless","tag":"de-reality",
+	    "settings":{"vnext":[{"address":"a.example","port":443,"users":[{"id":"` + uuid + `","encryption":"none","flow":"xtls-rprx-vision"}]}]},
+	    "streamSettings":{"network":"tcp","security":"reality",
+	      "realitySettings":{"fingerprint":"qq","publicKey":"` + key + `","serverName":"cover.example","shortId":"0123456789abcdef","show":false,"spiderX":"/"}}},
+	  {"protocol":"vless","tag":"pl-ws",
+	    "settings":{"vnext":[{"address":"b.example","port":443,"users":[{"id":"` + uuid + `","encryption":"none"}]}]},
+	    "streamSettings":{"network":"ws","security":"tls",
+	      "tlsSettings":{"serverName":"b.example","fingerprint":"edge","alpn":["http/1.1"],"allowInsecure":true},
+	      "wsSettings":{"path":"/ws","host":"cdn.example"}}},
+	  {"protocol":"vless","tag":"bad",
+	    "settings":{"vnext":[{"address":"c.example","port":443,"users":[{"id":"` + uuid + `","extraField":1}]}]},
+	    "streamSettings":{"network":"tcp","security":"none"}}
+	]`
+	servers, refused, n := ParseAll(doc)
+	if n != 3 || len(servers) != 2 || len(refused) != 1 {
+		t.Fatalf("got n=%d servers=%d refused=%+v", n, len(servers), refused)
+	}
+	if err := Check(servers[0]); err != nil {
+		t.Fatalf("servers[0] failed Check: %v", err)
+	}
+	if err := Check(servers[1]); err != nil {
+		t.Fatalf("servers[1] failed Check: %v", err)
+	}
+	if servers[0].Name != "de-reality" || servers[0].Proxy["client-fingerprint"] != "qq" ||
+		servers[0].Proxy["reality-opts"].(map[string]any)["public-key"] != key ||
+		servers[0].Proxy["reality-opts"].(map[string]any)["short-id"] != "0123456789abcdef" {
+		t.Fatalf("servers[0] = %#v", servers[0])
+	}
+	wsOpts := servers[1].Proxy["ws-opts"].(map[string]any)
+	if servers[1].Name != "pl-ws" || servers[1].Proxy["client-fingerprint"] != "edge" ||
+		servers[1].Proxy["skip-cert-verify"] != true || wsOpts["path"] != "/ws" ||
+		wsOpts["headers"].(map[string]any)["Host"] != "cdn.example" {
+		t.Fatalf("servers[1] = %#v", servers[1])
+	}
+	if refused[0].Entry != 3 || !strings.Contains(refused[0].Reason, "extraField") {
+		t.Fatalf("refused = %+v", refused)
 	}
 }
